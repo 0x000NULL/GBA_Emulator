@@ -1,0 +1,9 @@
+# Double Dragon Advance (USA): title START at 700 -> mode menu -> 1P DRAGON GAME (A at 1200) -> Mission 1
+# starts at ~1500 with Billy at the left of the garage screen (TIME 70). Golden at 1800; player control:
+# RIGHT held 1800-2100 walks Billy off the first screen to the WANTED posters (hash diverges).
+steps = [
+  { frame = 700, press = "START" },
+  { frame = 705, release = "START" },
+  { frame = 1200, press = "A" },
+  { frame = 1205, release = "A" },
+]

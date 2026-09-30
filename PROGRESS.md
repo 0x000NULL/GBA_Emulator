@@ -52,6 +52,15 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
 | Mario Kart: Super Circuit (USA) | AMKE | Flash 64K | Mushroom Cup race on Peach Circuit; LEFT/RIGHT steer (kart leaves the track without input) | title 1800, race 8100 |
 | Crash Bandicoot: The Huge Adventure (USA) | ACQE | EEPROM | Level 1 Jungle Jam, Crash runs on RIGHT | title 2700, gameplay 6000 |
 | Need for Speed Underground 2 (USA/EU) | BNFE | EEPROM | Custom circuit race at City Hall; LEFT/RIGHT steer into the buildings/barrier | title 4200, race 11700 |
+| Double Dragon Advance (USA) | BDDE | none | Mission 1 garage, Billy walks on RIGHT | title 900, gameplay 1800 |
+| Crash Bandicoot 2: N-Tranced (USA) | AC8E | EEPROM | Level 1, Crash runs on RIGHT | title 1800, gameplay 4200 |
+| Crash Bandicoot Purple (USA) | BD4E | EEPROM | Hub level, Crash walks LEFT/RIGHT | title 1800, gameplay 6300 |
+| Backyard Baseball 2006 (USA) | BCYE | EEPROM | First at-bat, swing selector moves on DOWN/LEFT | title 1800, gameplay 3900 |
+| Cars (USA/EU) | BCAE | EEPROM | Race start, LEFT/RIGHT steer, A is throttle | title 1800, race 8100 |
+| Final Fantasy I & II: Dawn of Souls (USA) | BFFE | SRAM 32K | Party outside Cornelia, UP enters town | title 1800, gameplay 12600 |
+| Final Fantasy V Advance (USA) | BZ5E | SRAM 32K | Bartz on chocobo on the world map, LEFT/DOWN move | title 1800, gameplay 19000 |
+| Final Fantasy VI Advance (USA) | BZ6E | SRAM 32K | Terra's Magitek armor in Narshe, UP/DOWN/LEFT move | title 3000, gameplay 15300 |
+| Final Fantasy Tactics Advance (USA) | AFXE | Flash 64K | Snowball fight command menu, UP moves the cursor | title 4500, gameplay 19500 |
 | Final Fantasy IV Advance (USA) | BZ4E | SRAM 32K | Red Wings intro, scripted battles, Baron castle; Cecil controllable in the corridor (four directions verified). Its `swi 0xFF` is a logged no-op (GBATEK: 2Bh+ jump to garbage on hardware) | title 2400, gameplay 19800 |
 
 ## Environment facts

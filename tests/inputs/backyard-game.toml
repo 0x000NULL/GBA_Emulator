@@ -1,0 +1,14 @@
+# Backyard Baseball 2006 (USA): title START at 1800 -> MAIN MENU PICK-UP GAME (A at 2400) -> SET RULES
+# (START at 3000) -> Orioles at Royals team screen (A at 3600) -> the game starts at ~3900 with the player
+# batting (POWER / LINE DRIVE / GROUNDER / BUNT selector). START in-game pauses. Golden at 3900; player
+# control: DOWN held 3900-4200 moves the swing selector to LINE DRIVE (LEFT also diverges, UP is a no-op at the top).
+steps = [
+  { frame = 1800, press = "START" },
+  { frame = 1805, release = "START" },
+  { frame = 2400, press = "A" },
+  { frame = 2405, release = "A" },
+  { frame = 3000, press = "START" },
+  { frame = 3005, release = "START" },
+  { frame = 3600, press = "A" },
+  { frame = 3605, release = "A" },
+]

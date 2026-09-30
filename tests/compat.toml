@@ -135,3 +135,121 @@ frames = 11700
 input_file = "tests/inputs/nfsu2-race.toml"
 golden = "26f49feb9e9e1070"
 note = "name entry -> buy the Nissan 240SX -> RACE NOW -> CUSTOM RACE -> CIRCUIT -> City Hall, 1 lap; golden mid-race (POS 4/4, 0:06, 97 mph) with A held from 11400; steering verified (LEFT or RIGHT held with A 11700-12000 puts the car into the left building / right barrier, three distinct hashes)"
+
+# ---- stretch list, batch 1 (2026-09-30) ----
+# Batch 1 (pinned 2026-09-30 with target/release/gba-test.exe built 13:02; HLE BIOS): Backyard Baseball 2006,
+# Cars, Crash 2 N-Tranced, Crash Purple, Double Dragon Advance, FF I&II Dawn of Souls, FFTA, FF V, FF VI.
+# Title goldens use the [defaults] 1800 frames unless noted; gameplay goldens are the first controllable moment.
+
+[[rom]]
+path = "Games/Double Dragon Advance (USA).zip"
+frames = 900
+golden = "a06fcf36083c74a5"
+note = "title screen (dragons, (c)2003 ATLUS (c)MILLION); BDDE, no save, 4 MB; the mode menu replaces it once START is pressed"
+
+[[rom]]
+path = "Games/Double Dragon Advance (USA).zip"
+frames = 1800
+input_file = "tests/inputs/ddadvance-newgame.toml"
+golden = "987f07dfb587dab1"
+note = "START -> 1P DRAGON GAME -> Mission 1 garage screen, Billy at the left with the HUD (1P MATIN, TIME 70); player control verified (RIGHT held 1800-2100 walks Billy off the screen to the WANTED posters, hashes diverge)"
+
+[[rom]]
+path = "Games/Crash Bandicoot 2 - N-Tranced (USA).zip"
+golden = "902346e24fbae2d7"
+note = "title screen with PRESS START; AC8E, EEPROM, 8 MB"
+
+[[rom]]
+path = "Games/Crash Bandicoot 2 - N-Tranced (USA).zip"
+frames = 4200
+input_file = "tests/inputs/crash2-newgame.toml"
+golden = "106557a8f197b4de"
+note = "NEW GAME -> Uka Uka / N. Tropy cutscene (A pages) -> level 1 with Crash idle at the hut next to the ? crate; player control verified (RIGHT held 4200-4500 runs Crash to the hint sign, hashes diverge)"
+
+[[rom]]
+path = "Games/Crash Bandicoot Purple - Ripto's Rampage (USA) (Rev 1).zip"
+golden = "b3573a405bba3962"
+note = "title screen with PRESS START; BD4E, EEPROM, 16 MB; 248 FIFO underruns during the boot logos (0 after frame 1200)"
+
+[[rom]]
+path = "Games/Crash Bandicoot Purple - Ripto's Rampage (USA) (Rev 1).zip"
+frames = 6300
+input_file = "tests/inputs/crashpurple-newgame.toml"
+golden = "da2e10e7513c563c"
+note = "NEW GAME slot 1 -> STORY MODE -> Cortex/Ripto/Coco cutscene (A pages) -> hub level with Crash idle at the left; player control verified (RIGHT held 6300-6600 runs Crash right, LEFT turns him, three distinct hashes)"
+
+[[rom]]
+path = "Games/Backyard Baseball 2006 (USA).zip"
+golden = "ae8deccd202f1e73"
+note = "title screen with PRESS START; BCYE, EEPROM, 4 MB; ~28000 FIFO underruns from frame 1200 onward (title/menu music)"
+
+[[rom]]
+path = "Games/Backyard Baseball 2006 (USA).zip"
+frames = 3900
+input_file = "tests/inputs/backyard-game.toml"
+golden = "1de1710b87c85a22"
+note = "PICK-UP GAME -> SET RULES -> Orioles at Royals -> first at-bat with the swing selector (POWER/LINE DRIVE/GROUNDER/BUNT); player control verified (DOWN held 3900-4200 moves the selector to LINE DRIVE, LEFT also diverges; START pauses)"
+
+[[rom]]
+path = "Games/Cars (USA, Europe).zip"
+golden = "7799e25ac23e9655"
+note = "title screen with Press Start; BCAE, EEPROM, 8 MB"
+
+[[rom]]
+path = "Games/Cars (USA, Europe).zip"
+frames = 8100
+input_file = "tests/inputs/cars-race.toml"
+golden = "e8a758aa428d333a"
+note = "NEW GAME -> story dialogue (A pages) -> Doc's Challenge -> Lightning McQueen -> Willy's Butte race vs Doc; golden on the start straight (2nd, 0:04.4) with A held from 7900; steering verified (LEFT or RIGHT held with A 8100-8400 puts the car on the cliff / right edge, three distinct hashes)"
+
+[[rom]]
+path = "Games/Final Fantasy I & II - Dawn of Souls (USA).zip"
+golden = "4c94e91826a11426"
+note = "Dawn of Souls title with PRESS START; BFFE, SRAM 32K, 16 MB"
+
+[[rom]]
+path = "Games/Final Fantasy I & II - Dawn of Souls (USA).zip"
+frames = 12600
+input_file = "tests/inputs/ff1-newgame.toml"
+golden = "04d6f4800b679d83"
+note = "Title Select FF1 -> New Game -> auto-named party (SELECT/DOWN x4, START, Yes) -> opening text -> the party outside Cornelia on the world map; player control verified (UP held 12600-12900 enters Cornelia, LEFT walks to the coast, three distinct hashes); the harness reports frames=12602 here"
+
+[[rom]]
+path = "Games/Final Fantasy V Advance (USA).zip"
+input_file = "tests/inputs/ff5-newgame.toml"
+golden = "c2ef743e843c12de"
+note = "title with PRESS ANY BUTTON (A at 400 skips the health warning, START at 1500 skips the attract intro); BZ5E, SRAM 32K, 8 MB"
+
+[[rom]]
+path = "Games/Final Fantasy V Advance (USA).zip"
+frames = 19000
+input_file = "tests/inputs/ff5-newgame.toml"
+golden = "4ee059609109f153"
+note = "New Game -> Tycoon / Faris / Galuf / meteor opening (A pages) -> Bartz on his chocobo on the world map (player has control from ~18600); player control verified (LEFT or DOWN held 19000-19300 scrolls the map to the river / southern coast, three distinct hashes)"
+
+[[rom]]
+path = "Games/Final Fantasy VI Advance (USA).zip"
+frames = 3000
+input_file = "tests/inputs/ff6-newgame.toml"
+golden = "deeb59c51b730a74"
+note = "title logo with the copyright line (A at 400 skips the health warning); BZ6E, SRAM 32K, 8 MB"
+
+[[rom]]
+path = "Games/Final Fantasy VI Advance (USA).zip"
+frames = 15300
+input_file = "tests/inputs/ff6-newgame.toml"
+golden = "baa85a5c378e3b93"
+note = "New Game -> opening crawl (credits walk skipped by the A taps) -> Biggs/Wedge/Terra dialogue -> Magitek armors in Narshe, Terra's armor under player control; verified (UP held 15300-15600 walks into the Narshe guard's dialogue, DOWN triggers Wedge's line, LEFT moves west, four distinct hashes)"
+
+[[rom]]
+path = "Games/Final Fantasy Tactics Advance (USA).zip"
+frames = 4500
+golden = "e1c19ad4b24bb0b3"
+note = "title with Push START visible (it blinks); AFXE, Flash64K, 16 MB; 64821 FIFO underruns during the pre-title intro (0 after frame 1200); the harness reports frames=N+2 for this ROM"
+
+[[rom]]
+path = "Games/Final Fantasy Tactics Advance (USA).zip"
+frames = 19500
+input_file = "tests/inputs/ffta-newgame.toml"
+golden = "bc593998372022b2"
+note = "NEW GAME -> snowball-fight intro (A pages) -> name Marche (START, LEFT, A) -> Mewt/Ritz tutorial -> first player turn with Ritz's command menu (Move/Action/Wait/Status); player control verified (UP held 19500-19800 moves the menu cursor to Wait, hashes diverge; LEFT/RIGHT are no-ops on the vertical menu)"

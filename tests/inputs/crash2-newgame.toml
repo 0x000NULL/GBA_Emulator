@@ -1,0 +1,21 @@
+# Crash Bandicoot 2 - N-Tranced (USA): title START at 1800 -> NEW GAME (A at 2400) -> Uka Uka / N. Tropy
+# cutscene paged with A every 120 frames (3000-3600) -> level 1 starts at ~3660 with Crash idle at the hut.
+# Golden at 4200; player control: RIGHT held 4200-4500 runs Crash to the hint sign (Wumpa fruit box).
+steps = [
+  { frame = 1800, press = "START" },
+  { frame = 1805, release = "START" },
+  { frame = 2400, press = "A" },
+  { frame = 2405, release = "A" },
+  { frame = 3000, press = "A" },
+  { frame = 3005, release = "A" },
+  { frame = 3120, press = "A" },
+  { frame = 3125, release = "A" },
+  { frame = 3240, press = "A" },
+  { frame = 3245, release = "A" },
+  { frame = 3360, press = "A" },
+  { frame = 3365, release = "A" },
+  { frame = 3480, press = "A" },
+  { frame = 3485, release = "A" },
+  { frame = 3600, press = "A" },
+  { frame = 3605, release = "A" },
+]
