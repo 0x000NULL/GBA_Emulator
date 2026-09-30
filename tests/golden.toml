@@ -38,14 +38,17 @@ frames = 32
 [[rom]]
 path = "gba-tests/ppu/hello.gba"
 frames = 8
+golden = "5cee00b5da5687af"
 
 [[rom]]
 path = "gba-tests/ppu/shades.gba"
 frames = 8
+golden = "6562064cc0a429d6"
 
 [[rom]]
 path = "gba-tests/ppu/stripes.gba"
 frames = 8
+golden = "16a1044e534ad1b0"
 
 # ---------------------------------------------------------------- jsmolka: M5 save gate
 [[rom]]
@@ -61,12 +64,12 @@ frames = 32
 [[rom]]
 path = "gba-tests/save/flash64.gba"
 check = "jsmolka"
-frames = 64
+frames = 400
 
 [[rom]]
 path = "gba-tests/save/flash128.gba"
 check = "jsmolka"
-frames = 64
+frames = 400
 
 # ---------------------------------------------------------------- mgba-emu/suite (needs a built suite.gba)
 [[rom]]

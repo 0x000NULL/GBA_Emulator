@@ -11,9 +11,27 @@
 //!   `bus.bios_hle_vector(&mut regs)` first; if it returns true the "instruction" was emulated
 //!   (e.g. the IRQ dispatcher at 0x18 or its return stub at 0x138) and `step` is done.
 //!
-//! M0 status: STUB. `step` fetches and skips one word so time advances. Replaced in M1.
+//! Pipeline model: `regs.r[15]` is the address of the instruction being executed for the whole of
+//! `step`. `pipeline[0]` holds the (already fetched) word at PC and `pipeline[1]` the word at PC+4
+//! (PC+2 in THUMB). Each step first prefetches PC+8 (PC+4) with a sequential access, shifts the
+//! pipeline, then executes the word that was fetched two steps earlier, so a store that overwrites
+//! an already-fetched instruction has no effect on it (Classic NES Series relies on this). Any
+//! write to PC invalidates the pipeline; the next `step` refills it with a non-sequential fetch at
+//! the target followed by a sequential one, which together with the branch's own prefetch gives
+//! GBATEK's 2S+1N.
+//!
+//! Sources: GBATEK "ARM CPU Reference" (register set, flags, exceptions, memory alignments, every
+//! ARM and THUMB opcode chapter, instruction cycle times).
 
+pub mod alu;
+pub mod arm;
+pub mod decode;
+pub mod disasm;
 pub mod regs;
+pub mod thumb;
+
+#[cfg(test)]
+mod tests;
 
 pub use regs::Regs;
 
@@ -31,12 +49,13 @@ pub const VEC_FIQ: u32 = 0x1C;
 #[derive(Clone, Debug)]
 pub struct Cpu {
     pub regs: Regs,
-    /// Two-slot fetched pipeline: [decode, fetch]. The instruction at `regs.r[15]` is being
-    /// executed; the pipeline holds the words at PC+4/PC+8 (ARM) or PC+2/PC+4 (Thumb).
+    /// Two-slot fetched pipeline: `[word at PC, word at PC+4]` (PC+2 in THUMB) while
+    /// `next_fetch_seq` is true. The instruction at `regs.r[15]` is the one being executed.
     pub pipeline: [u32; 2],
-    /// Next fetch should be sequential.
+    /// True while the pipeline contents are valid and the next opcode fetch is sequential.
+    /// Cleared by every PC write; the next `step` refills with an N fetch then an S fetch.
     pub next_fetch_seq: bool,
-    /// Instructions executed since reset.
+    /// Instructions executed since reset (exception entries are not counted).
     pub instr_count: u64,
     /// Opcode of the instruction most recently executed (for tracing).
     pub last_opcode: u32,
@@ -50,7 +69,13 @@ impl Default for Cpu {
 
 impl Cpu {
     pub fn new() -> Self {
-        Cpu { regs: Regs::new(), pipeline: [0; 2], next_fetch_seq: false, instr_count: 0, last_opcode: 0 }
+        Cpu {
+            regs: Regs::new(),
+            pipeline: [0; 2],
+            next_fetch_seq: false,
+            instr_count: 0,
+            last_opcode: 0,
+        }
     }
 
     /// Post-BIOS register state (GBATEK "BIOS RAM Usage" / mGBA GBASkipBIOS):
@@ -83,8 +108,21 @@ impl Cpu {
         self.regs.r[15]
     }
 
-    /// Flush the pipeline after a PC write (branch). The CPU agent refills on the next `step`.
+    /// Flush the pipeline after a PC write (branch). Refilled on the next `step`.
+    #[inline]
     pub fn flush_pipeline(&mut self) {
+        self.next_fetch_seq = false;
+    }
+
+    /// Write a new PC (already computed by the instruction), force-align it for the current state
+    /// and invalidate the pipeline. Source: GBATEK "Mis-aligned PC/R15".
+    #[inline]
+    pub(crate) fn set_pc(&mut self, target: u32) {
+        self.regs.r[15] = if self.regs.thumb() {
+            target & !1
+        } else {
+            target & !3
+        };
         self.next_fetch_seq = false;
     }
 
@@ -93,39 +131,71 @@ impl Cpu {
         let start = bus.now();
         if bus.irq_pending() && !self.regs.irq_disabled() {
             self.enter_exception(bus, VEC_IRQ, regs::MODE_IRQ);
+            // Exception entry: the vector fetch pair is paid by the refill; the ARM7 spends two
+            // more cycles saving state.
+            bus.idle(2);
             return (bus.now() - start) as u32;
         }
         if self.regs.r[15] < 0x4000 && bus.is_hle_bios() && bus.bios_hle_vector(&mut self.regs) {
             self.flush_pipeline();
             return (bus.now() - start) as u32;
         }
-        // STUB: fetch and skip. Replaced by the ARM/Thumb interpreter in M1.
-        let pc = self.regs.r[15];
-        let access = if self.next_fetch_seq { Access::S } else { Access::N };
         if self.regs.thumb() {
-            self.last_opcode = bus.fetch16(pc, access) as u32;
-            self.regs.r[15] = pc.wrapping_add(2);
+            self.step_thumb(bus);
         } else {
-            self.last_opcode = bus.fetch32(pc, access);
-            self.regs.r[15] = pc.wrapping_add(4);
+            self.step_arm(bus);
         }
-        self.next_fetch_seq = true;
         self.instr_count += 1;
         (bus.now() - start) as u32
     }
 
+    fn step_arm<B: MemoryBus>(&mut self, bus: &mut B) {
+        let pc = self.regs.r[15] & !3;
+        self.regs.r[15] = pc;
+        if !self.next_fetch_seq {
+            self.pipeline[0] = bus.fetch32(pc, Access::N);
+            self.pipeline[1] = bus.fetch32(pc.wrapping_add(4), Access::S);
+            self.next_fetch_seq = true;
+        }
+        let op = self.pipeline[0];
+        self.pipeline[0] = self.pipeline[1];
+        self.pipeline[1] = bus.fetch32(pc.wrapping_add(8), Access::S);
+        self.last_opcode = op;
+        arm::execute(self, bus, op);
+        if self.next_fetch_seq {
+            self.regs.r[15] = pc.wrapping_add(4);
+        }
+    }
+
+    fn step_thumb<B: MemoryBus>(&mut self, bus: &mut B) {
+        let pc = self.regs.r[15] & !1;
+        self.regs.r[15] = pc;
+        if !self.next_fetch_seq {
+            self.pipeline[0] = bus.fetch16(pc, Access::N) as u32;
+            self.pipeline[1] = bus.fetch16(pc.wrapping_add(2), Access::S) as u32;
+            self.next_fetch_seq = true;
+        }
+        let op = self.pipeline[0] as u16;
+        self.pipeline[0] = self.pipeline[1];
+        self.pipeline[1] = bus.fetch16(pc.wrapping_add(4), Access::S) as u32;
+        self.last_opcode = op as u32;
+        thumb::execute(self, bus, op);
+        if self.next_fetch_seq {
+            self.regs.r[15] = pc.wrapping_add(2);
+        }
+    }
+
     /// Exception entry: SPSR_mode = CPSR, LR_mode = return address, switch mode, ARM state,
-    /// I set (and F set for FIQ/reset), PC = vector. The return address stored in LR follows
-    /// the ARM7TDMI convention for each exception (IRQ: address of next instr + 4; SWI/UND: next instr).
-    pub fn enter_exception<B: MemoryBus>(&mut self, bus: &mut B, vector: u32, mode: u32) {
+    /// I set (and F set for FIQ/reset), PC = vector, pipeline flushed. `regs.r[15]` must hold the
+    /// address of the instruction being executed / interrupted. The return address stored in LR
+    /// follows the ARM7TDMI convention for each exception (IRQ: PC+4 so `subs pc, lr, #4` resumes
+    /// the interrupted instruction in either state; SWI/UND: the following instruction).
+    pub fn enter_exception<B: MemoryBus>(&mut self, _bus: &mut B, vector: u32, mode: u32) {
         let old_cpsr = self.regs.cpsr;
         let pc = self.regs.r[15];
         let thumb = self.regs.thumb();
         let lr = match vector {
-            // IRQ: the interrupted instruction is at PC; hardware stores PC+4 (ARM) / PC+4 (Thumb) so
-            // that `subs pc, lr, #4` returns to it.
             VEC_IRQ | VEC_FIQ => pc.wrapping_add(4),
-            // SWI/UND: return to the following instruction (`movs pc, lr`).
             VEC_SWI | VEC_UNDEFINED => pc.wrapping_add(if thumb { 2 } else { 4 }),
             _ => pc.wrapping_add(4),
         };
@@ -139,7 +209,172 @@ impl Cpu {
         }
         self.regs.r[15] = vector;
         self.flush_pipeline();
-        bus.idle(2);
+    }
+
+    /// Software interrupt from either state. `pc` is the SWI's own address. Tries the HLE BIOS
+    /// first with r15 pointing at the following instruction; falls back to the real exception.
+    pub(crate) fn software_interrupt<B: MemoryBus>(&mut self, bus: &mut B, num: u8) {
+        let pc = self.regs.r[15];
+        let next = pc.wrapping_add(if self.regs.thumb() { 2 } else { 4 });
+        self.regs.r[15] = next;
+        if bus.swi_hle(num, &mut self.regs) {
+            if self.regs.r[15] != next {
+                // A waiting SWI rewound r15 (or the HLE redirected); refetch there.
+                self.flush_pipeline();
+            } else {
+                self.regs.r[15] = pc;
+            }
+            return;
+        }
+        self.regs.r[15] = pc;
+        self.enter_exception(bus, VEC_SWI, regs::MODE_SVC);
+    }
+
+    /// Undefined instruction trap (vector 0x04). 2S+1I+1N: one I cycle here, the rest is fetches.
+    pub(crate) fn undefined_instruction<B: MemoryBus>(&mut self, bus: &mut B) {
+        bus.idle(1);
+        self.enter_exception(bus, VEC_UNDEFINED, regs::MODE_UND);
+    }
+
+    /// Restore CPSR from the current mode's SPSR (S-bit ALU with Rd=PC, LDM with PC and S).
+    /// Has no effect in User/System mode, which have no SPSR (behaviour is unpredictable there).
+    #[inline]
+    pub(crate) fn restore_cpsr_from_spsr(&mut self) {
+        if regs::bank_index(self.regs.mode()) != 0 {
+            let spsr = self.regs.spsr();
+            self.regs.set_cpsr(spsr);
+        }
+    }
+
+    // ------------------------------------------------------------------ data access helpers
+
+    /// LDR: word read with the ARM7 rotation for mis-aligned addresses.
+    #[inline]
+    pub(crate) fn load_word<B: MemoryBus>(&mut self, bus: &mut B, addr: u32, a: Access) -> u32 {
+        let v = bus.read32(addr & !3, a);
+        v.rotate_right((addr & 3) * 8)
+    }
+
+    /// LDRH: halfword read; an odd address yields the aligned halfword rotated right by 8.
+    #[inline]
+    pub(crate) fn load_half<B: MemoryBus>(&mut self, bus: &mut B, addr: u32, a: Access) -> u32 {
+        let v = bus.read16(addr & !1, a) as u32;
+        if addr & 1 != 0 {
+            v.rotate_right(8)
+        } else {
+            v
+        }
+    }
+
+    /// LDRSH: sign-extended halfword; an odd address degrades to a sign-extended byte.
+    #[inline]
+    pub(crate) fn load_signed_half<B: MemoryBus>(
+        &mut self,
+        bus: &mut B,
+        addr: u32,
+        a: Access,
+    ) -> u32 {
+        if addr & 1 != 0 {
+            bus.read8(addr, a) as i8 as i32 as u32
+        } else {
+            bus.read16(addr, a) as i16 as i32 as u32
+        }
+    }
+
+    /// Block transfer shared by ARM LDM/STM and THUMB LDMIA/STMIA/PUSH/POP.
+    ///
+    /// Semantics (GBATEK "Block Data Transfer", ARMv4 column): registers are always processed
+    /// from the lowest address upwards; an empty list transfers R15 and moves the base by 0x40;
+    /// STM with the base in the list stores the old base if it is the first register, otherwise
+    /// the new one; LDM with the base in the list lets the loaded value win over writeback; with
+    /// `user_bank` set, registers are the User-mode bank (S bit without PC in list); with
+    /// `restore_cpsr` set, CPSR = SPSR when PC is loaded (S bit with PC in list).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn block_transfer<B: MemoryBus>(
+        &mut self,
+        bus: &mut B,
+        rn: usize,
+        mut rlist: u32,
+        load: bool,
+        pre: bool,
+        up: bool,
+        writeback: bool,
+        user_bank: bool,
+        restore_cpsr: bool,
+    ) {
+        let base = self.regs.r[rn];
+        let count = if rlist == 0 {
+            rlist = 1 << 15;
+            16
+        } else {
+            rlist.count_ones()
+        };
+        let span = count * 4;
+        let new_base = if up {
+            base.wrapping_add(span)
+        } else {
+            base.wrapping_sub(span)
+        };
+        let mut addr = match (pre, up) {
+            (false, true) => base,                                     // IA
+            (true, true) => base.wrapping_add(4),                      // IB
+            (false, false) => base.wrapping_sub(span).wrapping_add(4), // DA
+            (true, false) => base.wrapping_sub(span),                  // DB
+        };
+        let thumb = self.regs.thumb();
+        let pc_store = self.regs.r[15].wrapping_add(if thumb { 6 } else { 12 });
+        let mut access = Access::N;
+        if load {
+            if writeback {
+                self.regs.r[rn] = new_base;
+            }
+            let mut loaded_pc = None;
+            for i in 0..16 {
+                if rlist & (1 << i) == 0 {
+                    continue;
+                }
+                let v = bus.read32(addr & !3, access);
+                access = Access::S;
+                addr = addr.wrapping_add(4);
+                if i == 15 {
+                    loaded_pc = Some(v);
+                } else if user_bank {
+                    self.regs.set_user_reg(i, v);
+                } else {
+                    self.regs.r[i] = v;
+                }
+            }
+            bus.idle(1);
+            if let Some(v) = loaded_pc {
+                if restore_cpsr {
+                    self.restore_cpsr_from_spsr();
+                }
+                self.set_pc(v);
+            }
+        } else {
+            let mut first = true;
+            for i in 0..16 {
+                if rlist & (1 << i) == 0 {
+                    continue;
+                }
+                let v = if i == 15 {
+                    pc_store
+                } else if user_bank {
+                    self.regs.user_reg(i)
+                } else {
+                    self.regs.r[i]
+                };
+                bus.write32(addr & !3, v, access);
+                access = Access::S;
+                addr = addr.wrapping_add(4);
+                if first && writeback {
+                    // Writeback happens after the first store, so a base that is not the first
+                    // register in the list is stored with its new value.
+                    self.regs.r[rn] = new_base;
+                }
+                first = false;
+            }
+        }
     }
 
     /// Hash of the architectural state (r0-r15, CPSR, SPSR) for trace diffing.

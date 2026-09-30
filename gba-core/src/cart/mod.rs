@@ -210,9 +210,8 @@ impl Cartridge {
         match &self.save {
             SaveBackend::Sram(s) => s[(addr & 0x7FFF) as usize],
             SaveBackend::Flash(f) => f.peek8(addr as u16),
-            // No SRAM/flash present: open bus on the 8-bit bus reads as 0xFF? Hardware returns
-            // undefined; jsmolka save/none.gba expects reads not to stick, we return 0.
-            _ => 0,
+            // No SRAM/flash chip: the pulled-up 8-bit bus reads 0xFF (jsmolka save/none.gba).
+            _ => 0xFF,
         }
     }
 
@@ -220,7 +219,7 @@ impl Cartridge {
         match &mut self.save {
             SaveBackend::Sram(s) => s[(addr & 0x7FFF) as usize],
             SaveBackend::Flash(f) => f.read8(addr as u16),
-            _ => 0,
+            _ => 0xFF,
         }
     }
 

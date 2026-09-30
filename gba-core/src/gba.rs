@@ -90,34 +90,41 @@ impl Gba {
     /// Run until `sched.now >= target` or a debug hook fires.
     pub fn run_until(&mut self, target: u64) -> StopReason {
         while self.bus.sched.now < target {
-            let deadline = self.bus.sched.next_deadline().min(target);
-            while self.bus.sched.now < deadline {
-                if self.bus.dma.pending != 0 {
-                    self.bus.dma_run();
+            // The deadline is re-read every iteration: an instruction (or DMA) may schedule an
+            // event closer than the previous one (e.g. immediate DMA start 2 cycles after enable).
+            if self.bus.sched.now >= self.bus.sched.next_deadline() {
+                self.bus.process_events();
+                continue;
+            }
+            if self.bus.dma.pending != 0 {
+                self.bus.dma_run();
+                continue;
+            }
+            if self.bus.irq.halted || self.bus.irq.stopped {
+                if self.bus.irq.wake_condition() {
+                    self.bus.irq.halted = false;
+                    self.bus.irq.stopped = false;
+                } else {
+                    // Sleep until the next event (or the target).
+                    self.bus.sched.now = self.bus.sched.next_deadline().min(target);
                     continue;
                 }
-                if self.bus.irq.halted || self.bus.irq.stopped {
-                    if self.bus.irq.wake_condition() {
-                        self.bus.irq.halted = false;
-                        self.bus.irq.stopped = false;
-                    } else {
-                        self.bus.sched.now = deadline;
-                        break;
-                    }
-                }
-                if self.bus.debug.enabled {
-                    self.bus.debug.check_pc(self.cpu.pc());
-                    if let Some(hit) = self.bus.debug.hit.take() {
-                        return StopReason::Breakpoint(hit);
-                    }
-                }
-                self.cpu.step(&mut self.bus);
-                if self.bus.debug.enabled {
-                    if let Some(hit) = self.bus.debug.hit.take() {
-                        return StopReason::Breakpoint(hit);
-                    }
+            }
+            if self.bus.debug.enabled {
+                self.bus.debug.check_pc(self.cpu.pc());
+                if let Some(hit) = self.bus.debug.hit.take() {
+                    return StopReason::Breakpoint(hit);
                 }
             }
+            self.cpu.step(&mut self.bus);
+            if self.bus.debug.enabled {
+                if let Some(hit) = self.bus.debug.hit.take() {
+                    return StopReason::Breakpoint(hit);
+                }
+            }
+        }
+        // Fire anything that became due exactly at the target.
+        if self.bus.sched.now >= self.bus.sched.next_deadline() {
             self.bus.process_events();
         }
         StopReason::Done

@@ -9,11 +9,11 @@ Design: `docs/ARCHITECTURE.md`. Rules: `CLAUDE.md`.
 | M | Scope | Gate | Status |
 |---|---|---|---|
 | M0 | Workspace, contracts, harness, test suites fetched | `cargo build --workspace`; harness runs every golden entry | **DONE 2026-09-29** |
-| M1 | ARM7TDMI: all ARM+Thumb, modes, exceptions, flags | jsmolka `arm.gba`, `thumb.gba` | in progress (CPU agent) |
-| M2 | Memory map, waitstates, DMA, timers, IRQ, HALTCNT | jsmolka `memory.gba`, `bios.gba`, `nes.gba`; mgba-suite memory/timing | implemented + 14 bus unit tests (mirroring, byte-write quirks, waitstates, open bus, IRQ ack, DMA immediate/hblank/fifo/repeat, timers via IO, keypad, debug regs); ROM gate awaits M1 |
-| M3 | PPU modes 0-5, OBJ, windows, blending, mosaic, timing | jsmolka ppu/* golden hashes; mgba-suite video | in progress (PPU agent); timing contract done |
-| M4 | BIOS HLE, every listed SWI | `bios.gba` under HLE; per-SWI unit tests | all listed SWIs implemented (SoftReset, RegisterRamReset, Halt, Stop, IntrWait, VBlankIntrWait, Div, DivArm, Sqrt, ArcTan, ArcTan2, CpuSet, CpuFastSet, GetBiosChecksum, BgAffineSet, ObjAffineSet, BitUnPack, LZ77 W/V, Huff, RL W/V, Diff8 W/V, Diff16, SoundBias, MidiKey2Freq, CustomHalt) + IRQ vector/return emulation; 14 unit tests incl. encoder round trips. BIOS sound-driver SWIs (1A-1E, 28, 29) are no-ops and logged. ROM gate awaits M1. LLE differential deferred (no BIOS) |
-| M5 | Save detection, SRAM/Flash/EEPROM, `<rom>.sav` | jsmolka save/*; round trip | backends implemented + 8 unit tests (ID strings, F*** mirroring, SRAM mirrors/persist, Flash 64K ID/program/erase, Flash 128K banks, EEPROM 8K/512 protocol, 32 MB window); EEPROM size hinted from DMA length; `.sav` persistence in frontend (agent) |
+| M1 | ARM7TDMI: all ARM+Thumb, modes, exceptions, flags | jsmolka `arm.gba`, `thumb.gba` | **DONE 2026-09-29** (65 CPU unit tests; real 2-slot pipeline; mGBA-format trace) |
+| M2 | Memory map, waitstates, DMA, timers, IRQ, HALTCNT | jsmolka `memory.gba`, `bios.gba`, `nes.gba`; mgba-suite memory/timing | **DONE (jsmolka side) 2026-09-29**; mgba-suite part blocked on a built `suite.gba` |
+| M3 | PPU modes 0-5, OBJ, windows, blending, mosaic, timing | jsmolka ppu/* golden hashes; mgba-suite video | **DONE (jsmolka side) 2026-09-29**: hello/shades/stripes goldens pinned, 56 PPU unit tests; gaps: per-line OBJ cycle budget, OAM evaluated on the rendered line; mgba-suite video blocked as above |
+| M4 | BIOS HLE, every listed SWI | `bios.gba` under HLE; per-SWI unit tests | **DONE 2026-09-29**: `bios.gba` passes under HLE; all listed SWIs + IRQ vector/return emulation; 14 unit tests incl. LZ77/RL/Huffman encoder round trips. BIOS sound-driver SWIs (1A-1E, 28, 29) are logged no-ops. LLE differential deferred (no BIOS) |
+| M5 | Save detection, SRAM/Flash/EEPROM, `<rom>.sav` | jsmolka save/*; round trip | **DONE 2026-09-29**: none/sram/flash64/flash128 pass (flash needs 400 frames: test 10/11 program 64K bytes one command sequence at a time); 8 cart unit tests incl. EEPROM protocol and save round trip; `.sav` persistence in the frontend |
 | M6 | KH:CoM title -> new game -> first room | title golden + input script | not started |
 | M7 | APU PSG + FIFO + mixing | PCM capture vs mGBA | stub (FIFOs work, silence out) |
 | M8 | Prefetch, timing polish, savestates, fast-forward | mgba-suite timing improves | not started |
@@ -40,7 +40,22 @@ Design: `docs/ARCHITECTURE.md`. Rules: `CLAUDE.md`.
   Harness: `--check mgba-suite --input <script> --expect p/t`. Debug regs implemented in `bus/debug.rs`.
 
 ## Known bugs / open questions
-- (none yet beyond "CPU is a stub")
+- **Frontend audio unverified on real hardware.** The development session is RDP with no audio
+  endpoint, so cpal's WASAPI stream, audio-clocked pacing and the underrun counter have only unit
+  tests. To verify at the console: `cargo run --release -p gba-frontend -- <rom>` and check the
+  title bar shows `59.7 fps` with underruns staying at 0.
+- Frontend `--exit-after N` (hidden flag) ends a windowed run after N frames and prints timing stats.
+
+## Fix log (M1-M5 integration, 2026-09-29)
+- `Gba::run_until` computed the event deadline once per outer loop, so an event scheduled by an
+  IO write (immediate DMA start, +2 cycles) fired only after the old deadline. nes.gba test 2 (STMDA
+  into DMA0SAD/DAD/CNT then read the destination) caught it. Now the deadline is re-read every step.
+- CPU STRH/STR masked the address before `write16/write32`; the 8-bit SRAM/Flash bus selects the
+  byte lane from the unaligned address (sram/flash test 6 and 8). Alignment is the bus's job.
+- Missing backup chip reads 0xFF, not 0 (save/none test 1).
+- DMAxDAD byte writes used the raw register offset as the shift (bus unit test).
+- Reference-emulator trace diffing: the mGBA 0.10.5 Windows build has no CLI debugger (`-d`), only
+  GDB (`-g`). Trace diffs need a build with the CLI debugger or a GDB-driven stepper; not needed yet.
 
 ## Attempts log
 - 2026-09-29 M0: full workspace builds; `cargo test` runs 9 unit tests + the golden driver, which
