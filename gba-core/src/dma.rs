@@ -136,7 +136,7 @@ impl DmaController {
         };
         match r {
             0..=3 => set_byte(&mut c.sad, r as u32, v),
-            4..=7 => set_byte(&mut c.dad, r as u32, v),
+            4..=7 => set_byte(&mut c.dad, (r - 4) as u32, v),
             8 => c.count = (c.count & 0xFF00) | v as u16,
             9 => c.count = (c.count & 0x00FF) | ((v as u16) << 8),
             10 => c.cnt_h = (c.cnt_h & 0xFF00) | (v as u16 & 0xE0),

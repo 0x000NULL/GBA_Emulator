@@ -10,10 +10,10 @@ Design: `docs/ARCHITECTURE.md`. Rules: `CLAUDE.md`.
 |---|---|---|---|
 | M0 | Workspace, contracts, harness, test suites fetched | `cargo build --workspace`; harness runs every golden entry | **DONE 2026-09-29** |
 | M1 | ARM7TDMI: all ARM+Thumb, modes, exceptions, flags | jsmolka `arm.gba`, `thumb.gba` | in progress (CPU agent) |
-| M2 | Memory map, waitstates, DMA, timers, IRQ, HALTCNT | jsmolka `memory.gba`, `bios.gba`, `nes.gba`; mgba-suite memory/timing | skeleton written (bus/dma/timers), untested |
-| M3 | PPU modes 0-5, OBJ, windows, blending, mosaic, timing | jsmolka ppu/* golden hashes; mgba-suite video | stub (backdrop only); timing contract done |
-| M4 | BIOS HLE, every listed SWI | `bios.gba` under HLE; per-SWI unit tests | partial: Halt/Stop/IntrWait/VBlankIntrWait/Div/DivArm/Sqrt/CpuSet/CpuFastSet/GetBiosChecksum/RegisterRamReset/SoundBias/MidiKey2Freq(f64); IRQ vector + return stub |
-| M5 | Save detection, SRAM/Flash/EEPROM, `<rom>.sav` | jsmolka save/*; round trip | backends written, untested; persistence not wired in frontend |
+| M2 | Memory map, waitstates, DMA, timers, IRQ, HALTCNT | jsmolka `memory.gba`, `bios.gba`, `nes.gba`; mgba-suite memory/timing | implemented + 14 bus unit tests (mirroring, byte-write quirks, waitstates, open bus, IRQ ack, DMA immediate/hblank/fifo/repeat, timers via IO, keypad, debug regs); ROM gate awaits M1 |
+| M3 | PPU modes 0-5, OBJ, windows, blending, mosaic, timing | jsmolka ppu/* golden hashes; mgba-suite video | in progress (PPU agent); timing contract done |
+| M4 | BIOS HLE, every listed SWI | `bios.gba` under HLE; per-SWI unit tests | all listed SWIs implemented (SoftReset, RegisterRamReset, Halt, Stop, IntrWait, VBlankIntrWait, Div, DivArm, Sqrt, ArcTan, ArcTan2, CpuSet, CpuFastSet, GetBiosChecksum, BgAffineSet, ObjAffineSet, BitUnPack, LZ77 W/V, Huff, RL W/V, Diff8 W/V, Diff16, SoundBias, MidiKey2Freq, CustomHalt) + IRQ vector/return emulation; 14 unit tests incl. encoder round trips. BIOS sound-driver SWIs (1A-1E, 28, 29) are no-ops and logged. ROM gate awaits M1. LLE differential deferred (no BIOS) |
+| M5 | Save detection, SRAM/Flash/EEPROM, `<rom>.sav` | jsmolka save/*; round trip | backends implemented + 8 unit tests (ID strings, F*** mirroring, SRAM mirrors/persist, Flash 64K ID/program/erase, Flash 128K banks, EEPROM 8K/512 protocol, 32 MB window); EEPROM size hinted from DMA length; `.sav` persistence in frontend (agent) |
 | M6 | KH:CoM title -> new game -> first room | title golden + input script | not started |
 | M7 | APU PSG + FIFO + mixing | PCM capture vs mGBA | stub (FIFOs work, silence out) |
 | M8 | Prefetch, timing polish, savestates, fast-forward | mgba-suite timing improves | not started |

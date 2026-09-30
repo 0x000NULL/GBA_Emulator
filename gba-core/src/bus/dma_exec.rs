@@ -30,6 +30,10 @@ impl Bus {
         let mut src = c.src & if word32 { !3 } else { !1 };
         let mut dst = c.dst & if word32 { !3 } else { !1 };
 
+        // A DMA into the EEPROM region is a serial request; its length reveals the EEPROM size.
+        if dst >> 24 == 0x0D && !word32 {
+            self.cart.eeprom_dma_hint(count);
+        }
         self.in_dma = true;
         let both_pak = (0x08..=0x0D).contains(&(src >> 24)) && (0x08..=0x0D).contains(&(dst >> 24));
         self.idle(if both_pak { 4 } else { 2 });

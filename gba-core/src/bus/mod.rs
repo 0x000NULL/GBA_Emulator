@@ -4,6 +4,8 @@
 pub mod debug;
 pub mod dma_exec;
 pub mod io;
+#[cfg(test)]
+mod tests;
 
 use crate::apu::Apu;
 use crate::bios::Bios;

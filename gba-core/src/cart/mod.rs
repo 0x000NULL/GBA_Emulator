@@ -3,6 +3,8 @@
 pub mod eeprom;
 pub mod flash;
 pub mod header;
+#[cfg(test)]
+mod tests;
 
 use crate::CoreError;
 use eeprom::Eeprom;
@@ -186,6 +188,13 @@ impl Cartridge {
             }
         }
         // ROM writes are otherwise ignored (GPIO/RTC not emulated: none of the target games use it).
+    }
+
+    /// Called by the DMA engine for transfers into the EEPROM region (halfword count of the request).
+    pub fn eeprom_dma_hint(&mut self, halfwords: u32) {
+        if let SaveBackend::Eeprom(e) = &mut self.save {
+            e.hint_transfer_len(halfwords);
+        }
     }
 
     fn eeprom_read(&mut self) -> u16 {

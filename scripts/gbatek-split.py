@@ -1,6 +1,6 @@
 """Split tools/gbatek.htm (GBATEK by Martin Korth) into per-section text files under docs/gbatek/.
 
-Only the GBA reference (sections 0..84) and the ARM CPU reference (661..702) are emitted;
+Only the GBA reference (0..84), the ARM CPU reference (661..702), BIOS functions (703..714) and BIOS RAM usage (720) are emitted;
 NDS/DSi/3DS chapters are skipped. Run: python scripts/gbatek-split.py
 """
 import html, os, re, sys
@@ -28,7 +28,7 @@ def to_text(frag: str) -> str:
         out.append(l)
     return '\n'.join(out).strip() + '\n'
 
-keep = [i for i, m in enumerate(anchors) if i <= 84 or 661 <= i <= 702]
+keep = [i for i, m in enumerate(anchors) if i <= 84 or 661 <= i <= 714 or i == 720]
 index = []
 for i in keep:
     m = anchors[i]
