@@ -12,7 +12,7 @@ bios = "hle"
 
 [[rom]]
 path = "Games/Kingdom Hearts - Chain of Memories (USA).zip"
-golden = "d6f5ac977e710954"
+golden = "b897019406339fc2"
 note = "title screen with PRESS START; B8CE, 32 MB, SRAM_F_V103"
 
 [[rom]]

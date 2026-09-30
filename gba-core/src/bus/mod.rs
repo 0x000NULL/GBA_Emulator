@@ -57,6 +57,12 @@ pub trait MemoryBus {
     fn swi_hle(&mut self, _num: u8, _regs: &mut Regs) -> bool {
         false
     }
+    /// `Some(seq)` (once) when the last HLE SWI charged the real handler's cost, including its
+    /// return through `movs pc, lr`: the CPU must then refill the pipeline at the return address,
+    /// starting with a sequential fetch when `seq`.
+    fn swi_took_refill(&mut self) -> Option<bool> {
+        None
+    }
     /// Emulate BIOS code at `regs.r[15]` (< 0x4000) in HLE. Returns false if nothing handled it.
     fn bios_hle_vector(&mut self, _regs: &mut Regs) -> bool {
         false
@@ -606,6 +612,14 @@ impl MemoryBus for Bus {
             return false;
         }
         self.hle_swi(num, regs)
+    }
+
+    fn swi_took_refill(&mut self) -> Option<bool> {
+        // The handler's last ROM access is the `ldrb` of the SWI comment, one halfword before the
+        // return address. The cartridge sees that as sequential, except (empirically, mgba-suite
+        // "Timing tests" P columns) when the prefetch buffer is enabled, which makes the first
+        // refill fetch non-sequential again.
+        std::mem::take(&mut self.bios.swi_refill).then_some(!self.pf.enabled)
     }
 
     fn bios_hle_vector(&mut self, regs: &mut Regs) -> bool {

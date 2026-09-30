@@ -71,6 +71,10 @@ pub struct Cpu {
     /// True when the last bus cycle of the previous instruction was a data access or an internal
     /// cycle, which makes the next opcode fetch non-sequential (see the module docs).
     pub next_fetch_n: bool,
+    /// The next pipeline refill starts sequentially: set after an HLE SWI whose real handler
+    /// ends with a game pak data read (`ldrb r12, [lr, #-2]`) right before `movs pc, lr`; the
+    /// return address is the next halfword, so the cartridge sees a sequential address.
+    pub refill_seq: bool,
     /// Instructions executed since reset (exception entries are not counted).
     pub instr_count: u64,
     /// Opcode of the instruction most recently executed (for tracing).
@@ -90,6 +94,7 @@ impl Cpu {
             pipeline: [0; 2],
             next_fetch_seq: false,
             next_fetch_n: false,
+            refill_seq: false,
             instr_count: 0,
             last_opcode: 0,
         }
@@ -198,7 +203,8 @@ impl Cpu {
         let pc = self.regs.r[15] & !3;
         self.regs.r[15] = pc;
         if !self.next_fetch_seq {
-            self.pipeline[0] = bus.fetch32(pc, Access::N);
+            let first = if std::mem::take(&mut self.refill_seq) { Self::seq_unless_block_start(pc) } else { Access::N };
+            self.pipeline[0] = bus.fetch32(pc, first);
             let next = pc.wrapping_add(4);
             self.pipeline[1] = bus.fetch32(next, Self::seq_unless_block_start(next));
             self.next_fetch_seq = true;
@@ -220,7 +226,8 @@ impl Cpu {
         let pc = self.regs.r[15] & !1;
         self.regs.r[15] = pc;
         if !self.next_fetch_seq {
-            self.pipeline[0] = bus.fetch16(pc, Access::N) as u32;
+            let first = if std::mem::take(&mut self.refill_seq) { Self::seq_unless_block_start(pc) } else { Access::N };
+            self.pipeline[0] = bus.fetch16(pc, first) as u32;
             let next = pc.wrapping_add(2);
             self.pipeline[1] = bus.fetch16(next, Self::seq_unless_block_start(next)) as u32;
             self.next_fetch_seq = true;
@@ -274,6 +281,12 @@ impl Cpu {
             if self.regs.r[15] != next {
                 // A waiting SWI rewound r15 (or the HLE redirected); refetch there.
                 self.flush_pipeline();
+            } else if let Some(seq) = bus.swi_took_refill() {
+                // The real handler returns with `movs pc, lr`: the pipeline refills from the
+                // return address (N then S fetch in the caller's region).
+                self.regs.r[15] = next;
+                self.flush_pipeline();
+                self.refill_seq = seq;
             } else {
                 self.regs.r[15] = pc;
             }
