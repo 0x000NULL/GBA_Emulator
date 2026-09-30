@@ -14,8 +14,15 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   tests, 25 frontend tests, 2 ROM-driver tests (~60-80 s with the commercial ROMs present).
 - **Compat**: see the table below. Every priority title renders its title screen; KH and Minish
   Cap are verified controllable (LEFT/RIGHT/no-input runs diverge).
+- **mgba-suite is built and gated** (`suite.gba` via its `docker-build.sh`; 13 sub-suites in
+  `tests/golden.toml`, each pinned at its current score so any regression fails `cargo test`).
+  Scores after the 2026-09-30 merges: Memory 1544/1552, I/O read 130/130, Timing 1212/2020,
+  Timer count-up 471/936, Timer IRQ 69/90, Shifter/Carry/Multiply-long/BIOS-math all full,
+  DMA 1244/1244, SIO R/W 90/90, SIO timing 0/4, Misc edge 4/12.
 - **Open**: frontend audio only unit-tested (no audio device here); reference-emulator audio
-  comparison manual; mgba-suite gates blocked (needs devkitARM); prefetch/timing polish deferred.
+  comparison manual; game-pak prefetch buffer still missing (blocks the remaining Timing rows);
+  KH:CoM logs ~427k FIFO underruns during its intro cutscenes (title and gameplay windows are
+  clean, see "Known gaps").
 
 ## Milestone status
 
@@ -23,7 +30,7 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
 |---|---|---|---|
 | M0 | Workspace, contracts, harness, test suites fetched | `cargo build --workspace`; harness runs every golden entry | **DONE 2026-09-29** |
 | M1 | ARM7TDMI: all ARM+Thumb, modes, exceptions, flags | jsmolka `arm.gba`, `thumb.gba` | **DONE 2026-09-29**: 65 CPU unit tests; real 2-slot pipeline; mGBA-format trace |
-| M2 | Memory map, waitstates, DMA, timers, IRQ, HALTCNT | jsmolka `memory.gba`, `bios.gba`, `nes.gba`; mgba-suite memory/timing | **DONE (jsmolka side) 2026-09-29**; mgba-suite part blocked on a built `suite.gba` |
+| M2 | Memory map, waitstates, DMA, timers, IRQ, HALTCNT | jsmolka `memory.gba`, `bios.gba`, `nes.gba`; mgba-suite memory/timing | **DONE 2026-09-30**: jsmolka green; mgba-suite Memory 1544/1552, DMA 1244/1244, Timing 1212/2020 pinned (remaining rows need the prefetch buffer) |
 | M3 | PPU modes 0-5, OBJ, windows, blending, mosaic, timing | jsmolka ppu/* golden hashes; mgba-suite video | **DONE (jsmolka side) 2026-09-29**: goldens pinned, 56 PPU unit tests. Gaps: per-line OBJ cycle budget not modelled, OAM evaluated on the rendered line rather than one line early; mgba-suite video blocked as above |
 | M4 | BIOS HLE, every listed SWI | `bios.gba` under HLE; per-SWI unit tests | **DONE 2026-09-29**: `bios.gba` passes; all listed SWIs + IRQ vector/return emulation; 14 unit tests incl. LZ77/RL/Huffman encoder round trips. Sound-driver SWIs (1A-1E, 28, 29) are logged no-ops. LLE differential deferred (no BIOS image) |
 | M5 | Save detection, SRAM/Flash/EEPROM, `<rom>.sav` | jsmolka save/*; round trip | **DONE 2026-09-29**: none/sram/flash64/flash128 pass (flash entries need 400 frames: tests 10/11 program 64K bytes one command sequence each); 8 cart unit tests incl. EEPROM protocol; `.sav` persistence in the frontend |
@@ -37,9 +44,9 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
 |---|---|---|---|---|
 | Kingdom Hearts: Chain of Memories (USA) | B8CE | SRAM_F 32K | Battle tutorial, controllable; music plays | title 1800, gameplay 27400 |
 | Zelda: The Minish Cap (USA) | BZME | EEPROM 8K | Link's house with HUD, controllable | title 1800, gameplay 12000 |
-| Zelda: A Link to the Past & Four Swords (USA) | AZLE | EEPROM 512 | CHOOSE A FILE screen | 1800 |
+| Zelda: A Link to the Past & Four Swords (USA) | AZLE | EEPROM 512 | Link's house after the telepathy intro, controllable (DOWN walks Link to the door) | title 1800, gameplay 18000 |
 | Classic NES Series: Zelda (USA/EU) | FZLE | EEPROM (forced) | Story scroll (ROM mirroring, VRAM execution OK) | 1800 |
-| Classic NES Series: Zelda II (USA/EU) | FLBE | EEPROM (forced) | Title | 1800 |
+| Classic NES Series: Zelda II (USA/EU) | FLBE | EEPROM (forced) | Zelda's palace, controllable (LEFT walks Link out to the overworld) | title 1800, gameplay 4200 |
 | Initial D: Another Stage (J) | AINJ | SRAM 32K | Name entry, car select, story dialogue | title 1800 |
 | Final Fantasy IV Advance (USA) | | | Health warning screen; executes `swi 0xFF` (logged) | no |
 
@@ -49,9 +56,9 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
 - Reference emulator: portable mGBA 0.10.5 at `tools/mgba/mGBA-0.10.5-win64/`. Its Windows build has
   **no CLI debugger** (`-d`), only GDB (`-g`), and no headless audio dump, so trace diffing and audio
   comparison need a different build or a manual GUI session.
-- Test ROMs: `tools/tests/gba-tests` (jsmolka, prebuilt). `tools/tests/suite` is mgba's suite source;
-  it has no releases and needs devkitARM (or its `docker-build.sh`) to build. Drop a built
-  `suite.gba` at `tools/tests/suite/suite.gba` and remove the `skip` in `tests/golden.toml` to enable it.
+- Test ROMs: `tools/tests/gba-tests` (jsmolka, prebuilt). `tools/tests/suite` is mgba's suite source
+  plus `suite.gba` built with its `docker-build.sh` (devkitARM in Docker). Without that file the
+  13 suite entries in `tests/golden.toml` fail; rebuild it with the script if `tools/` is wiped.
 - The development session was RDP without an audio endpoint: cpal's stream, audio-clocked pacing and
   the underrun counter have unit tests only. Verify once at a console: `cargo run --release -p gba-frontend -- <rom>`,
   title bar should show `59.7 fps` with underruns at 0. Hidden flag `--exit-after N` ends a windowed
@@ -77,6 +84,32 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   differences possible); division by zero returns mGBA's values instead of hanging.
 - Cartridge: no GPIO/RTC (none of the target games use it); SRAM open-bus when the backend is EEPROM
   reads 0xFF.
+- Audio: KH:CoM reports ~427k FIFO underruns over the 27400-frame new-game run, all in frames
+  1800-12000 (the post-title intro: 230k in 1800-6000, 197k in 6000-12000, ~55 per frame); frames
+  1200-1800, 12000-18000 and 25000-27400 are clean. Not yet triaged: could be the game stopping
+  DMA while the FIFO timer keeps running (harmless) or a real starvation.
+  ALttP shows 1910 over 18000 frames, Zelda II 43452 over 4200 (Classic NES sound driver).
+
+## Fix log (timers and DMA, 2026-09-30)
+Two parallel agent branches, merged after each passed its unit tests and improved its suite rows
+with no regression elsewhere (jsmolka, other suite rows, commercial goldens all unchanged):
+- **Timers** (`timers.rs`, `irq.rs`): the prescaler is a free-running divider of the system clock
+  (phase not reset on start); a 0->1 start write loads the reload and counts from `W + 2`; a
+  TMxCNT_L write on the same clock edge as an overflow is not seen by that overflow; a control
+  write landing on a due-but-undispatched overflow is applied after it; an overflow's IRQ reaches
+  the CPU 3 cycles after IF is set (`IrqController` now keeps a CPU-side `line` separate from
+  `if_`, and an ack before the line asserts drops the request). Timer count-up 370 -> 471/936,
+  Timer IRQ 0 -> 69/90.
+- **DMA** (`dma.rs`, `bus/dma_exec.rs`, `bus/mod.rs`): each channel keeps a read latch; reads
+  from 00000000-01FFFFFF (where DMA0's 27-bit source puts ROM addresses) return the latch instead
+  of the CPU open bus; a game-pak source increments whatever the source control says; an
+  immediate start whose 2-cycle latency elapsed before a CPU data access takes the bus first
+  (`Bus::arbitrate`). Memory 1205 -> 1544/1552, DMA 1056 -> 1244/1244, Timing +130.
+- **CpuSet/CpuFastSet HLE**: reject any source below 02000000h (not just below 4000h); pass
+  unaligned addresses through with LDRH rotation / LDM non-rotation semantics; SRAM byte lanes.
+- Two compat goldens (KH gameplay 27400, ALttP title 1800) were already stale on the pre-merge
+  tree (the CPU-timing and IO merges shifted them without a re-pin); verified against a baseline
+  build of 4e25e6f, PNGs reviewed, re-pinned.
 
 ## Fix log (CPU timing, 2026-09-30)
 mgba-suite "Timing tests" 408/2020 -> 1082/2020. Every variant without prefetch now matches
@@ -113,8 +146,10 @@ hardware except the timer-start offset, HLE BIOS calls and DMA-during-fetch (all
 
 ## Next steps, in order of value
 1. Console check of frontend audio (see Environment facts).
-2. Build `suite.gba` (Docker + devkitARM) to unblock the mgba-suite memory/timing/video gates, then
-   the deferred M8 work (prefetch buffer, timing) has a measurable gate.
-3. Deeper compat runs: ALttP into gameplay (H-Blank register tricks), Initial D into a race
-   (affine road), Zelda II past the title; pin goldens in `tests/compat.toml`.
-4. Investigate FF IV Advance's `swi 0xFF` (what the real BIOS does for out-of-range SWI numbers).
+2. Game-pak prefetch buffer (WAITCNT bit 14): every remaining Timing row with prefetch on, plus
+   the Timer count-up / Timer IRQ rows that depend on ROM fetch timing.
+3. Triage the KH intro FIFO underruns (see Known gaps): capture `--pcm` over frames 1800-6000
+   and listen / inspect for dropouts.
+4. Initial D into a race (affine road, H-Blank scroll writes); Classic NES Zelda 1 past the story
+   scroll; pin goldens in `tests/compat.toml`.
+5. Investigate FF IV Advance's `swi 0xFF` (what the real BIOS does for out-of-range SWI numbers).

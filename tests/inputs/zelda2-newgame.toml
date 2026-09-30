@@ -1,0 +1,21 @@
+# Classic NES Series: Zelda II (USA, Europe): title START -> SELECT screen START (REGISTER YOUR NAME) ->
+# letter A -> SELECT x3 moves the cursor to END -> START -> file 1 START -> Zelda's palace, Link controllable
+# from ~3500 (golden at 4200).
+steps = [
+  { frame = 1900, press = "START" },
+  { frame = 1905, release = "START" },
+  { frame = 2200, press = "START" },
+  { frame = 2205, release = "START" },
+  { frame = 2400, press = "A" },
+  { frame = 2405, release = "A" },
+  { frame = 2600, press = "SELECT" },
+  { frame = 2605, release = "SELECT" },
+  { frame = 2700, press = "SELECT" },
+  { frame = 2705, release = "SELECT" },
+  { frame = 2800, press = "SELECT" },
+  { frame = 2805, release = "SELECT" },
+  { frame = 3000, press = "START" },
+  { frame = 3005, release = "START" },
+  { frame = 3300, press = "START" },
+  { frame = 3305, release = "START" },
+]

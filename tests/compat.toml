@@ -2,7 +2,8 @@
 # gitignored, so these entries are skipped on machines without the ROMs). Golden hashes are pinned
 # from runs whose PNG was reviewed; `frames` is the frame at which the screen was captured.
 # Run one entry: cargo run -p gba-test -- "<path>" --frames N --png out.png
-# Pinned 2026-09-29 (HLE BIOS, commit after M1-M5 + DMA preemption).
+# Pinned 2026-09-29; KH gameplay and ALttP re-pinned 2026-09-30 after the CPU-timing, IO, DMA and timer
+# merges (PNGs reviewed: battle tutorial prompt, CHOOSE A FILE).
 
 [defaults]
 hash = "xxh3-64"
@@ -18,7 +19,7 @@ note = "title screen with PRESS START; B8CE, 32 MB, SRAM_F_V103"
 path = "Games/Kingdom Hearts - Chain of Memories (USA).zip"
 frames = 27400
 input_file = "tests/inputs/khcom-newgame.toml"
-golden = "547ba26f4f07dbed"
+golden = "bd457b296090a4b6"
 note = "M6 gate: new game -> intro -> Castle Oblivion -> battle tutorial (player has control from ~25000)"
 
 [[rom]]
@@ -35,8 +36,15 @@ note = "new game -> name entry -> intro -> Link's house with HUD; player control
 
 [[rom]]
 path = "Games/Legend of Zelda, The - A Link to the Past & Four Swords (USA).zip"
-golden = "64039080c5b1d75c"
+golden = "69dc8b92378f1f29"
 note = "CHOOSE A FILE screen; AZLE, EEPROM 512"
+
+[[rom]]
+path = "Games/Legend of Zelda, The - A Link to the Past & Four Swords (USA).zip"
+frames = 18000
+input_file = "tests/inputs/alttp-newgame.toml"
+golden = "760ca2a46d8cca65"
+note = "new game -> name entry -> ALttP -> opening story -> Link's house after Zelda's message; player control verified (DOWN walks Link to the door)"
 
 [[rom]]
 path = "Games/Classic NES Series - The Legend of Zelda (USA, Europe).zip"
@@ -47,6 +55,13 @@ note = "story scroll; FZLE, anti-emulation: ROM mirroring, VRAM execution, STM w
 path = "Games/Classic NES Series - Zelda II - The Adventure of Link (USA, Europe).zip"
 golden = "c8dd189546cc6a19"
 note = "FLBE, same tricks as Zelda 1"
+
+[[rom]]
+path = "Games/Classic NES Series - Zelda II - The Adventure of Link (USA, Europe).zip"
+frames = 4200
+input_file = "tests/inputs/zelda2-newgame.toml"
+golden = "7aa89ad695f0afa6"
+note = "title -> register name -> file 1 -> Zelda's palace; player control verified (LEFT walks Link out to the overworld)"
 
 [[rom]]
 path = "Games/Initial D - Another Stage (Japan).zip"
