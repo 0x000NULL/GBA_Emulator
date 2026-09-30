@@ -2,7 +2,8 @@
 //!
 //! gba-test <rom|zip> --frames N [--golden HEX] [--check jsmolka|mgba-suite] [--reg r12]
 //!          [--input script.toml] [--trace [file]] [--trace-hash] [--break PC] [--watch LO..HI]
-//!          [--exit-on-swi N] [--dump-io] [--png out.png] [--pcm out.wav] [--record] [--bios file]
+//!          [--exit-on-swi N] [--dump-io] [--png out.png] [--png-every N] [--pcm out.wav] [--record]
+//!          [--bios file] [--hle] [--stats-from F] [--save-state f] [--load-state f]
 //! Exit code: 0 pass, 1 fail, 2 error.
 
 use anyhow::{anyhow, Result};
@@ -62,7 +63,10 @@ struct Cli {
     /// Write the final framebuffer as PNG.
     #[arg(long)]
     png: Option<PathBuf>,
-    /// Write captured audio as WAV (32768 Hz stereo).
+    /// Also write a PNG every N frames as `<png stem>-<frame>.png` (stem defaults to `frame`).
+    #[arg(long, value_name = "N")]
+    png_every: Option<u32>,
+    /// Write captured audio as WAV (stereo at the SOUNDBIAS sample rate).
     #[arg(long)]
     pcm: Option<PathBuf>,
     /// Print a golden.toml stanza for this run.
@@ -199,6 +203,14 @@ fn run() -> Result<bool> {
             }
         }
         log.append(&mut gba.take_debug_log());
+        if let Some(n) = cli.png_every {
+            if n > 0 && (f + 1) % n == 0 {
+                let stem = cli.png.clone().unwrap_or_else(|| PathBuf::from("frame.png")).with_extension("");
+                let path = PathBuf::from(format!("{}-{:05}.png", stem.display(), f + 1));
+                write_png(&path, &gba.bus.ppu.fb[..])?;
+                println!("png={} frame={}", path.display(), f + 1);
+            }
+        }
         if cli.pcm.is_some() {
             gba.drain_audio(&mut audio);
         } else {

@@ -1,6 +1,6 @@
 //! Scripted input: a list of `{frame, press|release}` steps applied before the given frame runs.
 //! Files are TOML: `steps = [{ frame = 4, press = "A" }, { frame = 6, release = "A" }]`.
-//! Also accepts `hold = "START"` (press) and multiple keys separated by `+` ("A+START").
+//! Several keys may be combined with `+` ("A+START"). A press stays held until an explicit release.
 
 use crate::golden::InputStep;
 use anyhow::{anyhow, Result};
