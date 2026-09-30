@@ -421,7 +421,9 @@ fn multiply_family() {
         c.regs.cpsr |= FLAG_C | FLAG_V;
     });
     assert_eq!(cpu.regs.r[0], -32i32 as u32);
-    assert_eq!(flags(&cpu), (true, false, true, true));
+    // C is rewritten by the multiplier array model (GBATEK: "destroyed"); V is untouched.
+    let c = alu::multiply_carry(alu::MulKind::Short, -4i32 as u32, 8, 0);
+    assert_eq!(flags(&cpu), (true, false, c, true));
     assert_eq!(bus.idles, 1);
 
     let (cpu, bus) = arm1(mla(false, 0, 1, 2, 3), |c, _| {

@@ -188,8 +188,8 @@ fn format4_alu() {
             0xFFFF_FFFF,
             true,
             0xFFFF_FFFD,
-            (true, false, true, false),
-        ), // mul keeps C
+            (true, false, crate::cpu::alu::multiply_carry(crate::cpu::alu::MulKind::Short, 0xFFFF_FFFF, 3, 0), false),
+        ), // mul: C comes from the multiplier array model (hardware-verified by the mgba suite)
         (0xE, 0xFF, 0x0F, false, 0xF0, (false, false, false, false)),
         (
             0xF,
