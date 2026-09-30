@@ -90,7 +90,7 @@ path = "suite/suite.gba"
 check = "mgba-suite"
 frames = 600
 input_file = "tests/inputs/suite/suite-01-io-read.toml"
-expect = "42/130"
+expect = "130/130"
 note = "I/O read tests"
 
 [[rom]]
@@ -162,7 +162,7 @@ path = "suite/suite.gba"
 check = "mgba-suite"
 frames = 600
 input_file = "tests/inputs/suite/suite-10-sio-read.toml"
-expect = "7/90"
+expect = "90/90"
 note = "SIO register R/W tests"
 
 [[rom]]

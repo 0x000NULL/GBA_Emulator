@@ -22,6 +22,8 @@ pub enum Event {
     KeypadPoll,
     /// One-instruction IRQ line latency, if a test demands it.
     IrqLatch,
+    /// A normal-mode serial transfer has shifted its last bit (`Sio::on_complete`).
+    SioComplete,
 }
 
 #[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
