@@ -308,6 +308,8 @@ fn sio_normal_transfer_through_bus() {
     b.write8(0x0400_0128, 0x81, Access::N);
     assert!(b.sio.busy);
     assert_eq!(b.sched.time_of(Event::SioComplete), Some(b.sched.now + 32 * 64));
+}
+
 /// Program `ch` for an immediate transfer of `count` units and enable it (the start is due 2
 /// cycles later).
 fn start_dma(b: &mut Bus, ch: u32, src: u32, dst: u32, count: u16, cnt_h: u16) {
