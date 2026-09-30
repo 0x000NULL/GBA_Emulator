@@ -199,6 +199,26 @@ impl Bus {
         self.sched.now += cycles as u64;
     }
 
+    /// Bus arbitration for a CPU data access. An immediate DMA whose 2-cycle start latency
+    /// (GBATEK "DMA Start Timing") elapsed on an earlier cycle owns the bus first: the CPU's
+    /// access completes after the transfer and sees its result. Without this, the instruction
+    /// that follows the enable write would read the destination before the (event-driven) DMA
+    /// runs, because the CPU is stepped one whole instruction at a time (mgba-suite memory tests
+    /// "DMAn 16/32" stores). An access on the very cycle the latency ends still belongs to the
+    /// CPU: with code in IWRAM the timer read right after the enable write lands there, and the
+    /// mgba-suite timing tests ("Trivial DMA", IWRAM column) expect it to precede the transfer.
+    /// Opcode fetches are not arbitrated: they cannot observe the transfer and the total cycle
+    /// count is the same either way.
+    #[inline]
+    fn arbitrate(&mut self) {
+        if self.sched.now > self.dma.next_start && !self.in_dma {
+            let Bus { sched, dma, .. } = self;
+            if dma.fire_due_starts(sched) && dma.pending != 0 {
+                self.dma_run();
+            }
+        }
+    }
+
     // ---------------------------------------------------------------- raw region access
 
     #[inline]
@@ -259,8 +279,9 @@ impl Bus {
             0x04 => self.io_read16(a),
             0x08..=0x0D => self.cart.read16(a),
             0x0E | 0x0F => {
-                // 8-bit bus: byte replicated on both lanes.
-                let b = self.cart.save_read8(a) as u16;
+                // 8-bit bus: the byte the (unaligned) address selects, replicated on both lanes;
+                // the CPU then applies its usual misaligned rotation (mgba-suite "SRAM load").
+                let b = self.cart.save_read8(addr) as u16;
                 b | b << 8
             }
             _ => self.peek16(a),
@@ -273,7 +294,7 @@ impl Bus {
             0x04 => self.io_read32(a),
             0x08..=0x0D => self.cart.read32(a),
             0x0E | 0x0F => {
-                let b = self.cart.save_read8(a) as u32;
+                let b = self.cart.save_read8(addr) as u32;
                 b * 0x0101_0101
             }
             _ => self.peek32(a),
@@ -424,6 +445,7 @@ impl MemoryBus for Bus {
     fn read8(&mut self, addr: u32, a: Access) -> u8 {
         let c = self.wait(addr, 1, a);
         self.tick(c);
+        self.arbitrate();
         let v = self.read8_inner(addr);
         if self.debug.enabled {
             self.debug.check_read(addr, 1);
@@ -435,6 +457,7 @@ impl MemoryBus for Bus {
     fn read16(&mut self, addr: u32, a: Access) -> u16 {
         let c = self.wait(addr, 2, a);
         self.tick(c);
+        self.arbitrate();
         let v = self.read16_inner(addr);
         if self.debug.enabled {
             self.debug.check_read(addr, 2);
@@ -446,6 +469,7 @@ impl MemoryBus for Bus {
     fn read32(&mut self, addr: u32, a: Access) -> u32 {
         let c = self.wait(addr, 4, a);
         self.tick(c);
+        self.arbitrate();
         let v = self.read32_inner(addr);
         if self.debug.enabled {
             self.debug.check_read(addr, 4);
@@ -457,6 +481,7 @@ impl MemoryBus for Bus {
     fn write8(&mut self, addr: u32, v: u8, a: Access) {
         let c = self.wait(addr, 1, a);
         self.tick(c);
+        self.arbitrate();
         if self.debug.enabled {
             self.debug.check_write(addr, 1, v as u32);
         }
@@ -467,6 +492,7 @@ impl MemoryBus for Bus {
     fn write16(&mut self, addr: u32, v: u16, a: Access) {
         let c = self.wait(addr, 2, a);
         self.tick(c);
+        self.arbitrate();
         if self.debug.enabled {
             self.debug.check_write(addr, 2, v as u32);
         }
@@ -477,6 +503,7 @@ impl MemoryBus for Bus {
     fn write32(&mut self, addr: u32, v: u32, a: Access) {
         let c = self.wait(addr, 4, a);
         self.tick(c);
+        self.arbitrate();
         if self.debug.enabled {
             self.debug.check_write(addr, 4, v);
         }

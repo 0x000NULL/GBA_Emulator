@@ -196,8 +196,19 @@ impl Bus {
         regs.r[15] = regs.r[15].wrapping_sub(if regs.thumb() { 2 } else { 4 });
     }
 
+    /// The BIOS copy routines "silently reject to do anything if the source start or end
+    /// addresses are reaching into the BIOS area" (GBATEK BIOS Memory Copy). The real check is
+    /// against the start of EWRAM: a source at 0x10000 or 0x01000000 is rejected too (mgba-suite
+    /// "BIOS out-of-bounds load" / "Out-of-bounds load" expect the destination untouched).
+    fn cpu_set_source_rejected(src: u32, span: u32) -> bool {
+        src < 0x0200_0000 || src.wrapping_add(span) < 0x0200_0000
+    }
+
     /// CpuSet: r0 src, r1 dst, r2 = count (bits 0-20) | fixed-source fill (bit 24) | 32-bit (bit 26).
-    /// Silently rejected when the source range touches the BIOS.
+    /// Addresses are passed to the bus unaligned, exactly as the BIOS loop does: the 16-bit loop
+    /// is LDRH/STRH, so an odd source yields the aligned halfword rotated right by 8 and STRH
+    /// stores its low half; the 32-bit loop is LDMIA/STMIA, which never rotates. RAM ignores the
+    /// low address bits, the 8-bit SRAM bus uses them to pick the byte lane.
     fn hle_cpu_set(&mut self, regs: &mut Regs) {
         let mut src = regs.r[0];
         let mut dst = regs.r[1];
@@ -205,13 +216,10 @@ impl Bus {
         let count = ctl & 0x1F_FFFF;
         let fill = ctl & (1 << 24) != 0;
         let word = ctl & (1 << 26) != 0;
-        let span = if fill { 0 } else { count * if word { 4 } else { 2 } };
-        if src < 0x4000 || src.wrapping_add(span) < 0x4000 {
+        if Self::cpu_set_source_rejected(src, count * if word { 4 } else { 2 }) {
             return;
         }
         if word {
-            src &= !3;
-            dst &= !3;
             for _ in 0..count {
                 let v = self.read32(src, Access::S);
                 self.write32(dst, v, Access::S);
@@ -221,11 +229,10 @@ impl Bus {
                 dst = dst.wrapping_add(4);
             }
         } else {
-            src &= !1;
-            dst &= !1;
             for _ in 0..count {
-                let v = self.read16(src, Access::S);
-                self.write16(dst, v, Access::S);
+                let v = self.read16(src, Access::S) as u32;
+                let v = if src & 1 != 0 { v.rotate_right(8) } else { v };
+                self.write16(dst, v as u16, Access::S);
                 if !fill {
                     src = src.wrapping_add(2);
                 }
@@ -235,13 +242,14 @@ impl Bus {
     }
 
     /// CpuFastSet: 32-bit units in blocks of 8 words; count rounded up to a multiple of 8.
+    /// LDMIA/STMIA, so unaligned addresses are passed through unrotated like the 32-bit CpuSet.
     fn hle_cpu_fast_set(&mut self, regs: &mut Regs) {
-        let mut src = regs.r[0] & !3;
-        let mut dst = regs.r[1] & !3;
+        let mut src = regs.r[0];
+        let mut dst = regs.r[1];
         let ctl = regs.r[2];
         let count = ((ctl & 0x1F_FFFF) + 7) & !7;
         let fill = ctl & (1 << 24) != 0;
-        if src < 0x4000 || (!fill && src.wrapping_add(count * 4) < 0x4000) {
+        if Self::cpu_set_source_rejected(src, count * 4) {
             return;
         }
         for _ in 0..count {
@@ -1092,6 +1100,64 @@ mod tests {
         // Source in BIOS is rejected.
         swi(&mut b, swi::CPU_SET, [0x0000_0000, 0x0200_4000, 4, 0]);
         assert_eq!(peek(&b, 0x0200_4000, 8), vec![0; 8]);
+    }
+
+    #[test]
+    fn cpu_set_rejects_any_source_below_ewram() {
+        let mut b = bus();
+        b.write32(0x0200_4000, 0x1111_1111, Access::N);
+        // BIOS mirror space, the unused area and a range whose end reaches back into them.
+        for src in [0x0001_0000u32, 0x0100_0000, 0x01FF_FFF0] {
+            swi(&mut b, swi::CPU_SET, [src, 0x0200_4000, 8, 0]);
+            swi(&mut b, swi::CPU_SET, [src, 0x0200_4000, 8 | (1 << 26), 0]);
+            swi(&mut b, swi::CPU_FAST_SET, [src, 0x0200_4000, 8, 0]);
+        }
+        assert_eq!(b.peek32(0x0200_4000), 0x1111_1111, "destination untouched");
+        // The first EWRAM word is the lowest accepted source.
+        swi(&mut b, swi::CPU_SET, [0x0200_0000, 0x0200_4000, 1 | (1 << 26), 0]);
+        assert_eq!(b.peek32(0x0200_4000), b.peek32(0x0200_0000));
+    }
+
+    #[test]
+    fn cpu_set_unaligned_source_follows_ldrh_and_ldm_semantics() {
+        let mut b = bus();
+        b.write32(0x0200_0000, 0xDEAD_BEEF, Access::N);
+        b.write32(0x0200_0004, 0x3333_3333, Access::N);
+        // 16-bit copy from src+1: LDRH rotates the aligned halfword (0xBEEF -> 0xEF0000BE) and
+        // STRH keeps the low half, so the destination word becomes 0x00DE00BE (mgba-suite
+        // "ROM load swi B 16 (unaligned)" pattern).
+        swi(&mut b, swi::CPU_SET, [0x0200_0001, 0x0200_1000, 8, 0]);
+        assert_eq!(b.peek32(0x0200_1000), 0x00DE_00BE);
+        // 32-bit copy (LDMIA) from src+1..+3: no rotation, the aligned word is copied.
+        for off in 1..4 {
+            swi(&mut b, swi::CPU_SET, [0x0200_0000 + off, 0x0200_2000, 8 | (1 << 26), 0]);
+            assert_eq!(b.peek32(0x0200_2000), 0xDEAD_BEEF, "CpuSet 32 unaligned {off}");
+            swi(&mut b, swi::CPU_FAST_SET, [0x0200_0000 + off, 0x0200_3000, 8, 0]);
+            assert_eq!(b.peek32(0x0200_3000), 0xDEAD_BEEF, "CpuFastSet unaligned {off}");
+        }
+        // An unaligned destination is aligned by RAM (STM/STRH ignore the low bits).
+        swi(&mut b, swi::CPU_SET, [0x0200_0000, 0x0200_4002, 2 | (1 << 26), 0]);
+        assert_eq!(b.peek32(0x0200_4000), 0xDEAD_BEEF);
+        assert_eq!(b.peek32(0x0200_4004), 0x3333_3333);
+    }
+
+    #[test]
+    fn cpu_set_on_the_sram_bus_uses_the_byte_lane_the_address_selects() {
+        let rom = vec![0u8; 0x100];
+        let mut b = Bus::new(Cartridge::new(rom, Some(crate::cart::SaveType::Sram32K)).unwrap(), Bios::hle());
+        poke(&mut b, 0x0E00_0000, b"Game Boy");
+        // 16-bit copy from SRAM+1: bytes 'a' and 'e' each replicated, rotated, low half stored.
+        swi(&mut b, swi::CPU_SET, [0x0E00_0001, 0x0200_1000, 2, 0]);
+        assert_eq!(b.peek32(0x0200_1000), 0x0065_0061);
+        // 32-bit copy from SRAM+2: the byte at +2 replicated on all lanes.
+        swi(&mut b, swi::CPU_SET, [0x0E00_0002, 0x0200_2000, 1 | (1 << 26), 0]);
+        assert_eq!(b.peek32(0x0200_2000), 0x6D6D_6D6D);
+        swi(&mut b, swi::CPU_FAST_SET, [0x0E00_0003, 0x0200_3000, 8, 0]);
+        assert_eq!(b.peek32(0x0200_3000), 0x6565_6565);
+        // 32-bit store to SRAM+1 writes only the byte lane the address selects.
+        b.write32(0x0200_0000, 0xA5B6_C7D8, Access::N);
+        swi(&mut b, swi::CPU_SET, [0x0200_0000, 0x0E00_0001, 1 | (1 << 26), 0]);
+        assert_eq!(peek(&b, 0x0E00_0000, 2), vec![b'G', 0xC7]);
     }
 
     #[test]
