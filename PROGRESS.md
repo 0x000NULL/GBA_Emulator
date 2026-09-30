@@ -20,9 +20,9 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   Timer count-up 582/936, Timer IRQ 90/90, Shifter/Carry/Multiply-long/BIOS-math all full,
   DMA 1244/1244, SIO R/W 90/90, SIO timing 0/4, Misc edge 4/12.
 - **Open**: frontend audio only unit-tested (no audio device here); reference-emulator audio
-  comparison manual; game-pak prefetch buffer still missing (blocks the remaining Timing rows);
-  KH:CoM's whole 27400-frame new-game run is FIFO-underrun-free apart from a handful at scene
-  changes (was ~427k before the HLE service hook, see the 2026-09-30 fix log).
+  comparison manual; Timing 1816/2020 with the prefetch buffer (the rest: HLE BIOS call timing
+  and ROM-to-ROM DMA); KH:CoM's whole 27400-frame new-game run is FIFO-underrun-free apart from
+  a handful at scene changes (was ~427k before the HLE service hook, see the 2026-09-30 fix log).
 
 ## Milestone status
 
@@ -30,13 +30,13 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
 |---|---|---|---|
 | M0 | Workspace, contracts, harness, test suites fetched | `cargo build --workspace`; harness runs every golden entry | **DONE 2026-09-29** |
 | M1 | ARM7TDMI: all ARM+Thumb, modes, exceptions, flags | jsmolka `arm.gba`, `thumb.gba` | **DONE 2026-09-29**: 65 CPU unit tests; real 2-slot pipeline; mGBA-format trace |
-| M2 | Memory map, waitstates, DMA, timers, IRQ, HALTCNT | jsmolka `memory.gba`, `bios.gba`, `nes.gba`; mgba-suite memory/timing | **DONE 2026-09-30**: jsmolka green; mgba-suite Memory 1544/1552, DMA 1244/1244, Timing 1212/2020 pinned (remaining rows need the prefetch buffer) |
+| M2 | Memory map, waitstates, DMA, timers, IRQ, HALTCNT | jsmolka `memory.gba`, `bios.gba`, `nes.gba`; mgba-suite memory/timing | **DONE 2026-09-30**: jsmolka green; mgba-suite Memory 1544/1552, DMA 1244/1244, Timing 1212/2020 pinned (1816/2020 after the prefetch buffer, see the prefetch fix log) |
 | M3 | PPU modes 0-5, OBJ, windows, blending, mosaic, timing | jsmolka ppu/* golden hashes; mgba-suite video | **DONE (jsmolka side) 2026-09-29**: goldens pinned, 56 PPU unit tests. Gaps: per-line OBJ cycle budget not modelled, OAM evaluated on the rendered line rather than one line early; mgba-suite video blocked as above |
 | M4 | BIOS HLE, every listed SWI | `bios.gba` under HLE; per-SWI unit tests | **DONE 2026-09-29**: `bios.gba` passes; all listed SWIs + IRQ vector/return emulation; 14 unit tests incl. LZ77/RL/Huffman encoder round trips. Sound-driver SWIs (1A-1E, 28, 29) are logged no-ops. LLE differential deferred (no BIOS image) |
 | M5 | Save detection, SRAM/Flash/EEPROM, `<rom>.sav` | jsmolka save/*; round trip | **DONE 2026-09-29**: none/sram/flash64/flash128 pass (flash entries need 400 frames: tests 10/11 program 64K bytes one command sequence each); 8 cart unit tests incl. EEPROM protocol; `.sav` persistence in the frontend |
 | M6 | KH:CoM title -> new game -> first room | title golden + input script | **DONE 2026-09-29**: see "Where things stand". Other priority titles reach title/file screens; Minish Cap reaches gameplay (golden + script) |
 | M7 | APU PSG + FIFO + mixing | PCM capture vs mGBA | **DONE (underrun half) 2026-09-29**: 70 APU unit tests; KH title capture (`--pcm`, 65536 Hz) has 0 underruns over frames 1200-1800, clean stereo music, no clipping. **Reference comparison deferred** (manual: `scripts/compare-wav.py`) |
-| M8 | Prefetch, timing polish, savestates, fast-forward | mgba-suite timing improves | **PARTIAL 2026-09-29**: savestates (feature `savestate`, ~429 KB, KH resume bit-exact vs straight run; F1/F3; harness `--save-state/--load-state`), Tab fast-forward, audio-clocked pacing, ~1900 fps headless release on KH. **Deferred**: game-pak prefetch buffer, per-instruction timing refinement (no runnable gate) |
+| M8 | Prefetch, timing polish, savestates, fast-forward | mgba-suite timing improves | **PARTIAL 2026-09-29**: savestates (feature `savestate`, ~429 KB, KH resume bit-exact vs straight run; F1/F3; harness `--save-state/--load-state`), Tab fast-forward, audio-clocked pacing, ~1900 fps headless release on KH. game-pak prefetch buffer landed 2026-09-30 (`bus/prefetch.rs`). **Deferred**: per-instruction timing refinement (no runnable gate) |
 
 ## Compatibility (headless, HLE BIOS)
 
@@ -87,9 +87,9 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   returns). Tight-loop results are 2 ticks high and loose-loop results 3 ticks low, so the
   question is which instruction, if any, executes between the exception return and taking the
   next pending IRQ, not a constant latency. Not investigated further.
-- CPU: MUL/MLA leave C unchanged (GBATEK says "destroyed"); no game-pak prefetch buffer (WAITCNT
-  bit 14 ignored), so every mgba-suite timing variant with prefetch on ("P..", "PN.", "P.S",
-  "PNS") still fails; HLE SWIs cost no cycles (BIOS Div/Sqrt/ArcTan/CpuSet timing rows).
+- CPU: MUL/MLA leave C unchanged (GBATEK says "destroyed"); HLE SWIs cost no cycles (BIOS
+  Div/Sqrt/ArcTan/CpuSet timing rows). Prefetch buffer: the data-access stall rule is empirical
+  (see the prefetch fix log) and ROM-to-ROM DMA timing rows still fail in every column.
 - BIOS HLE: BgAffineSet/ObjAffineSet use f64 trig instead of the BIOS sine table (tiny rounding
   differences possible); division by zero returns mGBA's values instead of hanging.
 - Cartridge: no GPIO/RTC (none of the target games use it); SRAM open-bus when the backend is EEPROM
@@ -130,6 +130,37 @@ the DMA halts the CPU at whatever bus cycle the request arrives. Fix: `Bus::hle_
 once per unit inside every HLE copy/decompression loop, dispatches due events and runs pending
 DMA. Intro windows: 230154 -> 1 and 196520 -> 2 underruns. Pinned by
 `cpu_fast_set_services_fifo_dma_while_copying` (fails with the hook disabled).
+
+## Fix log (game pak prefetch buffer, 2026-09-30)
+mgba-suite "Timing tests" 1212/2020 -> 1816/2020; every other suite row unchanged (Memory 1544/1552,
+I/O 130/130, Timer count-up 471/936, Timer IRQ 69/90, Shifter 140, Carry 93, Multiply long 72, BIOS
+math 615, DMA 1244/1244, SIO 90/90 and 0/4, Misc 4/12). No variant that passed before fails now.
+Every Timing row with prefetch on passes except BIOS Div/Sqrt/ArcTan/CpuSet (HLE SWIs cost no
+cycles) and the ROM-to-ROM DMA rows (fail in every column, pre-existing).
+- `bus/prefetch.rs`, lazy model (no per-cycle stepping): head address, completed halfwords (max 8)
+  and the completion time of the in-flight one. A ROM opcode fetch at the head costs 1 cycle if the
+  halfword landed, else the wait for the in-flight one; anything else is a normal N/S access that
+  restarts the buffer behind it (first halfword S cost, the rest back to back). The prefetcher
+  stops at a 128K block edge. `Bus::fetch_cost` routes ROM fetches there only when WAITCNT bit 14
+  is set; a fetch from RAM/BIOS, a WAITCNT write clearing bit 14 or any game pak data access
+  (ROM or SRAM, including DMA) drops the buffer. `Cpu::next_fetch_n` and the CPU contract are
+  untouched (with the buffer on the bus decides by address and ignores the flag on a hit).
+- A 32-bit ARM opcode is handed over in one cycle once its second halfword has landed
+  (`pf_take_n`); charging one cycle per halfword left every ARM internal-cycle row (MUL, long MUL,
+  LDM/STM) one cycle slow.
+- A halfword the prefetcher would start on the very cycle the CPU wants the bus loses the
+  arbitration (no stall). Otherwise a CPU data access to the pak waits for the in-flight halfword
+  only when it is in its last cycle (remaining <= 1); with two or more cycles left it cancels it
+  for free (LDM running off OAM into ROM, P.. and PN. columns). A DMA access always waits one
+  cycle for a halfword under way (DMA to ROM, same columns). Neither rule is derived from a bus
+  diagram: they are the smallest rules that satisfy every Timing row, and a blanket "wait for the
+  whole halfword" (GBATEK's wording) fails the LDM-to-ROM rows.
+- Savestate version bumped to 3 (new `Bus::pf`). Unit tests: `bus/prefetch_tests.rs`.
+- Compat goldens KH gameplay (frame 27400) and ALttP file-select (frame 1800) shifted with the new
+  timing; PNGs reviewed (KH battle tutorial with control, ALttP CHOOSE A FILE), re-pinned.
+- Headless speed on KH (`--bench 1200`): 1847 fps before, about 1600-1640 after (the buffer adds
+  work to every ROM opcode fetch; 1808 with WAITCNT bit 14 forced off, the rest being the extra
+  checks on the fetch and data paths).
 
 ## Fix log (timers and DMA, 2026-09-30)
 Two parallel agent branches, merged after each passed its unit tests and improved its suite rows
@@ -187,8 +218,7 @@ hardware except the timer-start offset, HLE BIOS calls and DMA-during-fetch (all
 
 ## Next steps, in order of value
 1. Console check of frontend audio (see Environment facts).
-2. Game-pak prefetch buffer (WAITCNT bit 14): every remaining Timing row with prefetch on, plus
-   the Timer count-up / Timer IRQ rows that depend on ROM fetch timing.
-3. Initial D into a race (affine road, H-Blank scroll writes); Classic NES Zelda 1 past the story
-   scroll; pin goldens in `tests/compat.toml`.
-4. FF IV Advance: script New Game into gameplay and pin a golden (title reached 2026-09-30).
+2. Timing rows still open: HLE BIOS call cycle costs (Div/Sqrt/ArcTan/CpuSet) and ROM-to-ROM DMA;
+   Timer count-up "2i" rows (see Known gaps).
+3. Initial D garage screens (phone, driving technique) render blank content areas: verify and fix
+   (see Known gaps); FF IV Advance: script New Game into gameplay and pin a golden.

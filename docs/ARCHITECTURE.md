@@ -41,7 +41,8 @@ through: RAM regions align them, the 8-bit SRAM/Flash bus uses the low bits to p
   preceding opcode. After a data access (STR/STM: the datasheet's "2N") or an internal cycle
   (LDR/LDM/MUL/shift-by-register: GBATEK's "prefetch disable bug") it passes `N`, and the first
   halfword of every 128K game pak block is `N` for fetches and LDM/STM words alike. With the
-  prefetch buffer enabled the bus decides ROM opcode-fetch cost by address and may ignore the flag.
+  prefetch buffer enabled (WAITCNT bit 14, `bus/prefetch.rs`) the bus decides ROM opcode-fetch cost
+  by address and ignores the flag on a buffer hit; a miss uses the flag as usual.
 
 ## Scheduler and main loop
 `Scheduler { now, heap }` with `Event { HBlank, LineEnd, TimerOverflow(n), DmaStart(n), ApuSample,

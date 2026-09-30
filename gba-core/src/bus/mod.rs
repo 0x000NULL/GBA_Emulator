@@ -4,6 +4,9 @@
 pub mod debug;
 pub mod dma_exec;
 pub mod io;
+pub mod prefetch;
+#[cfg(test)]
+mod prefetch_tests;
 #[cfg(test)]
 mod tests;
 
@@ -19,6 +22,7 @@ use crate::sched::{Event, Scheduler};
 use crate::sio::Sio;
 use crate::timers::Timers;
 use debug::DebugHooks;
+use prefetch::Prefetch;
 
 /// Sequential vs non-sequential access (selects the S/N ROM waitstate).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -86,6 +90,8 @@ pub struct Bus {
     pub iwram: Box<[u8; IWRAM_SIZE]>,
     /// 4000204h WAITCNT
     pub waitcnt: u16,
+    /// Game pak prefetch buffer (WAITCNT bit 14).
+    pub pf: Prefetch,
     /// 4000300h POSTFLG
     pub postflg: u8,
     /// Serial/RCNT/JOY registers (0x120..0x15F). No link partner is emulated.
@@ -123,6 +129,7 @@ impl Bus {
             ewram: vec![0u8; EWRAM_SIZE].into_boxed_slice().try_into().unwrap(),
             iwram: vec![0u8; IWRAM_SIZE].into_boxed_slice().try_into().unwrap(),
             waitcnt: 0,
+            pf: Prefetch::default(),
             postflg: 0,
             sio: Sio::new(),
             imc: 0x0D00_0020,
@@ -148,6 +155,10 @@ impl Bus {
     pub fn update_waitstates(&mut self) {
         const N: [u32; 4] = [4, 3, 2, 8];
         let w = self.waitcnt as u32;
+        self.pf.enabled = w & (1 << 14) != 0;
+        if !self.pf.enabled {
+            self.pf.invalidate();
+        }
         self.sram_wait = N[(w & 3) as usize];
         self.rom_n[0] = N[((w >> 2) & 3) as usize];
         self.rom_s[0] = if w & (1 << 4) != 0 { 1 } else { 2 };
@@ -191,6 +202,20 @@ impl Bus {
             }
             0x0E | 0x0F => self.sram_wait + 1,
             _ => 1,
+        }
+    }
+
+    /// Opcode fetch cost: through the prefetch buffer for game pak ROM when it is enabled; a fetch
+    /// from anywhere else drops whatever the buffer holds.
+    #[inline]
+    fn fetch_cost(&mut self, addr: u32, width: u32, a: Access) -> u32 {
+        if self.pf.enabled && (0x08..=0x0D).contains(&(addr >> 24)) {
+            self.pf_fetch_cost(addr, width, a)
+        } else {
+            if self.pf.is_live() {
+                self.pf.invalidate();
+            }
+            self.wait(addr, width, a)
         }
     }
 
@@ -444,7 +469,11 @@ impl Bus {
 impl MemoryBus for Bus {
     #[inline]
     fn read8(&mut self, addr: u32, a: Access) -> u8 {
-        let c = self.wait(addr, 1, a);
+        let c = if self.pf.is_live() && (0x08..=0x0F).contains(&(addr >> 24)) {
+            self.pf_data_cost(addr, 1, a)
+        } else {
+            self.wait(addr, 1, a)
+        };
         self.tick(c);
         self.arbitrate();
         let v = self.read8_inner(addr);
@@ -456,7 +485,11 @@ impl MemoryBus for Bus {
 
     #[inline]
     fn read16(&mut self, addr: u32, a: Access) -> u16 {
-        let c = self.wait(addr, 2, a);
+        let c = if self.pf.is_live() && (0x08..=0x0F).contains(&(addr >> 24)) {
+            self.pf_data_cost(addr, 2, a)
+        } else {
+            self.wait(addr, 2, a)
+        };
         self.tick(c);
         self.arbitrate();
         let v = self.read16_inner(addr);
@@ -468,7 +501,11 @@ impl MemoryBus for Bus {
 
     #[inline]
     fn read32(&mut self, addr: u32, a: Access) -> u32 {
-        let c = self.wait(addr, 4, a);
+        let c = if self.pf.is_live() && (0x08..=0x0F).contains(&(addr >> 24)) {
+            self.pf_data_cost(addr, 4, a)
+        } else {
+            self.wait(addr, 4, a)
+        };
         self.tick(c);
         self.arbitrate();
         let v = self.read32_inner(addr);
@@ -480,7 +517,11 @@ impl MemoryBus for Bus {
 
     #[inline]
     fn write8(&mut self, addr: u32, v: u8, a: Access) {
-        let c = self.wait(addr, 1, a);
+        let c = if self.pf.is_live() && (0x08..=0x0F).contains(&(addr >> 24)) {
+            self.pf_data_cost(addr, 1, a)
+        } else {
+            self.wait(addr, 1, a)
+        };
         self.tick(c);
         self.arbitrate();
         if self.debug.enabled {
@@ -491,7 +532,11 @@ impl MemoryBus for Bus {
 
     #[inline]
     fn write16(&mut self, addr: u32, v: u16, a: Access) {
-        let c = self.wait(addr, 2, a);
+        let c = if self.pf.is_live() && (0x08..=0x0F).contains(&(addr >> 24)) {
+            self.pf_data_cost(addr, 2, a)
+        } else {
+            self.wait(addr, 2, a)
+        };
         self.tick(c);
         self.arbitrate();
         if self.debug.enabled {
@@ -502,7 +547,11 @@ impl MemoryBus for Bus {
 
     #[inline]
     fn write32(&mut self, addr: u32, v: u32, a: Access) {
-        let c = self.wait(addr, 4, a);
+        let c = if self.pf.is_live() && (0x08..=0x0F).contains(&(addr >> 24)) {
+            self.pf_data_cost(addr, 4, a)
+        } else {
+            self.wait(addr, 4, a)
+        };
         self.tick(c);
         self.arbitrate();
         if self.debug.enabled {
@@ -513,7 +562,7 @@ impl MemoryBus for Bus {
 
     #[inline]
     fn fetch16(&mut self, addr: u32, a: Access) -> u16 {
-        let c = self.wait(addr, 2, a);
+        let c = self.fetch_cost(addr, 2, a);
         self.tick(c);
         self.last_fetch = addr;
         let v = self.read16_inner(addr);
@@ -525,7 +574,7 @@ impl MemoryBus for Bus {
 
     #[inline]
     fn fetch32(&mut self, addr: u32, a: Access) -> u32 {
-        let c = self.wait(addr, 4, a);
+        let c = self.fetch_cost(addr, 4, a);
         self.tick(c);
         self.last_fetch = addr;
         let v = self.read32_inner(addr);

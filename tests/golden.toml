@@ -98,7 +98,7 @@ path = "suite/suite.gba"
 check = "mgba-suite"
 frames = 1800
 input_file = "tests/inputs/suite/suite-02-timing.toml"
-expect = "1212/2020"
+expect = "1816/2020"
 note = "Timing tests"
 
 [[rom]]
