@@ -81,3 +81,17 @@ frames = 27500
 input_file = "tests/inputs/initiald-race.toml"
 golden = "ff210aefde06663c"
 note = "Story: name entry -> AE86 -> gas-station dialogue -> garage EXIT -> Akina tutorial race with Ikeya; golden while the driving-line prompt is up (LIMIT countdown); player control verified (LEFT or RIGHT held 27500-27800 puts the car on that line, three distinct hashes); re-pinned after the prefetch buffer (LIMIT 2'83 instead of 2'86, same prompt)"
+
+[[rom]]
+path = "Games/Final Fantasy IV Advance (USA).zip"
+frames = 2400
+input_file = "tests/inputs/ff4-newgame.toml"
+golden = "fedbdaacbf1c5dc8"
+note = "title with the New Game menu (START skips the health warning at 400); BZ4E, SRAM 32K"
+
+[[rom]]
+path = "Games/Final Fantasy IV Advance (USA).zip"
+frames = 19800
+input_file = "tests/inputs/ff4-newgame.toml"
+golden = "daee5dd93be24786"
+note = "new game -> Red Wings -> Mysidia flashback -> scripted battles -> Baron throne room -> Cecil and Kain pushed out into the corridor (player has control from ~19500); player control verified (LEFT/RIGHT/DOWN held 19800-20100 walk Cecil into the west guard room / east room / courtyard, four distinct hashes)"

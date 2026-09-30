@@ -48,7 +48,7 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
 | Classic NES Series: Zelda (USA/EU) | FZLE | EEPROM (forced) | Overworld start screen with HUD, controllable (LEFT scrolls to the next screen) | title 1800, gameplay 2600 |
 | Classic NES Series: Zelda II (USA/EU) | FLBE | EEPROM (forced) | Zelda's palace, controllable (LEFT walks Link out to the overworld) | title 1800, gameplay 4200 |
 | Initial D: Another Stage (J) | AINJ | SRAM 32K | Story mode through name entry, car select, garage, to the Akina tutorial race; LEFT/RIGHT change the racing line | title 1800, race 27500 |
-| Final Fantasy IV Advance (USA) | | | Title with New Game menu (START skips the health screen; its `swi 0xFF` is a logged no-op, GBATEK: 2Bh+ jump to garbage on hardware) | no |
+| Final Fantasy IV Advance (USA) | BZ4E | SRAM 32K | Red Wings intro, scripted battles, Baron castle; Cecil controllable in the corridor (four directions verified). Its `swi 0xFF` is a logged no-op (GBATEK: 2Bh+ jump to garbage on hardware) | title 2400, gameplay 19800 |
 
 ## Environment facts
 - Rust 1.95 stable-msvc; no devkitARM; no BIOS dump. HLE is the only boot path.
@@ -221,4 +221,4 @@ hardware except the timer-start offset, HLE BIOS calls and DMA-during-fetch (all
 2. Timing rows still open: HLE BIOS call cycle costs (Div/Sqrt/ArcTan/CpuSet) and ROM-to-ROM DMA;
    Timer count-up "2i" rows (see Known gaps).
 3. Initial D garage screens (phone, driving technique) render blank content areas: verify and fix
-   (see Known gaps); FF IV Advance: script New Game into gameplay and pin a golden.
+   (see Known gaps). More of the `Games/` stretch list (Mario, Crash, NFS) into gameplay.
