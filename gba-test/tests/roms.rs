@@ -38,3 +38,34 @@ fn golden_roms() {
     }
     assert!(failures.is_empty(), "{} of {ran} ROM entries failed:\n{}", failures.len(), failures.join("\n"));
 }
+
+/// Commercial ROM title-screen goldens from `tests/compat.toml`. Entries whose ROM is absent or
+/// whose golden is not yet pinned are skipped (and listed), so the test is green on any machine.
+#[test]
+fn compat_roms() {
+    let path = gba_test::repo_root().join("tests").join("compat.toml");
+    let file = GoldenFile::load(&path).expect("tests/compat.toml parses");
+    let mut failures = Vec::new();
+    for e in &file.roms {
+        let rom = gba_test::repo_root().join(&e.path);
+        if !rom.exists() {
+            eprintln!("SKIP {} (ROM not present)", e.path);
+            continue;
+        }
+        if e.golden.is_none() {
+            eprintln!("SKIP {} (golden not pinned yet)", e.path);
+            continue;
+        }
+        match run_entry(&file, e) {
+            Ok(out) => {
+                let status = if out.passed() { "PASS" } else { "FAIL" };
+                eprintln!("{status} {} frames={} hash={:016x} golden_ok={:?}", e.path, out.frames, out.hash, out.golden_ok);
+                if !out.passed() {
+                    failures.push(format!("{}: hash={:016x} golden_ok={:?}", e.path, out.hash, out.golden_ok));
+                }
+            }
+            Err(err) => failures.push(format!("{}: error {err:#}", e.path)),
+        }
+    }
+    assert!(failures.is_empty(), "compat failures:\n{}", failures.join("\n"));
+}

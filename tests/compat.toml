@@ -1,0 +1,33 @@
+# Commercial-ROM compatibility manifest (M6). Paths resolve against the repo root (Games/ is
+# gitignored, so these entries are skipped on machines without the ROMs). Golden hashes are pinned
+# once the title screen renders correctly; `frames` is the frame at which the title is stable.
+# Run one entry: cargo run -p gba-test -- "<path>" --frames N --png out.png
+
+[defaults]
+hash = "xxh3-64"
+frames = 600
+bios = "hle"
+
+[[rom]]
+path = "Games/Kingdom Hearts - Chain of Memories (USA).zip"
+note = "primary target; B8CE, 32 MB, SRAM_F_V103"
+
+[[rom]]
+path = "Games/Legend of Zelda, The - The Minish Cap (USA).zip"
+note = "BZME, EEPROM 8K, heavy SWI decompression"
+
+[[rom]]
+path = "Games/Legend of Zelda, The - A Link to the Past & Four Swords (USA).zip"
+note = "AZLE, EEPROM 512, H-Blank register tricks (mode 7 map)"
+
+[[rom]]
+path = "Games/Classic NES Series - The Legend of Zelda (USA, Europe).zip"
+note = "FZLE, anti-emulation: ROM mirroring, VRAM execution, STM write order, prefetch"
+
+[[rom]]
+path = "Games/Classic NES Series - Zelda II - The Adventure of Link (USA, Europe).zip"
+note = "FLBE, same tricks as Zelda 1"
+
+[[rom]]
+path = "Games/Initial D - Another Stage (Japan).zip"
+note = "AINJ, SRAM_V112, affine road rendering"
