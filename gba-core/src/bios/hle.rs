@@ -16,6 +16,13 @@ use crate::cpu::regs::{Regs, MODE_IRQ, MODE_SVC, MODE_SYS};
 /// free-running prescaler, so every 64/256/1024 cycle row pins this sum modulo the prescaler
 /// (31 with the return stub below was the only pair found, scanning 0..64 x -3..4, that matches all 936 rows).
 pub const INTR_WAIT_EXIT_CYCLES: u32 = 31;
+/// Cycles the real BIOS spends after the CPU leaves HALT (and the waking IRQ has returned) before
+/// control is back in the caller: the rest of the halt routine and the SWI exit sequence, beyond
+/// the flat `idle(10)` charged on entry. Empirical, pinned by the mgba-suite "SIO timing tests"
+/// (Normal8/Normal32 at 256k and 2M: every row is exactly 31 short without it, the timing loop
+/// being Halt, SIO IRQ, return, stop timer); the same sum as `INTR_WAIT_EXIT_CYCLES`, which was
+/// fitted independently.
+pub const HALT_EXIT_CYCLES: u32 = 31;
 
 /// BIOS mirror of acknowledged IRQ flags, used by IntrWait.
 pub const INTR_FLAGS_MIRROR: u32 = 0x0300_7FF8;
@@ -75,6 +82,9 @@ impl Bus {
                 // INTR_WAIT_EXIT_CYCLES) are matched only with 2, so the ALU cycle of the `subs`
                 // is taken to overlap the ldmfd's internal cycle (fitted, see PROGRESS.md).
                 self.idle(2);
+                if std::mem::take(&mut self.bios.halt_exit) {
+                    self.idle(HALT_EXIT_CYCLES);
+                }
                 true
             }
             _ => false,
@@ -109,7 +119,10 @@ impl Bus {
         match num {
             swi::SOFT_RESET => self.hle_soft_reset(regs),
             swi::REGISTER_RAM_RESET => self.hle_register_ram_reset(regs.r[0] as u8),
-            swi::HALT => self.irq.halted = true,
+            swi::HALT => {
+                self.irq.halted = true;
+                self.bios.halt_exit = true;
+            }
             swi::STOP => self.irq.stopped = true,
             swi::INTR_WAIT => self.hle_intr_wait(regs, regs.r[0] != 0, regs.r[1] as u16),
             swi::VBLANK_INTR_WAIT => {
@@ -868,6 +881,38 @@ mod tests {
         let t0 = b.sched.now;
         assert!(b.hle_swi(num, &mut regs));
         b.sched.now - t0
+    }
+
+    /// The Halt SWI's BIOS return path (`HALT_EXIT_CYCLES`) is paid once, by the IRQ return stub
+    /// that ends the waking interrupt (mgba-suite "SIO timing tests", every row 31 cycles long
+    /// without it).
+    #[test]
+    fn halt_exit_is_charged_by_the_irq_return_stub() {
+        let mut b = bus();
+        let mut regs = Regs::new();
+        regs.set_cpsr(MODE_SYS);
+        regs.r[15] = 0x0300_0004;
+        assert!(b.hle_swi(swi::HALT, &mut regs));
+        assert!(b.irq.halted && b.bios.halt_exit);
+        // Emulate the IRQ return stub: the CPU is in IRQ mode with r13 pointing at the saved frame.
+        let mut irq_regs = Regs::new();
+        irq_regs.set_cpsr(MODE_IRQ);
+        irq_regs.set_spsr(MODE_SYS);
+        irq_regs.r[13] = 0x0300_7F00;
+        irq_regs.r[14] = 0x0300_0008;
+        irq_regs.r[15] = HLE_IRQ_RETURN_ADDR;
+        let t0 = b.sched.now;
+        assert!(b.hle_vector(&mut irq_regs));
+        let with_halt = b.sched.now - t0;
+        assert!(!b.bios.halt_exit);
+
+        let mut b = bus();
+        irq_regs.set_cpsr(MODE_IRQ);
+        irq_regs.r[13] = 0x0300_7F00;
+        irq_regs.r[15] = HLE_IRQ_RETURN_ADDR;
+        let t0 = b.sched.now;
+        assert!(b.hle_vector(&mut irq_regs));
+        assert_eq!(with_halt - (b.sched.now - t0), u64::from(HALT_EXIT_CYCLES));
     }
 
     /// Totals confirmed by the hardware-recorded mgba-suite "Timing tests" IWRAM columns: each is

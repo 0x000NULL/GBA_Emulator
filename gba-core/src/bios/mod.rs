@@ -35,11 +35,16 @@ pub struct Bios {
     /// the pipeline at the return address (the `movs pc, lr` of the real handler).
     #[cfg_attr(feature = "savestate", serde(skip))]
     pub swi_refill: bool,
+    /// A `Halt` SWI is parked: the real BIOS still has its return path to run once the waking
+    /// IRQ (if any) has returned. Charged by the IRQ return stub, or at the wake-up when no
+    /// handler runs. See `hle::HALT_EXIT_CYCLES`.
+    #[cfg_attr(feature = "savestate", serde(skip))]
+    pub halt_exit: bool,
 }
 
 impl Bios {
     pub fn hle() -> Self {
-        Bios { image: None, open_bus: BIOS_OPENBUS_BOOT, intr_wait: None, swi_count: 0, unimplemented: Vec::new(), swi_refill: false }
+        Bios { image: None, open_bus: BIOS_OPENBUS_BOOT, intr_wait: None, swi_count: 0, unimplemented: Vec::new(), swi_refill: false, halt_exit: false }
     }
 
     pub fn lle(data: &[u8]) -> Result<Self, CoreError> {
@@ -48,7 +53,7 @@ impl Bios {
         }
         let mut img = Box::new([0u8; BIOS_SIZE]);
         img.copy_from_slice(data);
-        Ok(Bios { image: Some(img), open_bus: BIOS_OPENBUS_BOOT, intr_wait: None, swi_count: 0, unimplemented: Vec::new(), swi_refill: false })
+        Ok(Bios { image: Some(img), open_bus: BIOS_OPENBUS_BOOT, intr_wait: None, swi_count: 0, unimplemented: Vec::new(), swi_refill: false, halt_exit: false })
     }
 
     #[inline]

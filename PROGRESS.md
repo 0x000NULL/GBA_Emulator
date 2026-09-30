@@ -16,11 +16,11 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   Cap are verified controllable (LEFT/RIGHT/no-input runs diverge).
 - **mgba-suite is built and gated** (`suite.gba` via its `docker-build.sh`; 13 sub-suites in
   `tests/golden.toml`, each pinned at its current score so any regression fails `cargo test`).
-  Scores after the 2026-09-30 merges: Memory 1552/1552, I/O read 130/130, Timing 1956/2020,
+  Scores after the 2026-09-30 merges: Memory 1552/1552, I/O read 130/130, Timing 2020/2020,
   Timer count-up 936/936, Timer IRQ 90/90, Shifter/Carry/Multiply-long/BIOS-math all full,
-  DMA 1244/1244, SIO R/W 90/90, SIO timing 0/4, Misc edge 6/12.
+  DMA 1244/1244, SIO R/W 90/90, SIO timing 4/4, Misc edge 6/12.
 - **Open**: frontend audio only unit-tested (no audio device here); reference-emulator audio
-  comparison manual; Timing 1956/2020 (the rest: ROM-to-ROM DMA); KH:CoM's whole 27400-frame
+  comparison manual; Misc edge 6/12 (see "Misc edge attempt"); KH:CoM's whole 27400-frame
   new-game run is FIFO-underrun-free apart from a handful at scene changes (was ~427k before
   the HLE service hook, see the 2026-09-30 fix log).
 
@@ -30,7 +30,7 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
 |---|---|---|---|
 | M0 | Workspace, contracts, harness, test suites fetched | `cargo build --workspace`; harness runs every golden entry | **DONE 2026-09-29** |
 | M1 | ARM7TDMI: all ARM+Thumb, modes, exceptions, flags | jsmolka `arm.gba`, `thumb.gba` | **DONE 2026-09-29**: 65 CPU unit tests; real 2-slot pipeline; mGBA-format trace |
-| M2 | Memory map, waitstates, DMA, timers, IRQ, HALTCNT | jsmolka `memory.gba`, `bios.gba`, `nes.gba`; mgba-suite memory/timing | **DONE 2026-09-30**: jsmolka green; mgba-suite Memory 1552/1552, DMA 1244/1244, Timing 1956/2020 pinned (prefetch buffer + BIOS-derived HLE SWI cycle costs; the 64 left are ROM-to-ROM DMA) |
+| M2 | Memory map, waitstates, DMA, timers, IRQ, HALTCNT | jsmolka `memory.gba`, `bios.gba`, `nes.gba`; mgba-suite memory/timing | **DONE 2026-09-30**: jsmolka green; mgba-suite Memory 1552/1552, DMA 1244/1244, Timing 2020/2020 pinned (prefetch buffer + BIOS-derived HLE SWI cycle costs + ROM-to-ROM DMA) |
 | M3 | PPU modes 0-5, OBJ, windows, blending, mosaic, timing | jsmolka ppu/* golden hashes; mgba-suite video | **DONE (jsmolka side) 2026-09-29**: goldens pinned, 56 PPU unit tests. Gaps: per-line OBJ cycle budget not modelled, OAM evaluated on the rendered line rather than one line early; mgba-suite video blocked as above |
 | M4 | BIOS HLE, every listed SWI | `bios.gba` under HLE; per-SWI unit tests | **DONE 2026-09-29**: `bios.gba` passes; all listed SWIs + IRQ vector/return emulation; 14 unit tests incl. LZ77/RL/Huffman encoder round trips. Sound-driver SWIs (1A-1E, 28, 29) are logged no-ops. LLE differential deferred (no BIOS image) |
 | M5 | Save detection, SRAM/Flash/EEPROM, `<rom>.sav` | jsmolka save/*; round trip | **DONE 2026-09-29**: none/sram/flash64/flash128 pass (flash entries need 400 frames: tests 10/11 program 64K bytes one command sequence each); 8 cart unit tests incl. EEPROM protocol; `.sav` persistence in the frontend |
@@ -97,7 +97,7 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   CpuSet/CpuFastSet have real BIOS cycle counts (other HLE SWIs still pay a flat 10, and the
   IntrWait exit cost of 31 plus the IRQ return stub's 2 idle cycles are fitted to the Timer
   count-up rows, not derived). Prefetch buffer: the data-access stall rule is empirical
-  (see the prefetch fix log) and ROM-to-ROM DMA timing rows still fail in every column.
+  (see the prefetch fix log) (ROM-to-ROM DMA timing was fixed later, see the ROM-to-ROM fix log).
 - BIOS HLE: BgAffineSet/ObjAffineSet use f64 trig instead of the BIOS sine table (tiny rounding
   differences possible); division by zero returns mGBA's values instead of hanging.
 - Cartridge: no GPIO/RTC (none of the target games use it); SRAM open-bus when the backend is EEPROM
@@ -304,3 +304,57 @@ hardware except the timer-start offset, HLE BIOS calls and DMA-during-fetch (all
    Timer count-up "2i" rows (see Known gaps).
 3. Initial D garage screens (phone, driving technique) render blank content areas: verify and fix
    (see Known gaps). More of the `Games/` stretch list (Mario, Crash, NFS) into gameplay.
+
+## Fix log (ROM-to-ROM DMA, Halt exit; 2026-09-30)
+mgba-suite "Timing tests" 1956/2020 -> 2020/2020 and "SIO timing tests" 0/4 -> 4/4; every other
+row unchanged (Memory 1552/1552, DMA 1244/1244, Timer count-up 936/936, Timer IRQ 90/90, I/O 130/130,
+Misc edge 6/12, jsmolka green).
+- **ROM-to-ROM DMA** (`bus/dma_exec.rs`): when source and destination are both in the game pak the
+  transfer is 2 idle cycles, read N, **write S**, then S/S for the remaining units. All 64 failing
+  rows ("Trivial/Short DMA (16/32, ROM to ROM)", 20 columns each) pass. How it was pinned: the
+  N- and S-waitstate columns (.N., ..S, .NS) show exactly one N and one S access inside the
+  transfer for a single unit, and the from-ROM / to-ROM-only rows (already passing) fix the cost of
+  a lone ROM read or write at one N. GBATEK quotes x = 4 idle cycles for this case; modelling that
+  as 4 I with N+N accesses was 4 cycles slower than the hardware in every column (the first
+  attempt, idle 4 with read S and write S, reached 1984/2020 and left the N/S columns off by one,
+  which ruled it out). The 2 I + N + S split is an empirical fit, not derived from a bus diagram;
+  the 128K block boundary and prefetch-buffer rules were not needed (DMA accesses still drop the
+  buffer). Unit test: `bus::tests::rom_to_rom_dma_charges_a_sequential_write`.
+- **Halt exit** (`bios/hle.rs`, `gba.rs`): the HLE Halt SWI charged its flat 10 cycles before
+  sleeping and nothing after the wake, so code after `Halt()` ran 31 cycles early. The SIO timing
+  rows (timer started, SIO transfer, SIO IRQ wakes Halt, timer stopped) were each exactly 31 short
+  (0x25A vs 0x279 etc.). `HALT_EXIT_CYCLES = 31` (the same sum as the independently fitted
+  `INTR_WAIT_EXIT_CYCLES`) is paid by the IRQ return stub that ends the waking interrupt, or at
+  the wake-up itself when IME / CPSR.I mask the IRQ. Empirical (rest of the halt routine plus the
+  SWI exit, which the real BIOS runs after the handler returns). Unit test:
+  `bios::hle::tests::halt_exit_is_charged_by_the_irq_return_stub`. `Bios::halt_exit` is not saved
+  (a savestate taken while parked loses only the exit charge).
+- Goldens touched: suite Timing `2020/2020`, SIO timing `4/4` in `tests/golden.toml`; compat FFIV
+  new-game entry moved from frame 19800 to 19900 (`tests/compat.toml`). The Halt exit shifts the
+  scripted scene by a few frames: at 19800 the Baron corridor is mid-transition with no sprites,
+  at 19900 it shows the same picture the old 19800 pin did (PNGs reviewed; the dialogue "Cecil: I'm
+  sorry, Kain." at 20100 is identical to the baseline). No other compat golden moved.
+
+## Misc edge attempt (2026-09-30): no rows moved, 6/12 kept
+Rows left: DMA Prefetch Break/Read, H-blank bit start Hblank/Flip 1/2/3. (The harness prints
+"Got <hardware> vs <ours>" for this sub-suite, the reverse of the timing rows.) Findings:
+- **DMA Prefetch.** The break on hardware is at iteration 2725 of a 36-cycle loop, i.e. the 12th
+  (k = 11) H-blank DMA of the frame, where our loop timing matches to 0.4 iteration. The open-bus
+  read (`ldm r2!, {r3}` from 10000000h) returns the DMA latch only when the H-blank request lands
+  between the ldm's prefetch fetch and its data read. Our DMA runs between instructions, plus an
+  `arbitrate` hook that only fires on data accesses; with a loop period of 36 and a line of 1232
+  the request phase advances by 8 cycles per line (9 distinct phases, 4 apart) and every mid-
+  instruction hit lands in the `str`'s window, never the `ldm`'s. Tried: processing all due
+  scheduler events (and the DMA they trigger) in `arbitrate` (the DMA then runs mid-instruction
+  72 times in the loop, always inside the str), plus a start-latency parameter L = 0..14 on that
+  path: no value produced the break. Hardware breaking only at k = 11 although the phases repeat
+  every 9 lines also shows the real window is not a fixed phase set (loop or prefetch state varies);
+  not modelled. Reverted.
+- **H-blank flips.** `Flip 1` depends on the Halt-wake-to-TM0 read time: the Halt exit moves it in
+  steps of 8 (poll loop period); hardware 135 is not reachable (we give ..128/136). `Hblank`
+  (hardware 1232, ours 1235) is exactly the 3 extra `movs` between the wake and the TM0 read in the
+  second Halt: on hardware they cost nothing relative to the first Halt, which no single constant
+  (wake latency, H-blank flag 1006 vs 1008, IRQ delay) can explain, since both wakes are 1232 apart
+  and share the path. Flip 2/3 are off by 1 and 2 cycles in the same way. Scanning the Halt exit
+  0..40 never matched more than the current rows; processing due events before DISPSTAT reads
+  (event lag is up to one instruction) changed nothing. Not fixed.

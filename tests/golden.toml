@@ -98,7 +98,7 @@ path = "suite/suite.gba"
 check = "mgba-suite"
 frames = 1800
 input_file = "tests/inputs/suite/suite-02-timing.toml"
-expect = "1956/2020"
+expect = "2020/2020"
 note = "Timing tests"
 
 [[rom]]
@@ -170,7 +170,7 @@ path = "suite/suite.gba"
 check = "mgba-suite"
 frames = 1200
 input_file = "tests/inputs/suite/suite-11-sio-timing.toml"
-expect = "0/4"
+expect = "4/4"
 note = "SIO timing tests"
 
 [[rom]]

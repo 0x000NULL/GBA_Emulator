@@ -440,3 +440,31 @@ fn sram_reads_use_the_address_to_pick_the_byte_and_replicate_it() {
     assert_eq!(b.read8(0x0E00_0000, Access::N), b'G');
     assert_eq!(b.read8(0x0E00_0001, Access::N), 0xC7);
 }
+
+/// Cycles the transfer itself takes once its start latency has elapsed (default WAITCNT: ROM
+/// N16 = 5, S16 = 3, N32 = 8, S32 = 6).
+fn dma_cycles(src: u32, dst: u32, count: u16, cnt_h: u16) -> u64 {
+    let mut b = bus();
+    start_dma(&mut b, 3, src, dst, count, cnt_h);
+    b.sched.now += 2;
+    b.process_events();
+    let t = b.sched.now;
+    b.dma_run();
+    b.sched.now - t
+}
+
+#[test]
+fn rom_to_rom_dma_charges_a_sequential_write() {
+    // Pinned by the hardware-recorded mgba-suite "DMA (ROM to ROM)" timing rows: 2 idle cycles,
+    // read N, write S, then S/S for the rest.
+    let (rom, iwram, ewram) = (0x0800_0000, 0x0300_0000, 0x0200_0000);
+    // One 16-bit unit: 2I + N16 + S16 (ROM to ROM) versus 2I + N16 + 1 (ROM to IWRAM).
+    assert_eq!(dma_cycles(rom, rom + 0x40, 1, 0), 2 + 5 + 3);
+    assert_eq!(dma_cycles(rom, iwram, 1, 0), 2 + 5 + 1);
+    // One 32-bit unit: 2I + N32 + S32.
+    assert_eq!(dma_cycles(rom, rom + 0x40, 1, 0x0400), 2 + 8 + 6);
+    // Sixteen 16-bit units: 2I + N + 15 S on the read side, S on every write.
+    assert_eq!(dma_cycles(rom, rom + 0x40, 16, 0), 2 + 5 + 15 * 3 + 16 * 3);
+    // A ROM write alone (source in EWRAM, 3 cycles per halfword) keeps its N access.
+    assert_eq!(dma_cycles(ewram, rom, 1, 0), 2 + 3 + 5);
+}

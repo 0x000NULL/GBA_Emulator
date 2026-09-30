@@ -45,13 +45,12 @@ impl Bus {
             }
             c.src &= if word32 { !3 } else { !1 };
             c.dst &= if word32 { !3 } else { !1 };
-            let (src, dst, count) = (c.src, c.dst, c.remaining);
+            let (dst, count) = (c.dst, c.remaining);
             // A DMA into the EEPROM region is a serial request; its length reveals the EEPROM size.
             if dst >> 24 == 0x0D && !word32 {
                 self.cart.eeprom_dma_hint(count);
             }
-            let both_pak = (0x08..=0x0D).contains(&(src >> 24)) && (0x08..=0x0D).contains(&(dst >> 24));
-            self.idle(if both_pak { 4 } else { 2 });
+            self.idle(2); // internal cycles; see the ROM-to-ROM note at `both_pak` below
         }
 
         let c = self.dma.ch[ch];
@@ -67,6 +66,14 @@ impl Bus {
         let src_ctrl = if (0x08..=0x0D).contains(&(src >> 24)) { 0 } else { src_ctrl };
 
         self.in_dma = true;
+        // ROM-to-ROM: the write is charged as a SEQUENTIAL game pak access (read N, write S, the
+        // rest S/S), and the setup stays 2 idle cycles. This is what the hardware-recorded mgba-suite
+        // "Trivial/Short DMA (16/32, ROM to ROM)" rows need in all 20 columns (prefetch on/off,
+        // WS0 N/S variants): the N and S column deltas show exactly one N and one S in the transfer
+        // for a single unit. GBATEK quotes x = 4 idle cycles for this case; modelling that as 4 I plus
+        // N+N accesses is 4 cycles slower than the recorded hardware in every column.
+        // Empirically pinned, not derived from a bus diagram.
+        let both_pak = (0x08..=0x0D).contains(&(src >> 24)) && (0x08..=0x0D).contains(&(dst >> 24));
         let mut access = Access::N;
         while remaining > 0 {
             // Reads from the BIOS/unused area return the channel's own latch (low half for a
@@ -77,14 +84,14 @@ impl Bus {
                 if !unmapped {
                     latch = bus_v;
                 }
-                self.write32(dst, latch, access);
+                self.write32(dst, latch, if both_pak { Access::S } else { access });
                 self.open_bus = latch;
             } else {
                 let bus_v = self.read16(src, access);
                 if !unmapped {
                     latch = bus_v as u32 | (bus_v as u32) << 16;
                 }
-                self.write16(dst, latch as u16, access);
+                self.write16(dst, latch as u16, if both_pak { Access::S } else { access });
                 self.open_bus = latch;
             }
             access = Access::S;
