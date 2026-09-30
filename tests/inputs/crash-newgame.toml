@@ -1,0 +1,40 @@
+# Crash Bandicoot: The Huge Adventure (USA): the Cortex intro cutscene autoplays from ~1500; START
+# at 1810 skips to the title, whose NEW GAME / LOAD GAME / CREDITS menu is up by ~2300 (title golden
+# at 2700). A at 2710 picks NEW GAME -> the same cutscene with dialogue pages; A every 120 frames
+# from 3610 advances it (13 pages), the hub / level-select wheel appears at ~5100 and the tap at
+# 5170 picks level 1 (Jungle Jam). The level is up by ~5300 with Crash idle at the start; golden at
+# 6000. Control: RIGHT held 6000-6300 runs Crash to the first crate (hashes diverge).
+steps = [
+  { frame = 1810, press = "START" },
+  { frame = 1815, release = "START" },
+  { frame = 2710, press = "A" },
+  { frame = 2715, release = "A" },
+  { frame = 3610, press = "A" },
+  { frame = 3615, release = "A" },
+  { frame = 3730, press = "A" },
+  { frame = 3735, release = "A" },
+  { frame = 3850, press = "A" },
+  { frame = 3855, release = "A" },
+  { frame = 3970, press = "A" },
+  { frame = 3975, release = "A" },
+  { frame = 4090, press = "A" },
+  { frame = 4095, release = "A" },
+  { frame = 4210, press = "A" },
+  { frame = 4215, release = "A" },
+  { frame = 4330, press = "A" },
+  { frame = 4335, release = "A" },
+  { frame = 4450, press = "A" },
+  { frame = 4455, release = "A" },
+  { frame = 4570, press = "A" },
+  { frame = 4575, release = "A" },
+  { frame = 4690, press = "A" },
+  { frame = 4695, release = "A" },
+  { frame = 4810, press = "A" },
+  { frame = 4815, release = "A" },
+  { frame = 4930, press = "A" },
+  { frame = 4935, release = "A" },
+  { frame = 5050, press = "A" },
+  { frame = 5055, release = "A" },
+  { frame = 5170, press = "A" },
+  { frame = 5175, release = "A" },
+]

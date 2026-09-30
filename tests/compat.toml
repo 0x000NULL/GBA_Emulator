@@ -93,8 +93,8 @@ note = "title with the New Game menu (START skips the health warning at 400); BZ
 path = "Games/Final Fantasy IV Advance (USA).zip"
 frames = 19800
 input_file = "tests/inputs/ff4-newgame.toml"
-golden = "daee5dd93be24786"
-note = "new game -> Red Wings -> Mysidia flashback -> scripted battles -> Baron throne room -> Cecil and Kain pushed out into the corridor (player has control from ~19500); player control verified (LEFT/RIGHT/DOWN held 19800-20100 walk Cecil into the west guard room / east room / courtyard, four distinct hashes)"
+golden = "a20b43ffc0e812cc"
+note = "new game -> Red Wings -> Mysidia flashback -> scripted battles -> Baron throne room -> Cecil and Kain pushed out into the corridor (player has control from ~19500); player control verified (LEFT/RIGHT/DOWN held 19800-20100 walk Cecil into the west guard room / east room / courtyard, four distinct hashes); re-pinned after the BIOS SWI / IRQ cycle work (same corridor, Cecil a step further)"
 
 [[rom]]
 path = "Games/Mario Kart - Super Circuit (USA).zip"
@@ -121,3 +121,17 @@ frames = 6000
 input_file = "tests/inputs/crash-newgame.toml"
 golden = "50cf935c0d22396c"
 note = "new game -> Cortex cutscene (A pages) -> hub wheel -> level 1 Jungle Jam with Crash idle at the start; player control verified (RIGHT held 6000-6300 runs Crash to the first crate, hashes diverge)"
+
+[[rom]]
+path = "Games/Need for Speed - Underground 2 (USA, Europe) (En,Fr,De,It).zip"
+frames = 4200
+input_file = "tests/inputs/nfsu2-race.toml"
+golden = "7e0288887ff8daaa"
+note = "title screen with PRESS START (English picked at 1810, START at 3610 leaves the attract movie); BNFE, EEPROM"
+
+[[rom]]
+path = "Games/Need for Speed - Underground 2 (USA, Europe) (En,Fr,De,It).zip"
+frames = 11700
+input_file = "tests/inputs/nfsu2-race.toml"
+golden = "26f49feb9e9e1070"
+note = "name entry -> buy the Nissan 240SX -> RACE NOW -> CUSTOM RACE -> CIRCUIT -> City Hall, 1 lap; golden mid-race (POS 4/4, 0:06, 97 mph) with A held from 11400; steering verified (LEFT or RIGHT held with A 11700-12000 puts the car into the left building / right barrier, three distinct hashes)"

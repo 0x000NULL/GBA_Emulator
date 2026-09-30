@@ -29,6 +29,8 @@ pub struct TestBus {
     pub idles: u32,
     pub swi_calls: Vec<u8>,
     pub hle: bool,
+    /// What `swi_took_refill` answers after the next HLE SWI (None: the SWI returned in place).
+    pub swi_refill: Option<bool>,
 }
 
 impl TestBus {
@@ -42,6 +44,7 @@ impl TestBus {
             idles: 0,
             swi_calls: Vec::new(),
             hle: false,
+            swi_refill: None,
         }
     }
     fn idx(&self, addr: u32) -> usize {
@@ -143,6 +146,9 @@ impl MemoryBus for TestBus {
     fn swi_hle(&mut self, num: u8, _regs: &mut Regs) -> bool {
         self.swi_calls.push(num);
         self.hle
+    }
+    fn swi_took_refill(&mut self) -> Option<bool> {
+        self.swi_refill.take()
     }
 }
 

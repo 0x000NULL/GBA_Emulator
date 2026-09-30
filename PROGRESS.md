@@ -48,6 +48,9 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
 | Classic NES Series: Zelda (USA/EU) | FZLE | EEPROM (forced) | Overworld start screen with HUD, controllable (LEFT scrolls to the next screen) | title 1800, gameplay 2600 |
 | Classic NES Series: Zelda II (USA/EU) | FLBE | EEPROM (forced) | Zelda's palace, controllable (LEFT walks Link out to the overworld) | title 1800, gameplay 4200 |
 | Initial D: Another Stage (J) | AINJ | SRAM 32K | Story mode through name entry, car select, garage, to the Akina tutorial race; LEFT/RIGHT change the racing line | title 1800, race 27500 |
+| Mario Kart: Super Circuit (USA) | AMKE | Flash 64K | Mushroom Cup race on Peach Circuit; LEFT/RIGHT steer (kart leaves the track without input) | title 1800, race 8100 |
+| Crash Bandicoot: The Huge Adventure (USA) | ACQE | EEPROM | Level 1 Jungle Jam, Crash runs on RIGHT | title 2700, gameplay 6000 |
+| Need for Speed Underground 2 (USA/EU) | BNFE | EEPROM | Custom circuit race at City Hall; LEFT/RIGHT steer into the buildings/barrier | title 4200, race 11700 |
 | Final Fantasy IV Advance (USA) | BZ4E | SRAM 32K | Red Wings intro, scripted battles, Baron castle; Cecil controllable in the corridor (four directions verified). Its `swi 0xFF` is a logged no-op (GBATEK: 2Bh+ jump to garbage on hardware) | title 2400, gameplay 19800 |
 
 ## Environment facts
@@ -73,6 +76,14 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   Harness: `--check mgba-suite --input <script> --expect p/t`. Debug regs implemented in `bus/debug.rs`.
 
 ## Known gaps / judgement calls
+- Savestates: Mario Kart's save/load chain diverges from a from-zero run at the character select
+  (after a loaded state an A press skips the "OK?" confirm; the whole path then runs 600 frames
+  earlier). Crash's chain matches exactly. Something is not captured, most likely Flash chip
+  command state (Mario Kart is the only Flash 64K title in the compat list) or keypad edge
+  state. Not investigated.
+- Mario Kart Peach Circuit at frame 8400 with the kart off the track: the grass shows a shaded
+  blue/yellow/red diagonal ribbon scrolling with the Mode 7 ground. Possibly the course's flower
+  strip; unverified against hardware.
 - Initial D (garage, script frame ~22900 of `tests/inputs/initiald-race.toml`): the phone screen
   (A) draws a blank white panel with only the signal/battery icons, and the driving-technique
   screen (DOWN x2, A) has its content area solid black. Unverified against hardware; could be a
@@ -164,6 +175,14 @@ previous notes were really two independent families:
 - Tests: `irq_pending_at_exception_return_pays_the_refill_then_preempts_the_target`,
   `irq_after_a_branch_preempts_its_target` (cpu/tests/exceptions.rs);
   `alu_write_to_pc_branches_and_aligns` now asserts the refill happens inside the branch step.
+
+## Fix log (merge of the SWI-timing and timer branches, 2026-09-30)
+Merged separately each branch held its rows; together the Timing row dropped 1956 -> 1900: the
+timer branch's `Cpu::refill_pipeline` (refill inside every PC-writing step) always charged the
+first refill fetch as N and never consumed the SWI branch's `refill_seq` flag (BIOS `movs pc, lr`
+return is S in the caller's region with prefetch off), so every BIOS row in every ROM column was
+N-S cycles slow. `refill_pipeline` now honours the flag; pinned by
+`swi_hle_return_refill_honours_the_sequential_flag`. All rows back at their pins.
 
 ## Fix log (IRQ entry cycles, 2026-09-30)
 mgba-suite Timer IRQ 69 -> 90/90, Timer count-up 483 -> 582/936. Every remaining Timer IRQ

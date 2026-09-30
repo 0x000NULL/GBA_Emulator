@@ -1,0 +1,29 @@
+# Mario Kart: Super Circuit (USA): title (SINGLE PLAYER) START at 1810 -> CHOOSE A GAME: A picks
+# MARIO GP (2710) -> 50cc (3310) -> CHOOSE A CHARACTER: cursor starts on the random tile, UP+LEFT
+# moves it to Mario, A at 4810 (an A right after the cursor move is ignored) -> CHOOSE A CUP: A on
+# Mushroom Cup (5410) shows "OK!", a second A (6610) starts the Peach Circuit race. The course
+# intro runs to ~7200, the countdown ends at ~7360; A (throttle) is held from 7400. Golden at 7500:
+# lap 1/3, 0'02"28, Mario in 8th on the start straight with Peach beside him. Steering: LEFT or
+# RIGHT held with A 7500-7800 turns the kart (three distinct hashes; A alone runs straight into the
+# grass at the first corner).
+steps = [
+  { frame = 1810, press = "START" },
+  { frame = 1815, release = "START" },
+  { frame = 2710, press = "A" },
+  { frame = 2715, release = "A" },
+  { frame = 3310, press = "A" },
+  { frame = 3315, release = "A" },
+  { frame = 3910, press = "UP" },
+  { frame = 3915, release = "UP" },
+  { frame = 3950, press = "LEFT" },
+  { frame = 3955, release = "LEFT" },
+  { frame = 4810, press = "A" },
+  { frame = 4815, release = "A" },
+  { frame = 5410, press = "A" },
+  { frame = 5415, release = "A" },
+  { frame = 6610, press = "A" },
+  { frame = 6615, release = "A" },
+  { frame = 7210, press = "A" },
+  { frame = 7215, release = "A" },
+  { frame = 8000, press = "A" },
+]

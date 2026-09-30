@@ -1,0 +1,40 @@
+# Need for Speed: Underground 2 (USA, Europe): language select (A at 1810 = English) -> PSA text ->
+# attract movie; START at 3610 brings up the title, PRESS START appears at ~4200 and START at 4210
+# opens ENTER NAME. A at 4810 types "1", START at 4900 confirms -> GARAGE (Nissan 240SX, 10 pts):
+# A at 5410 = PURCHASE, RIGHT+A at 6310/6370 answer YES -> MAIN MENU. A at 7210 = RACE NOW,
+# DOWN+A at 8410/8470 = CUSTOM RACE, A at 9010 = CIRCUIT, A at 9910 = City Hall, A at 11110
+# accepts the options (forward, 1 lap, light traffic, catch-up on). The race is live at ~11300
+# (POS 4/4, LAP 1/1, timer running); A (throttle) is held from 11400 and the golden is at 11700.
+# Steering: LEFT or RIGHT held with A 11700-12000 moves the car across the road (three distinct
+# hashes).
+steps = [
+  { frame = 1810, press = "A" },
+  { frame = 1815, release = "A" },
+  { frame = 3610, press = "START" },
+  { frame = 3615, release = "START" },
+  { frame = 4210, press = "START" },
+  { frame = 4215, release = "START" },
+  { frame = 4810, press = "A" },
+  { frame = 4815, release = "A" },
+  { frame = 4900, press = "START" },
+  { frame = 4905, release = "START" },
+  { frame = 5410, press = "A" },
+  { frame = 5415, release = "A" },
+  { frame = 6310, press = "RIGHT" },
+  { frame = 6315, release = "RIGHT" },
+  { frame = 6370, press = "A" },
+  { frame = 6375, release = "A" },
+  { frame = 7210, press = "A" },
+  { frame = 7215, release = "A" },
+  { frame = 8410, press = "DOWN" },
+  { frame = 8415, release = "DOWN" },
+  { frame = 8470, press = "A" },
+  { frame = 8475, release = "A" },
+  { frame = 9010, press = "A" },
+  { frame = 9015, release = "A" },
+  { frame = 9910, press = "A" },
+  { frame = 9915, release = "A" },
+  { frame = 11110, press = "A" },
+  { frame = 11115, release = "A" },
+  { frame = 11400, press = "A" },
+]

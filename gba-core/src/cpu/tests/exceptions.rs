@@ -98,6 +98,30 @@ fn swi_from_thumb_sets_lr_to_next_halfword() {
     assert_eq!(cpu.regs.r[1], 2);
 }
 
+/// An HLE SWI that reports a BIOS-style return (`movs pc, lr`) refills the pipeline at the
+/// return address inside the same step; the first fetch is S when the bus says the return is
+/// sequential (prefetch off) and N otherwise. mgba-suite "Timing tests" BIOS rows pin the
+/// N-versus-S difference in every ROM column; a refill that ignored the flag regressed them.
+#[test]
+fn swi_hle_return_refill_honours_the_sequential_flag() {
+    for (seq, first) in [(true, Access::S), (false, Access::N)] {
+        let mut cpu = arm_cpu();
+        let mut bus = TestBus::new();
+        bus.hle = true;
+        bus.swi_refill = Some(seq);
+        run_arm(&mut cpu, &mut bus, &[swi(6), mov_imm(1, 2), mov_imm(2, 3)], 1);
+        assert_eq!(bus.swi_calls, vec![6]);
+        assert_eq!(cpu.pc(), CODE + 4, "continues at the instruction after the SWI");
+        // The last two fetches are the refill (earlier ones are the initial fill and the
+        // pipeline advance while the SWI executed).
+        let refill = &bus.fetches[bus.fetches.len() - 2..];
+        assert_eq!(refill, [(CODE + 4, first), (CODE + 8, Access::S)], "seq={seq}");
+        assert!(!cpu.refill_seq, "flag consumed");
+        cpu.step(&mut bus);
+        assert_eq!(cpu.regs.r[1], 2);
+    }
+}
+
 #[test]
 fn swi_hle_serviced_continues_without_exception() {
     let mut cpu = arm_cpu();

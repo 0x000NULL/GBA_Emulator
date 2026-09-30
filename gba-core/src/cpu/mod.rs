@@ -184,18 +184,24 @@ impl Cpu {
         (bus.now() - start) as u32
     }
 
-    /// Refill the pipeline after a PC write: N fetch at PC, S fetch at PC+size.
+    /// Refill the pipeline after a PC write: N fetch at PC, S fetch at PC+size. An HLE SWI
+    /// return sets `refill_seq` (the BIOS `movs pc, lr` refill is sequential in the caller's
+    /// region when the prefetch buffer is off; see `Bus::swi_took_refill`), which makes the
+    /// first fetch S instead.
     fn refill_pipeline<B: MemoryBus>(&mut self, bus: &mut B) {
+        let seq = std::mem::take(&mut self.refill_seq);
         if self.regs.thumb() {
             let pc = self.regs.r[15] & !1;
             self.regs.r[15] = pc;
-            self.pipeline[0] = bus.fetch16(pc, Access::N) as u32;
+            let first = if seq { Self::seq_unless_block_start(pc) } else { Access::N };
+            self.pipeline[0] = bus.fetch16(pc, first) as u32;
             let next = pc.wrapping_add(2);
             self.pipeline[1] = bus.fetch16(next, Self::seq_unless_block_start(next)) as u32;
         } else {
             let pc = self.regs.r[15] & !3;
             self.regs.r[15] = pc;
-            self.pipeline[0] = bus.fetch32(pc, Access::N);
+            let first = if seq { Self::seq_unless_block_start(pc) } else { Access::N };
+            self.pipeline[0] = bus.fetch32(pc, first);
             let next = pc.wrapping_add(4);
             self.pipeline[1] = bus.fetch32(next, Self::seq_unless_block_start(next));
         }
