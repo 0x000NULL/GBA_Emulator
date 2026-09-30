@@ -5,8 +5,12 @@
 //! "VRAM Character (Tile) Mapping", "LCD I/O Mosaic Function".
 //!
 //! Ordering: a lower priority number wins; at equal priority the lower OAM index wins.
-//! Not modelled: the per-line OBJ rendering cycle budget (1210/954 cycles) and the
-//! one-line-early OAM evaluation.
+//!
+//! Timing: `render` is called for line N during line N-1 (`Ppu::prepare_obj`), and it models the
+//! per-line rendering budget from GBATEK "LCD OBJ Overview" (1210 cycles, 954 with H-Blank
+//! Interval Free). Judgement calls where GBATEK is silent: sprites that are vertically off the
+//! line cost nothing, a sprite that overruns the budget is drawn up to the pixel where the budget
+//! ends, and OBJ-window sprites cost the same as visible ones.
 
 use super::regs::{Mem, TRANSPARENT};
 use crate::SCREEN_W;
@@ -94,8 +98,14 @@ pub fn render(mem: &Mem, y: usize, out: &mut ObjLine) {
     let bitmap_mode = dispcnt & 7 >= 3;
     let objwin_enabled = dispcnt & (1 << 15) != 0;
     let mosaic = mem.mosaic();
+    // Rendering cycles available for this line (GBATEK "Maximum Number of Sprites per Line"):
+    // 304*4-6 = 1210, or 240*4-6 = 954 when DISPCNT bit 5 hands H-Blank to the CPU for OAM access.
+    let mut budget: i32 = if dispcnt & (1 << 5) != 0 { 954 } else { 1210 };
 
     for i in 0..128 {
+        if budget <= 0 {
+            break;
+        }
         let a0 = mem.oam16(i * 8);
         let a1 = mem.oam16(i * 8 + 2);
         let a2 = mem.oam16(i * 8 + 4);
@@ -103,10 +113,6 @@ pub fn render(mem: &Mem, y: usize, out: &mut ObjLine) {
         let affine = a0 & (1 << 8) != 0;
         if !affine && a0 & (1 << 9) != 0 {
             continue; // OBJ disable
-        }
-        let mode = (a0 >> 10) & 3;
-        if mode == 2 && !objwin_enabled {
-            continue;
         }
         let shape = (a0 >> 14) as usize;
         if shape == 3 {
@@ -118,14 +124,6 @@ pub fn render(mem: &Mem, y: usize, out: &mut ObjLine) {
         let (rw, rh) = if double { (w * 2, h * 2) } else { (w, h) };
 
         let obj_y = (a0 & 0xFF) as i32;
-        let mut obj_x = (a1 & 0x1FF) as i32;
-        if obj_x >= 256 {
-            obj_x -= 512;
-        }
-        if obj_x >= SCREEN_W as i32 || obj_x + rw <= 0 {
-            continue;
-        }
-
         let use_mosaic = a0 & (1 << 12) != 0;
         let mut ly = y as i32;
         if use_mosaic {
@@ -133,6 +131,33 @@ pub fn render(mem: &Mem, y: usize, out: &mut ObjLine) {
         }
         let y_local = (ly - obj_y) & 0xFF;
         if y_local >= rh {
+            continue;
+        }
+
+        // Every sprite on this line costs cycles, horizontally visible or not (GBATEK: offscreen
+        // OBJs of higher priority still reduce the count). n*1 for normal, 10+n*2 for affine.
+        let cost = if affine { 10 + 2 * rw } else { rw };
+        let draw_w = if cost > budget {
+            let partial = if affine { (budget - 10) / 2 } else { budget };
+            budget = 0;
+            partial.max(0)
+        } else {
+            budget -= cost;
+            rw
+        };
+        if draw_w == 0 {
+            continue;
+        }
+
+        let mode = (a0 >> 10) & 3;
+        if mode == 2 && !objwin_enabled {
+            continue;
+        }
+        let mut obj_x = (a1 & 0x1FF) as i32;
+        if obj_x >= 256 {
+            obj_x -= 512;
+        }
+        if obj_x >= SCREEN_W as i32 || obj_x + rw <= 0 {
             continue;
         }
 
@@ -161,7 +186,7 @@ pub fn render(mem: &Mem, y: usize, out: &mut ObjLine) {
         let vflip = !affine && a1 & (1 << 13) != 0;
 
         let x_start = obj_x.max(0);
-        let x_end = (obj_x + rw).min(SCREEN_W as i32);
+        let x_end = (obj_x + draw_w).min(SCREEN_W as i32);
         let iy = y_local - rh / 2;
         for x in x_start..x_end {
             let sx_screen = if use_mosaic { x - x % mosaic.obj_h as i32 } else { x };

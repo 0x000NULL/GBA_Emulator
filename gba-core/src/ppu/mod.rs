@@ -3,8 +3,12 @@
 //!
 //! Timing contract (see `timing.rs`, GBATEK "LCD I/O Interrupts and Status", "LCD Dimensions and Timings"):
 //! - `Event::HBlank` at cycle `HDRAW_CYCLES` of every line: render line `vcount` if < 160 using the
-//!   registers as they are at this moment, set the H-Blank flag, raise the H-Blank IRQ (every line,
-//!   0..227), trigger H-Blank DMA (only lines 0..159) and video-capture DMA (lines 2..162).
+//!   BG registers as they are at this moment and the OBJ line prepared during the previous line,
+//!   then evaluate OAM for line `vcount + 1` (`prepare_obj`), set the H-Blank flag, raise the
+//!   H-Blank IRQ (every line, 0..227), trigger H-Blank DMA (only lines 0..159) and video-capture
+//!   DMA (lines 2..162). Sprites for line N are fetched during line N-1 (GBATEK "LCD OBJ Overview":
+//!   the 1210-cycle budget spans the whole previous line, 954 when H-Blank Interval Free reserves
+//!   H-Blank for CPU OAM access), so OAM written by an H-Blank DMA on line N first shows on N+2.
 //! - `Event::LineEnd` at cycle `CYCLES_PER_LINE`: clear H-Blank flag, vcount = (vcount+1) % 228,
 //!   update V-Count match flag/IRQ, set V-Blank flag + IRQ + DMA at line 160, clear V-Blank flag at
 //!   line 227, latch the affine reference points at line 0, mark the frame complete at line 160.
@@ -145,6 +149,13 @@ impl Ppu {
     pub fn on_hblank(&mut self, ctx: &mut SysCtx) {
         if self.vcount < VISIBLE_LINES {
             self.render_scanline(self.vcount as usize);
+        }
+        // OAM for the next visible line is evaluated now, before H-Blank DMA can rewrite it.
+        let next = (self.vcount + 1) % LINES_PER_FRAME;
+        if next < VISIBLE_LINES {
+            self.prepare_obj(next as usize);
+        }
+        if self.vcount < VISIBLE_LINES {
             ctx.dma.trigger(DmaTrigger::HBlank);
         }
         if (VIDEO_CAPTURE_FIRST_LINE..=VIDEO_CAPTURE_LAST_LINE).contains(&self.vcount) {
@@ -221,9 +232,19 @@ impl Ppu {
         }
     }
 
-    /// Render one visible scanline into `fb` with the registers as they are right now.
-    /// Forced blank (DISPCNT bit 7) outputs white. Afterwards the internal affine reference
-    /// points advance by PB/PD (GBATEK "Internal Reference Point Registers").
+    /// Evaluate OAM for line `y` into the OBJ scratch buffer. On hardware this happens during the
+    /// previous line (see the timing contract above); `render_scanline(y)` consumes the result.
+    pub fn prepare_obj(&mut self, y: usize) {
+        debug_assert!(y < SCREEN_H);
+        let Ppu { pal, vram, oam, io, scratch, .. } = self;
+        let mem = Mem { io, pal, vram, oam };
+        obj::render(&mem, y, &mut scratch.obj);
+    }
+
+    /// Render one visible scanline into `fb` with the BG registers as they are right now and the
+    /// OBJ line prepared by `prepare_obj(y)`. Forced blank (DISPCNT bit 7) outputs white.
+    /// Afterwards the internal affine reference points advance by PB/PD (GBATEK "Internal
+    /// Reference Point Registers").
     pub fn render_scanline(&mut self, y: usize) {
         debug_assert!(y < SCREEN_H);
         let Ppu { pal, vram, oam, io, fb, bg_ref, scratch, .. } = self;
@@ -279,7 +300,6 @@ impl Ppu {
             }
         }
 
-        obj::render(&mem, y, obj);
         compose::window_line(&mem, y, &obj.window, win);
         compose::compose_line(&mem, bg, bg_active, obj, win, row);
         if io[0x02] & 1 != 0 {
@@ -339,5 +359,52 @@ mod timing_tests {
         assert!(ppu.dispstat_read() & 1 != 0);
         assert_eq!(irq.if_, Irq::VBlank as u16);
         assert!(ppu.frame_ready);
+    }
+
+    /// OAM is evaluated for line N during line N-1: a sprite written after HBlank(19) (i.e. during
+    /// line 19's H-Blank, as an H-Blank DMA would) is missing from line 20 and present on line 21.
+    #[test]
+    fn oam_is_evaluated_one_line_early() {
+        let mut sched = Scheduler::new();
+        let mut irq = IrqController::new();
+        let mut dma = DmaController::new();
+        let mut ppu = Ppu::new();
+        // Mode 0, OBJ on, 1D mapping; OBJ palette 1 = red; tile 1 solid index 1.
+        ppu.io[0..2].copy_from_slice(&((1u16 << 12) | (1 << 6)).to_le_bytes());
+        ppu.pal[0..2].copy_from_slice(&0x1234u16.to_le_bytes());
+        ppu.pal[(256 + 1) * 2..(256 + 1) * 2 + 2].copy_from_slice(&0x001Fu16.to_le_bytes());
+        ppu.vram[0x1_0020..0x1_0040].fill(0x11);
+        for i in 0..128 {
+            ppu.oam[i * 8..i * 8 + 2].copy_from_slice(&(1u16 << 9).to_le_bytes()); // all disabled
+        }
+        {
+            let mut ctx = SysCtx { sched: &mut sched, irq: &mut irq, dma: &mut dma };
+            ppu.boot_schedule(&mut ctx, false);
+        }
+        let mut written = false;
+        while ppu.vcount < 30 {
+            let deadline = sched.next_deadline();
+            sched.now = deadline;
+            let (ev, _) = sched.pop_due().unwrap();
+            let mut ctx = SysCtx { sched: &mut sched, irq: &mut irq, dma: &mut dma };
+            match ev {
+                Event::HBlank => {
+                    ppu.on_hblank(&mut ctx);
+                    if ppu.vcount == 19 && !written {
+                        // Sprite 0: 8x8 at (30, 20), tile 1.
+                        ppu.oam[0..2].copy_from_slice(&20u16.to_le_bytes());
+                        ppu.oam[2..4].copy_from_slice(&30u16.to_le_bytes());
+                        ppu.oam[4..6].copy_from_slice(&1u16.to_le_bytes());
+                        written = true;
+                    }
+                }
+                Event::LineEnd => ppu.on_line_end(&mut ctx, deadline),
+                _ => unreachable!(),
+            }
+        }
+        assert_eq!(ppu.fb[20 * SCREEN_W + 30], 0x1234, "line 20 was prepared before the OAM write");
+        assert_eq!(ppu.fb[21 * SCREEN_W + 30], 0x001F, "line 21 sees the new sprite");
+        assert_eq!(ppu.fb[27 * SCREEN_W + 30], 0x001F);
+        assert_eq!(ppu.fb[28 * SCREEN_W + 30], 0x1234);
     }
 }

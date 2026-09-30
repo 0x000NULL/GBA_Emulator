@@ -1,4 +1,5 @@
-//! PPU rendering unit tests: fill PAL/VRAM/OAM/IO by hand, call `render_scanline`, assert pixels.
+//! PPU rendering unit tests: fill PAL/VRAM/OAM/IO by hand, render a line (`prepare_obj` +
+//! `render_scanline`, as the H-Blank handlers do), assert pixels.
 
 use super::*;
 
@@ -66,8 +67,14 @@ fn tile8(p: &mut Ppu, addr: usize, f: impl Fn(usize, usize) -> u8) {
 fn frame_line(p: &mut Ppu, y: usize) {
     p.latch_affine_refs();
     for i in 0..=y {
-        p.render_scanline(i);
+        render(p, i);
     }
+}
+
+/// Evaluate OAM for line `y` and render it, as consecutive H-Blank handlers would.
+fn render(p: &mut Ppu, y: usize) {
+    p.prepare_obj(y);
+    p.render_scanline(y);
 }
 
 fn row(p: &Ppu, y: usize) -> &[u16] {
@@ -105,7 +112,7 @@ fn forced_blank_is_white() {
     let mut p = ppu();
     basic_mode0(&mut p);
     set16(&mut p, 0x00, 0x80 | 1 << 8);
-    p.render_scanline(10);
+    render(&mut p, 10);
     assert!(row(&p, 10).iter().all(|&c| c == WHITE));
 }
 
@@ -113,7 +120,7 @@ fn forced_blank_is_white() {
 fn empty_screen_is_backdrop() {
     let mut p = ppu();
     basic_mode0(&mut p);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert!(row(&p, 0).iter().all(|&c| c == BACKDROP));
 }
 
@@ -121,7 +128,7 @@ fn empty_screen_is_backdrop() {
 fn backdrop_ignores_bit15() {
     let mut p = ppu();
     pal(&mut p, 0, 0x8000 | BACKDROP);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), BACKDROP);
 }
 
@@ -134,13 +141,13 @@ fn mode0_text_4bpp_single_tile() {
     set16(&mut p, 0x08, bgcnt(0, 0, 8, 0, false)); // tiles at 0, map at 0x4000
     tile4_solid(&mut p, 32, 1); // tile 1 = red
     vram16(&mut p, 0x4000 + 2, 1); // map (1,0) = tile 1
-    p.render_scanline(3);
+    render(&mut p, 3);
     assert_eq!(px(&p, 7, 3), BACKDROP);
     for x in 8..16 {
         assert_eq!(px(&p, x, 3), RED);
     }
     assert_eq!(px(&p, 16, 3), BACKDROP);
-    p.render_scanline(8);
+    render(&mut p, 8);
     assert_eq!(px(&p, 8, 8), BACKDROP, "tile row 1 is empty");
 }
 
@@ -152,7 +159,7 @@ fn text_4bpp_palette_bank_and_transparency() {
     set16(&mut p, 0x08, bgcnt(0, 0, 8, 0, false));
     tile4(&mut p, 32, |x, _| if x < 4 { 1 } else { 0 });
     vram16(&mut p, 0x4000, 1 | 1 << 12); // palette bank 1
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), BLUE);
     assert_eq!(px(&p, 3, 0), BLUE);
     assert_eq!(px(&p, 4, 0), BACKDROP, "colour 0 is transparent");
@@ -167,7 +174,7 @@ fn text_8bpp() {
     tile8(&mut p, 0x4000 + 64 * 2, |x, y| if x == y { 200 } else { 0 });
     vram16(&mut p, 0, 2);
     for y in 0..8 {
-        p.render_scanline(y);
+        render(&mut p, y);
         for x in 0..8 {
             assert_eq!(px(&p, x, y), if x == y { GREEN } else { BACKDROP }, "({x},{y})");
         }
@@ -189,12 +196,12 @@ fn text_flips() {
     vram16(&mut p, 0x4002, 1 | 1 << 10); // hflip at 8..16
     vram16(&mut p, 0x4004, 1 | 1 << 11); // vflip at 16..24
     vram16(&mut p, 0x4006, 1 | 3 << 10); // both at 24..32
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), RED);
     assert_eq!(px(&p, 15, 0), RED);
     assert_eq!(px(&p, 23, 0), GREEN);
     assert_eq!(px(&p, 24, 0), GREEN);
-    p.render_scanline(7);
+    render(&mut p, 7);
     assert_eq!(px(&p, 7, 7), GREEN);
     assert_eq!(px(&p, 8, 7), GREEN);
     assert_eq!(px(&p, 16, 7), RED);
@@ -210,12 +217,12 @@ fn text_scroll_and_wrap_256() {
     vram16(&mut p, 0x4000, 1); // tile (0,0) red
     set16(&mut p, 0x10, 0x1F8 + 4); // hofs = 508 -> effective 252: tile 0 appears at x 4..12
     set16(&mut p, 0x12, 0x100 + 3); // vofs = 259 -> effective 3: tile row 0 at y 0..5
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 3, 0), BACKDROP);
     assert_eq!(px(&p, 4, 0), RED);
     assert_eq!(px(&p, 11, 0), RED);
     assert_eq!(px(&p, 12, 0), BACKDROP);
-    p.render_scanline(5);
+    render(&mut p, 5);
     assert_eq!(px(&p, 4, 5), BACKDROP);
 }
 
@@ -229,13 +236,13 @@ fn text_512_wide_uses_second_screen_block() {
     vram16(&mut p, 0x4000, 1); // SC0 (0,0) red
     vram16(&mut p, 0x4800, 2); // SC1 (0,0) = world x 256 green
     set16(&mut p, 0x10, 248); // world x 248..488 visible: red at x<8? no: world 248..255 is SC0 tile 31 (empty), 256..264 SC1 tile 0
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), BACKDROP);
     assert_eq!(px(&p, 8, 0), GREEN);
     assert_eq!(px(&p, 15, 0), GREEN);
     assert_eq!(px(&p, 16, 0), BACKDROP);
     set16(&mut p, 0x10, 504); // world 504..511 then wraps to 0..: red at x 8..16
-    p.render_scanline(1);
+    render(&mut p, 1);
     assert_eq!(px(&p, 8, 1), RED);
 }
 
@@ -250,17 +257,17 @@ fn text_256x512_and_512x512_screen_blocks() {
     set16(&mut p, 0x08, bgcnt(0, 0, 8, 2, false));
     vram16(&mut p, 0x4800, 1);
     set16(&mut p, 0x12, 256);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), RED);
     // Size 3 (512x512): SC2 at +0x1000 holds (x<256, y>=256), SC3 at +0x1800 holds (x>=256, y>=256).
     set16(&mut p, 0x08, bgcnt(0, 0, 8, 3, false));
     vram16(&mut p, 0x5000, 2);
     vram16(&mut p, 0x5800, 3);
     set16(&mut p, 0x10, 0);
-    p.render_scanline(1);
+    render(&mut p, 1);
     assert_eq!(px(&p, 0, 1), GREEN);
     set16(&mut p, 0x10, 256);
-    p.render_scanline(2);
+    render(&mut p, 2);
     assert_eq!(px(&p, 0, 2), BLUE);
 }
 
@@ -271,7 +278,7 @@ fn text_tiles_in_obj_vram_are_transparent() {
     set16(&mut p, 0x08, bgcnt(0, 3, 0, 0, false)); // char base 0xC000
     p.vram[0x10000..0x10020].fill(0x11);
     vram16(&mut p, 0, 0x200); // tile 512 at 0xC000 + 0x4000 = 0x10000
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), BACKDROP);
 }
 
@@ -292,14 +299,14 @@ fn bg_priority_lower_number_wins_then_lower_index() {
     vram16(&mut p, 0x4000, 1);
     vram16(&mut p, 0x4800, 2);
     vram16(&mut p, 0x5000, 3);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), GREEN);
     // Make BG1 transparent there: BG2 shows.
     vram16(&mut p, 0x4800, 0);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), BLUE);
     vram16(&mut p, 0x5000, 0);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), RED);
 }
 
@@ -311,13 +318,13 @@ fn dispcnt_disables_layers_and_mode1_bg3_absent() {
     set16(&mut p, 0x0E, bgcnt(0, 0, 8, 0, false));
     vram16(&mut p, 0x4000, 1);
     set16(&mut p, 0x00, 1 << 11); // mode 0, BG3 on
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), RED);
     set16(&mut p, 0x00, 1 | 1 << 11); // mode 1: BG3 does not exist
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), BACKDROP);
     set16(&mut p, 0x00, 0); // BG3 off
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), BACKDROP);
 }
 
@@ -386,7 +393,7 @@ fn mode3_uses_affine_reference_and_never_wraps() {
         vram16(&mut p, i * 2, RED);
     }
     set32(&mut p, 0x28, (-10i32 << 8) as u32); // BG2X = -10
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 9, 0), BACKDROP);
     assert_eq!(px(&p, 10, 0), RED);
 }
@@ -417,7 +424,7 @@ fn affine_setup(p: &mut Ppu, wrap: bool) {
 fn affine_identity() {
     let mut p = ppu();
     affine_setup(&mut p, false);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), RED);
     assert_eq!(px(&p, 7, 0), RED);
     assert_eq!(px(&p, 8, 0), GREEN);
@@ -430,7 +437,7 @@ fn affine_identity() {
 fn affine_wraparound() {
     let mut p = ppu();
     affine_setup(&mut p, true);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 128, 0), RED, "x 128 wraps to 0");
     assert_eq!(px(&p, 136, 0), GREEN);
 }
@@ -441,14 +448,14 @@ fn affine_scale_2x() {
     affine_setup(&mut p, false);
     set16(&mut p, 0x20, 0x80); // PA = 0.5 -> texture advances half a pixel per screen pixel
     set16(&mut p, 0x26, 0x80);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 15, 0), RED);
     assert_eq!(px(&p, 16, 0), GREEN);
     assert_eq!(px(&p, 17, 0), GREEN);
     assert_eq!(px(&p, 18, 0), BACKDROP);
-    p.render_scanline(1);
+    render(&mut p, 1);
     assert_eq!(px(&p, 16, 1), GREEN, "texture row 0 covers screen rows 0 and 1");
-    p.render_scanline(2);
+    render(&mut p, 2);
     assert_eq!(px(&p, 16, 2), BACKDROP);
 }
 
@@ -464,11 +471,11 @@ fn affine_rotate_90() {
     set16(&mut p, 0x26, 0);
     set32(&mut p, 0x28, 8 << 8);
     set32(&mut p, 0x2C, 0);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), GREEN);
     assert_eq!(px(&p, 1, 0), BACKDROP, "tex (8,1) is transparent");
     // The reference point advances by PB/PD per line: line 1 -> ref (7, 0) -> tex (7 - 0, x) = red column.
-    p.render_scanline(1);
+    render(&mut p, 1);
     assert_eq!(px(&p, 0, 1), RED);
     assert_eq!(px(&p, 7, 1), RED);
     assert_eq!(px(&p, 8, 1), BACKDROP, "tex y 8 is tile row 1 (empty)");
@@ -481,21 +488,21 @@ fn affine_reference_advances_and_reloads() {
     set16(&mut p, 0x26, 0x100); // PD = 1
     // Lines 0..7 show tile row 0 (red); after 8 lines the reference has moved 8 texels down.
     for y in 0..8 {
-        p.render_scanline(y);
+        render(&mut p, y);
         assert_eq!(px(&p, 0, y), RED);
     }
-    p.render_scanline(8);
+    render(&mut p, 8);
     assert_eq!(px(&p, 0, 8), BACKDROP);
     // Writing BG2Y mid-frame reloads the internal register for the next line.
     set32(&mut p, 0x2C, 0);
-    p.render_scanline(9);
+    render(&mut p, 9);
     assert_eq!(px(&p, 0, 9), RED);
     // Frame start (latch at line 0) resets it too.
     for y in 10..20 {
-        p.render_scanline(y);
+        render(&mut p, y);
     }
     p.latch_affine_refs();
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), RED);
 }
 
@@ -505,7 +512,7 @@ fn affine_reference_is_28bit_signed() {
     affine_setup(&mut p, false);
     set32(&mut p, 0x28, 0x0FFF_FF00); // -1.0 in 28-bit
     assert_eq!(p.bg_ref[0], -256);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), BACKDROP);
     assert_eq!(px(&p, 1, 0), RED);
 }
@@ -557,14 +564,14 @@ fn obj_regular_8x8_position() {
     obj_setup(&mut p);
     hide_all_objs(&mut p);
     obj(&mut p, 0, 20, 30, 1); // y 20, x 30, tile 1
-    p.render_scanline(19);
+    render(&mut p, 19);
     assert_eq!(px(&p, 30, 19), BACKDROP);
-    p.render_scanline(20);
+    render(&mut p, 20);
     assert_eq!(px(&p, 29, 20), BACKDROP);
     assert_eq!(px(&p, 30, 20), RED);
     assert_eq!(px(&p, 37, 20), RED);
     assert_eq!(px(&p, 38, 20), BACKDROP);
-    p.render_scanline(28);
+    render(&mut p, 28);
     assert_eq!(px(&p, 30, 28), BACKDROP);
 }
 
@@ -574,11 +581,11 @@ fn obj_hidden_and_master_disable() {
     obj_setup(&mut p);
     hide_all_objs(&mut p);
     obj(&mut p, 0, 0 | 1 << 9, 0, 1);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), BACKDROP);
     obj(&mut p, 0, 0, 0, 1);
     set16(&mut p, 0x00, 0);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), BACKDROP);
 }
 
@@ -588,11 +595,11 @@ fn obj_x_negative_and_y_wrap() {
     obj_setup(&mut p);
     hide_all_objs(&mut p);
     obj(&mut p, 0, 252, 508, 1); // x = -4, y = 252 -> rows 252..255 offscreen, 0..3 visible at top
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), RED);
     assert_eq!(px(&p, 3, 0), RED);
     assert_eq!(px(&p, 4, 0), BACKDROP);
-    p.render_scanline(4);
+    render(&mut p, 4);
     assert_eq!(px(&p, 0, 4), BACKDROP);
 }
 
@@ -605,21 +612,21 @@ fn obj_shapes_and_sizes() {
     p.vram[0x10020..0x10000 + 0x20 * 65].fill(0x11); // tiles 1..=64 solid
     // Horizontal 64x32 at (0,0).
     obj(&mut p, 0, 1 << 14, 3 << 14, 1);
-    p.render_scanline(31);
+    render(&mut p, 31);
     assert_eq!(px(&p, 63, 31), RED);
     assert_eq!(px(&p, 64, 31), BACKDROP);
-    p.render_scanline(32);
+    render(&mut p, 32);
     assert_eq!(px(&p, 0, 32), BACKDROP);
     // Vertical 8x32 at (100, 0).
     obj(&mut p, 0, 2 << 14, 1 << 14 | 100, 1);
-    p.render_scanline(31);
+    render(&mut p, 31);
     assert_eq!(px(&p, 100, 31), RED);
     assert_eq!(px(&p, 108, 31), BACKDROP);
     // Square 64x64.
     obj(&mut p, 0, 0, 3 << 14, 1);
-    p.render_scanline(63);
+    render(&mut p, 63);
     assert_eq!(px(&p, 63, 63), RED);
-    p.render_scanline(64);
+    render(&mut p, 64);
     assert_eq!(px(&p, 0, 64), BACKDROP);
 }
 
@@ -636,15 +643,15 @@ fn obj_mapping_1d_vs_2d() {
     p.vram[0x10000 + 0x25 * 32..0x10000 + 0x26 * 32].fill(0x11);
     obj(&mut p, 0, 0, 1 << 14, 4); // 16x16 at (0,0), tile 4
     // 2D: rows are tiles 4,5 / 0x24,0x25.
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), RED);
     assert_eq!(px(&p, 8, 0), GREEN);
-    p.render_scanline(8);
+    render(&mut p, 8);
     assert_eq!(px(&p, 0, 8), BLUE);
     assert_eq!(px(&p, 8, 8), RED);
     // 1D: rows are tiles 4,5 / 6,7 (7 empty).
     set16(&mut p, 0x00, 1 << 12 | 1 << 6);
-    p.render_scanline(8);
+    render(&mut p, 8);
     assert_eq!(px(&p, 0, 8), BLUE);
     assert_eq!(px(&p, 8, 8), BACKDROP);
 }
@@ -662,19 +669,19 @@ fn obj_8bpp_mapping() {
     // 2D mapping, tile 0x24 (row below in 2D 8bpp = +32) filled with 78.
     p.vram[0x10000 + 0x24 * 32..0x10000 + 0x26 * 32].fill(78);
     obj(&mut p, 0, 1 << 13, 1 << 14, 4); // 8bpp 16x16
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), GREEN);
     assert_eq!(px(&p, 8, 0), BLUE); // 2D: next tile column is +2 = tile 6
-    p.render_scanline(8);
+    render(&mut p, 8);
     assert_eq!(px(&p, 0, 8), BLUE); // 2D: next row is +32 = 0x24
     // 1D 8bpp: row 1 starts at 4 + 2*2 = 8 (empty).
     set16(&mut p, 0x00, 1 << 12 | 1 << 6);
-    p.render_scanline(8);
+    render(&mut p, 8);
     assert_eq!(px(&p, 0, 8), BACKDROP);
     // 2D 8bpp ignores the low bit of the tile number.
     set16(&mut p, 0x00, 1 << 12);
     obj(&mut p, 0, 1 << 13, 1 << 14, 5);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), GREEN);
 }
 
@@ -690,12 +697,12 @@ fn obj_flips() {
     obj(&mut p, 1, 0, 1 << 12 | 8, 3); // hflip at x 8
     obj(&mut p, 2, 0, 1 << 13 | 16, 3); // vflip at x 16
     obj(&mut p, 3, 0, 3 << 12 | 24, 3); // both at x 24
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), RED);
     assert_eq!(px(&p, 15, 0), RED);
     assert_eq!(px(&p, 16, 0), BACKDROP);
     assert_eq!(px(&p, 24, 0), BACKDROP);
-    p.render_scanline(7);
+    render(&mut p, 7);
     assert_eq!(px(&p, 16, 7), RED);
     assert_eq!(px(&p, 31, 7), RED);
 }
@@ -706,7 +713,7 @@ fn obj_palette_bank() {
     obj_setup(&mut p);
     hide_all_objs(&mut p);
     obj(&mut p, 0, 0, 0, 1 | 1 << 12);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), BLUE);
 }
 
@@ -717,10 +724,10 @@ fn obj_order_lower_index_wins_at_equal_priority_and_lower_prio_number_wins() {
     hide_all_objs(&mut p);
     obj(&mut p, 5, 0, 0, 2); // green, prio 0
     obj(&mut p, 9, 0, 0, 1); // red, prio 0
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), GREEN);
     obj(&mut p, 5, 0, 0, 2 | 1 << 10); // green now prio 1
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), RED);
 }
 
@@ -735,10 +742,10 @@ fn obj_priority_relative_to_bg() {
     tile4_solid(&mut p, 32, 1);
     vram16(&mut p, 0x4000, 1);
     obj(&mut p, 0, 1 << 14, 0, 1 | 1 << 10); // 16x8 OBJ (tiles 1 red, 2 green), prio 1 = BG -> OBJ on top
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), RED);
     obj(&mut p, 0, 1 << 14, 0, 1 | 2 << 10); // OBJ prio 2: behind BG
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), BLUE);
     assert_eq!(px(&p, 8, 0), GREEN, "BG transparent there -> OBJ visible");
 }
@@ -754,16 +761,16 @@ fn obj_affine_identity_and_scale() {
     oam16(&mut p, 0x16, 0);
     oam16(&mut p, 0x1E, 0x100);
     obj(&mut p, 0, 1 << 8, 0, 1);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), RED);
     assert_eq!(px(&p, 7, 0), RED);
     assert_eq!(px(&p, 8, 0), BACKDROP);
     // PA=PD=2.0 shrinks the texture to the centre 4x4 of the 8x8 window.
     oam16(&mut p, 0x06, 0x200);
     oam16(&mut p, 0x1E, 0x200);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), BACKDROP);
-    p.render_scanline(2);
+    render(&mut p, 2);
     assert_eq!(px(&p, 1, 2), BACKDROP);
     assert_eq!(px(&p, 2, 2), RED);
     assert_eq!(px(&p, 5, 2), RED);
@@ -781,16 +788,16 @@ fn obj_affine_double_size() {
     oam16(&mut p, 0x16, 0);
     oam16(&mut p, 0x1E, 0x80);
     obj(&mut p, 0, 1 << 8, 0, 1);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), RED);
     assert_eq!(px(&p, 8, 0), BACKDROP);
     obj(&mut p, 0, 1 << 8 | 1 << 9, 0, 1);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 15, 0), RED);
     assert_eq!(px(&p, 16, 0), BACKDROP);
-    p.render_scanline(15);
+    render(&mut p, 15);
     assert_eq!(px(&p, 15, 15), RED);
-    p.render_scanline(16);
+    render(&mut p, 16);
     assert_eq!(px(&p, 0, 16), BACKDROP);
 }
 
@@ -810,17 +817,17 @@ fn obj_affine_rotate_90() {
     set16(&mut p, 0x00, 1 << 12 | 1 << 6);
     obj(&mut p, 0, 1 << 8 | 1 << 9 | 1 << 14, 0, 1); // horizontal, size 0 = 16x8, double
     p.vram[0x10040..0x10060].fill(0x11); // tile 2 also red
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert!(row(&p, 0).iter().all(|&c| c == BACKDROP));
-    p.render_scanline(1);
+    render(&mut p, 1);
     assert_eq!(px(&p, 11, 1), BACKDROP);
     assert_eq!(px(&p, 12, 1), RED);
     assert_eq!(px(&p, 19, 1), RED);
     assert_eq!(px(&p, 20, 1), BACKDROP);
-    p.render_scanline(15);
+    render(&mut p, 15);
     assert_eq!(px(&p, 12, 15), RED);
     assert_eq!(px(&p, 19, 15), RED);
-    p.render_scanline(16);
+    render(&mut p, 16);
     assert_eq!(px(&p, 12, 16), BACKDROP);
 }
 
@@ -833,7 +840,7 @@ fn obj_bitmap_mode_ignores_low_tiles() {
     p.vram[0x14000..0x14020].fill(0x11); // tile 512
     obj(&mut p, 0, 0, 0, 1);
     obj(&mut p, 1, 0, 16, 512);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), BACKDROP, "tile 1 not displayed in mode 3");
     assert_eq!(px(&p, 16, 0), RED);
 }
@@ -853,7 +860,7 @@ fn obj_window_masks_layers() {
     obj(&mut p, 0, 2 << 10, 8, 1); // OBJ window at x 8..16
     obj(&mut p, 1, 0, 30, 2); // normal green OBJ at x 30
     set16(&mut p, 0x4A, 0x3F | (0x10 << 8)); // outside: all; OBJ window: only OBJ
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 7, 0), BLUE);
     assert_eq!(px(&p, 8, 0), BACKDROP, "BG0 masked inside OBJ window; window OBJ itself invisible");
     assert_eq!(px(&p, 15, 0), BACKDROP);
@@ -861,7 +868,7 @@ fn obj_window_masks_layers() {
     assert_eq!(px(&p, 30, 0), GREEN);
     // With DISPCNT bit 15 clear the OBJ-window sprite has no effect at all.
     set16(&mut p, 0x00, 1 << 12 | 1 << 8);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 8, 0), BLUE);
 }
 
@@ -889,13 +896,13 @@ fn win0_inside_outside_masks() {
     set16(&mut p, 0x44, 0 << 8 | 40); // y 0..40
     set16(&mut p, 0x48, 0x10); // inside: OBJ only
     set16(&mut p, 0x4A, 0x01); // outside: BG0 only
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 19, 0), BLUE);
     assert_eq!(px(&p, 20, 0), BACKDROP);
     assert_eq!(px(&p, 100, 0), GREEN);
     assert_eq!(px(&p, 119, 0), BACKDROP);
     assert_eq!(px(&p, 120, 0), BLUE);
-    p.render_scanline(40);
+    render(&mut p, 40);
     assert_eq!(px(&p, 50, 40), BLUE, "y 40 is outside (y2 exclusive)");
 }
 
@@ -910,7 +917,7 @@ fn win1_below_win0_and_inverted_x() {
     set16(&mut p, 0x46, 160);
     set16(&mut p, 0x48, 0x00 | (0x01 << 8)); // win0: nothing; win1: BG0
     set16(&mut p, 0x4A, 0x00); // outside: nothing
-    p.render_scanline(5);
+    render(&mut p, 5);
     assert_eq!(px(&p, 0, 5), BLUE, "win1 wraps to the left edge");
     assert_eq!(px(&p, 10, 5), BACKDROP, "win0 has priority over win1");
     assert_eq!(px(&p, 20, 5), BLUE);
@@ -930,13 +937,13 @@ fn window_inverted_y_and_clamp() {
     set16(&mut p, 0x44, 100 << 8 | 20); // y1 > y2: y >= 100 or y < 20
     set16(&mut p, 0x48, 0x01);
     set16(&mut p, 0x4A, 0x00);
-    p.render_scanline(10);
+    render(&mut p, 10);
     assert_eq!(px(&p, 239, 10), BLUE);
-    p.render_scanline(20);
+    render(&mut p, 20);
     assert_eq!(px(&p, 0, 20), BACKDROP);
-    p.render_scanline(99);
+    render(&mut p, 99);
     assert_eq!(px(&p, 0, 99), BACKDROP);
-    p.render_scanline(100);
+    render(&mut p, 100);
     assert_eq!(px(&p, 0, 100), BLUE);
 }
 
@@ -951,7 +958,7 @@ fn window_disables_effects() {
     set16(&mut p, 0x4A, 0x21); // outside: BG0 + effects
     set16(&mut p, 0x50, 0x01 | 3 << 6); // darken BG0
     set16(&mut p, 0x54, 16);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), BLUE);
     assert_eq!(px(&p, 120, 0), 0);
 }
@@ -983,17 +990,17 @@ fn alpha_blend_arithmetic_and_clamp() {
     blend_setup(&mut p, a, b);
     set16(&mut p, 0x50, 0x01 | 1 << 6 | 0x02 << 8); // BG0 1st, BG1 2nd, alpha
     set16(&mut p, 0x52, 8 | 8 << 8); // EVA = EVB = 8/16
-    p.render_scanline(0);
+    render(&mut p, 0);
     // r: (31*8 + 31*8)/16 = 31, g: (16*8 + 8*8)/16 = 12, b: (0 + 4*8)/16 = 2
     assert_eq!(px(&p, 0, 0), 31 | 12 << 5 | 2 << 10);
     assert_eq!(px(&p, 8, 0), b, "BG1 alone is not blended");
     // EVA 31 -> clamps to 16/16: r = min(31, 31 + 31*8/16) = 31, g = min(31, 16 + 4) = 20
     set16(&mut p, 0x52, 31 | 8 << 8);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), 31 | 20 << 5 | 2 << 10);
     // EVA = EVB = 0 -> black
     set16(&mut p, 0x52, 0);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), 0);
 }
 
@@ -1004,11 +1011,11 @@ fn alpha_requires_adjacent_second_target() {
     // Second target is backdrop only: BG1 sits between BG0 and backdrop -> no blend.
     set16(&mut p, 0x50, 0x01 | 1 << 6 | 0x20 << 8);
     set16(&mut p, 0x52, 8 | 8 << 8);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), RED);
     // Disable BG1: now backdrop is directly below -> blend red with backdrop.
     set16(&mut p, 0x00, 1 << 8);
-    p.render_scanline(0);
+    render(&mut p, 0);
     let expect = {
         let r = (31 * 8 + (BACKDROP & 0x1F) as u32 * 8) >> 4;
         let g = ((BACKDROP >> 5 & 0x1F) as u32 * 8) >> 4;
@@ -1019,7 +1026,7 @@ fn alpha_requires_adjacent_second_target() {
     // Second target above first target: no blend (BG1 prio 1 is 1st target, BG0 prio 0 is 2nd).
     set16(&mut p, 0x00, 1 << 8 | 1 << 9);
     set16(&mut p, 0x50, 0x02 | 1 << 6 | 0x01 << 8);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), RED);
     assert_eq!(px(&p, 8, 0), GREEN);
 }
@@ -1031,19 +1038,19 @@ fn brightness_increase_and_decrease() {
     blend_setup(&mut p, a, GREEN);
     set16(&mut p, 0x50, 0x01 | 2 << 6);
     set16(&mut p, 0x54, 8); // EVY = 8/16
-    p.render_scanline(0);
+    render(&mut p, 0);
     // r: 10 + (21*8)/16 = 20, g: 20 + (11*8)/16 = 25, b: 31
     assert_eq!(px(&p, 0, 0), 20 | 25 << 5 | 31 << 10);
     assert_eq!(px(&p, 8, 0), GREEN, "BG1 is not a 1st target");
     set16(&mut p, 0x50, 0x01 | 3 << 6);
-    p.render_scanline(0);
+    render(&mut p, 0);
     // r: 10 - 5 = 5, g: 20 - 10 = 10, b: 31 - 15 = 16
     assert_eq!(px(&p, 0, 0), 5 | 10 << 5 | 16 << 10);
     set16(&mut p, 0x54, 31); // clamps to 16 -> black
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), 0);
     set16(&mut p, 0x50, 0x01 | 2 << 6);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), WHITE);
 }
 
@@ -1053,7 +1060,7 @@ fn backdrop_as_first_target() {
     pal(&mut p, 0, 0x7FFF);
     set16(&mut p, 0x50, 0x20 | 3 << 6);
     set16(&mut p, 0x54, 8);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), 16 | 16 << 5 | 16 << 10);
 }
 
@@ -1074,14 +1081,14 @@ fn semi_transparent_obj_forces_alpha() {
     // BLDCNT: mode brightness-decrease with OBJ as 1st target, BG0 as 2nd target, backdrop not.
     set16(&mut p, 0x50, 0x10 | 3 << 6 | 0x01 << 8);
     set16(&mut p, 0x54, 16);
-    p.render_scanline(0);
+    render(&mut p, 0);
     // Over BG0 (2nd target): alpha wins over brightness: r 31*8/16 = 15, b 31*8/16 = 15.
     assert_eq!(px(&p, 0, 0), 15 | 15 << 10);
     // Over backdrop (not a 2nd target): brightness decrease applies (OBJ is 1st target) -> black.
     assert_eq!(px(&p, 8, 0), 0);
     // BLDCNT mode 0 and OBJ not a 1st target: semi-transparency still blends over a 2nd target.
     set16(&mut p, 0x50, 0x01 << 8);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), 15 | 15 << 10);
     assert_eq!(px(&p, 8, 0), RED);
 }
@@ -1099,7 +1106,7 @@ fn obj_blend_with_bg_normal_mode() {
     obj(&mut p, 0, 0, 0, 1);
     set16(&mut p, 0x50, 0x10 | 1 << 6 | 0x01 << 8);
     set16(&mut p, 0x52, 16 | 16 << 8);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 0, 0), 31 | 31 << 10, "red + blue at full weights");
 }
 
@@ -1114,14 +1121,14 @@ fn bg_mosaic_horizontal_and_vertical() {
     tile4(&mut p, 32, |x, y| (x == y) as u8);
     vram16(&mut p, 0x4000, 1);
     set16(&mut p, 0x4C, 3 | 3 << 4); // 4x4 mosaic
-    p.render_scanline(0);
+    render(&mut p, 0);
     // Line 0 = source line 0: pixel 0 set -> pixels 0..4 red; pixel 4..8 from pixel 4 (0 on line 0) -> backdrop.
     assert_eq!(px(&p, 0, 0), RED);
     assert_eq!(px(&p, 3, 0), RED);
     assert_eq!(px(&p, 4, 0), BACKDROP);
-    p.render_scanline(2);
+    render(&mut p, 2);
     assert_eq!(px(&p, 0, 2), RED, "line 2 shows source line 0");
-    p.render_scanline(5);
+    render(&mut p, 5);
     // Source line 4: pixel 4 set -> pixels 4..8 red, 0..4 backdrop.
     assert_eq!(px(&p, 0, 5), BACKDROP);
     assert_eq!(px(&p, 4, 5), RED);
@@ -1129,7 +1136,7 @@ fn bg_mosaic_horizontal_and_vertical() {
     assert_eq!(px(&p, 8, 5), BACKDROP);
     // Mosaic off in BGCNT -> unaffected.
     set16(&mut p, 0x08, bgcnt(0, 0, 8, 0, false));
-    p.render_scanline(5);
+    render(&mut p, 5);
     assert_eq!(px(&p, 4, 5), BACKDROP);
     assert_eq!(px(&p, 5, 5), RED);
 }
@@ -1142,7 +1149,7 @@ fn affine_bg_mosaic_vertical_backs_up_reference() {
     set16(&mut p, 0x4C, 0 | 3 << 4); // v = 4
     // Tile row 0 is red for texel y 0..8; with v=4 lines 8..11 show line 8 (empty), lines 4..7 show line 4 (red).
     for y in 0..12 {
-        p.render_scanline(y);
+        render(&mut p, y);
         let expect = if y < 8 { RED } else { BACKDROP };
         assert_eq!(px(&p, 0, y), expect, "line {y}");
     }
@@ -1161,16 +1168,16 @@ fn obj_mosaic() {
     }
     obj(&mut p, 0, 1 << 12, 0, 3); // mosaic on, at (0,0)
     set16(&mut p, 0x4C, (3 | 3 << 4) << 8); // OBJ 4x4
-    p.render_scanline(1);
+    render(&mut p, 1);
     assert_eq!(px(&p, 0, 1), RED, "source (0,0)");
     assert_eq!(px(&p, 3, 1), RED);
     assert_eq!(px(&p, 4, 1), BACKDROP);
-    p.render_scanline(6);
+    render(&mut p, 6);
     assert_eq!(px(&p, 4, 6), RED, "source (4,4)");
     assert_eq!(px(&p, 3, 6), BACKDROP);
     // Sprite at x 2: block starting at x 0 samples outside the sprite -> transparent for x 0..4.
     obj(&mut p, 0, 1 << 12, 2, 3);
-    p.render_scanline(0);
+    render(&mut p, 0);
     assert_eq!(px(&p, 2, 0), BACKDROP);
     assert_eq!(px(&p, 4, 0), BACKDROP, "block 4..8 samples sprite x 2 (pixel (2,0) is 0)");
 }
@@ -1219,7 +1226,99 @@ fn whole_frame_output_has_bit15_clear() {
         vram16(&mut p, i * 2, 0xFFFF);
     }
     for y in 0..160 {
-        p.render_scanline(y);
+        render(&mut p, y);
     }
     assert!(p.fb.iter().all(|&c| c == 0x7FFF));
+}
+
+// ---------------------------------------------------------------- OBJ cycle budget (GBATEK "LCD OBJ Overview")
+
+/// OBJ on, 1D mapping, every OBJ tile solid colour 1 (red), backdrop set.
+fn budget_setup(p: &mut Ppu, hblank_free: bool) {
+    pal(p, 0, BACKDROP);
+    pal(p, 256 + 1, RED);
+    pal(p, 256 + 2, GREEN);
+    set16(p, 0x00, (1 << 12) | (1 << 6) | if hblank_free { 1 << 5 } else { 0 });
+    p.vram[0x10000..0x18000].fill(0x11);
+    hide_all_objs(p);
+    // Affine parameter group 0 = identity.
+    oam16(p, 0x06, 0x100);
+    oam16(p, 0x1E, 0x100);
+}
+
+#[test]
+fn obj_budget_128_small_sprites_all_fit() {
+    let mut p = ppu();
+    budget_setup(&mut p, false);
+    for i in 0..127 {
+        obj(&mut p, i, 0, 0, 1); // 127 x 8 px = 1016 cycles
+    }
+    p.vram[0x10040..0x10060].fill(0x22); // tile 2 = green
+    obj(&mut p, 127, 0, 200, 2); // 128th sprite: 1024 <= 1210, still drawn
+    render(&mut p, 0);
+    assert_eq!(px(&p, 0, 0), RED);
+    assert_eq!(px(&p, 200, 0), GREEN);
+}
+
+/// Four double-size 64x64 affine sprites (266 cycles each) placed off-screen to the right still
+/// eat 1064 cycles; the fifth gets the remaining 146 = 10 + 2*68 -> only its first 68 columns.
+#[test]
+fn obj_budget_affine_partial_draw_and_cutoff() {
+    let mut p = ppu();
+    budget_setup(&mut p, false);
+    let a0 = 0 | (1 << 8) | (1 << 9); // y 0, affine, double size
+    for i in 0..4 {
+        obj(&mut p, i, a0, 240 | (3 << 14), 1); // x = 240: horizontally offscreen
+    }
+    obj(&mut p, 4, a0, 3 << 14, 1); // x = 0, 128 px wide on screen
+    p.vram[0x10040..0x10060].fill(0x22);
+    obj(&mut p, 5, 64, 150, 2); // regular 8x8 green at (150, 64): no budget left
+    render(&mut p, 64);
+    // Identity affine, double size: texels cover screen x 32..96 on the middle line.
+    assert_eq!(px(&p, 32, 64), RED);
+    assert_eq!(px(&p, 67, 64), RED);
+    assert_eq!(px(&p, 68, 64), BACKDROP, "budget ends after column 68");
+    assert_eq!(px(&p, 95, 64), BACKDROP);
+    assert_eq!(px(&p, 150, 64), BACKDROP, "later sprites are not rendered");
+    // Without the four blockers the sprite is complete and the small one renders.
+    for i in 0..4 {
+        oam16(&mut p, i * 8, 1 << 9);
+    }
+    render(&mut p, 64);
+    assert_eq!(px(&p, 95, 64), RED);
+    assert_eq!(px(&p, 150, 64), GREEN);
+}
+
+/// H-Blank Interval Free shrinks the budget to 954: only three 266-cycle sprites fit, the fourth
+/// blocker exhausts it, and the on-screen fifth sprite never renders.
+#[test]
+fn obj_budget_hblank_interval_free() {
+    let mut p = ppu();
+    budget_setup(&mut p, true);
+    let a0 = 0 | (1 << 8) | (1 << 9);
+    for i in 0..4 {
+        obj(&mut p, i, a0, 240 | (3 << 14), 1);
+    }
+    obj(&mut p, 4, a0, 3 << 14, 1);
+    render(&mut p, 64);
+    assert_eq!(px(&p, 40, 64), BACKDROP);
+    // With three blockers: 798 used, 156 left = 10 + 2*73 -> 73 columns of the fifth sprite.
+    oam16(&mut p, 3 * 8, 1 << 9);
+    render(&mut p, 64);
+    assert_eq!(px(&p, 72, 64), RED);
+    assert_eq!(px(&p, 73, 64), BACKDROP);
+}
+
+/// Sprites that are not on this line cost nothing.
+#[test]
+fn obj_budget_ignores_vertically_offscreen_sprites() {
+    let mut p = ppu();
+    budget_setup(&mut p, false);
+    let a0 = 100 | (1 << 8) | (1 << 9); // y 100: rows 100..227, not on line 0
+    for i in 0..8 {
+        obj(&mut p, i, a0, 3 << 14, 1);
+    }
+    obj(&mut p, 8, 0, 10, 1);
+    render(&mut p, 0);
+    assert_eq!(px(&p, 10, 0), RED);
 }
