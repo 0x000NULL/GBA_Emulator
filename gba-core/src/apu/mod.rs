@@ -1,4 +1,4 @@
-//! APU. Owned by the APU agent (M7). Source: GBATEK "GBA Sound Controller" and its subsections.
+//! APU. Source: GBATEK "GBA Sound Controller" and its subsections.
 //!
 //! Public surface the bus depends on: IO byte access for 0x060-0x0AF, FIFO writes, the timer
 //! overflow -> FIFO -> DMA request path, the 512 Hz frame sequencer and the sample sink.

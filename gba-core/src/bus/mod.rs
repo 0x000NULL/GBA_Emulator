@@ -490,7 +490,7 @@ impl MemoryBus for Bus {
         self.last_fetch = addr;
         let v = self.read16_inner(addr);
         // Open bus after a Thumb fetch: the halfword replicated (GBATEK "Unpredictable Things";
-        // exact rules for IWRAM/others are refined in M2).
+        // exact per-region rules for IWRAM/others are not modelled).
         self.open_bus = v as u32 | (v as u32) << 16;
         v
     }

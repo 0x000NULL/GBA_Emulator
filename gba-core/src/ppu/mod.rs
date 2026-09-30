@@ -1,4 +1,4 @@
-//! PPU. Owned by the PPU agent (M3) except the scanline/V-Blank timing contract in this file,
+//! PPU. The scanline/V-Blank timing contract lives in this file,
 //! which the integrator wrote and which the rest of the system depends on.
 //!
 //! Timing contract (see `timing.rs`, GBATEK "LCD I/O Interrupts and Status", "LCD Dimensions and Timings"):
@@ -9,7 +9,7 @@
 //!   update V-Count match flag/IRQ, set V-Blank flag + IRQ + DMA at line 160, clear V-Blank flag at
 //!   line 227, latch the affine reference points at line 0, mark the frame complete at line 160.
 //!
-//! Rendering (M3): `render_scanline` draws the active BG layers (text, affine, bitmap) and the OBJ
+//! Rendering: `render_scanline` draws the active BG layers (text, affine, bitmap) and the OBJ
 //! layer into per-line buffers, then `compose` applies windows, priority, colour special effects
 //! and green swap. Modules: `regs` (typed register views), `bg_text`, `bg_affine`, `bitmap`,
 //! `obj`, `compose`.

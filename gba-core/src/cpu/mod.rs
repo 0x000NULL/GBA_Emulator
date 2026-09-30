@@ -1,4 +1,4 @@
-//! ARM7TDMI interpreter. Owned by the CPU agent (M1) except `regs.rs`, whose API is frozen.
+//! ARM7TDMI interpreter. `regs.rs` is shared with the HLE BIOS, so its API is frozen.
 //!
 //! Contract with the bus (see `bus::MemoryBus`):
 //! - `step` executes exactly one instruction (or takes one exception) and returns the cycles it

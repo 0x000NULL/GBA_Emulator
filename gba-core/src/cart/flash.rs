@@ -1,7 +1,7 @@
 //! FLASH 64K / 128K backup. Source: GBATEK "GBA Cart Backup Flash ROM".
 //! Command sequence: [5555]=AA, [2AAA]=55, [5555]=cmd. 128K parts bank-switch via [0000]=bank
 //! after command B0. IDs: 64K Panasonic 0x1B32 (we use Panasonic/SST 0xD4BF), 128K Sanyo 0x1362.
-//! M0: full command state machine; verified by jsmolka flash64/flash128 in M5.
+//! Verified by jsmolka save/flash64 and flash128.
 
 #[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -1,7 +1,7 @@
 //! ARM7TDMI register file with banked registers. Source: GBATEK "ARM CPU Register Set".
 //!
 //! Owned jointly by the CPU agent and the integrator: the HLE BIOS manipulates `Regs` directly
-//! (SWI dispatch, IRQ vector emulation), so this API is frozen after M0.
+//! (SWI dispatch, IRQ vector emulation), so this API is frozen.
 
 pub const MODE_USR: u32 = 0x10;
 pub const MODE_FIQ: u32 = 0x11;

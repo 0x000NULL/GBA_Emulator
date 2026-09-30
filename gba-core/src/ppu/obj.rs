@@ -5,7 +5,7 @@
 //! "VRAM Character (Tile) Mapping", "LCD I/O Mosaic Function".
 //!
 //! Ordering: a lower priority number wins; at equal priority the lower OAM index wins.
-//! Not modelled in M3: the per-line OBJ rendering cycle budget (1210/954 cycles) and the
+//! Not modelled: the per-line OBJ rendering cycle budget (1210/954 cycles) and the
 //! one-line-early OAM evaluation.
 
 use super::regs::{Mem, TRANSPARENT};
