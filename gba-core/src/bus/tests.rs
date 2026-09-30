@@ -327,6 +327,32 @@ fn finish_dma(b: &mut Bus) {
     b.dma_run();
 }
 
+/// Code copied by an immediate DMA is what the CPU fetches once the start latency has elapsed:
+/// Mario Tennis: Power Tour writes DMA3 (SAD = ROM routine, DAD = top of the stack) and
+/// branches to the destination in the next instruction; without arbitration on opcode fetches
+/// the CPU executed the stale stack contents and took an undefined-instruction trap.
+#[test]
+fn due_immediate_dma_takes_the_bus_before_an_opcode_fetch() {
+    let mut b = bus();
+    b.write32(0x0200_0000, 0xE12F_FF1E, Access::N); // bx lr
+    b.write32(0x0300_7D38, 0x0000_0000, Access::N);
+    start_dma(&mut b, 3, 0x0200_0000, 0x0300_7D38, 1, 0x0400);
+    let t = b.sched.now;
+    // Fetches inside the latency window still see the old word.
+    assert_eq!(b.fetch32(0x0300_7D38, Access::N), 0);
+    assert_eq!(b.sched.now, t + 1);
+    assert_eq!(b.fetch32(0x0300_7D38, Access::N), 0);
+    // Past it the DMA lands first and the fetch returns the copied instruction.
+    assert_eq!(b.fetch32(0x0300_7D38, Access::N), 0xE12F_FF1E);
+    assert_eq!(b.dma.pending, 0);
+    // Thumb fetches likewise.
+    b.write16(0x0200_0010, 0x4770, Access::N); // bx lr
+    b.write16(0x0300_7D40, 0, Access::N);
+    start_dma(&mut b, 3, 0x0200_0010, 0x0300_7D40, 1, 0);
+    b.idle(3);
+    assert_eq!(b.fetch16(0x0300_7D40, Access::N), 0x4770);
+}
+
 #[test]
 fn due_immediate_dma_takes_the_bus_before_a_cpu_data_access() {
     let mut b = bus();

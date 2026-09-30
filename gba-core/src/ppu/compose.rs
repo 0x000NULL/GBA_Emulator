@@ -35,8 +35,11 @@ pub fn window_line(mem: &Mem, y: usize, obj_win: &[bool; SCREEN_W], out: &mut [u
 
 /// Window range semantics (matching hardware counter-compare behaviour as mGBA models it):
 /// vertically, `y1 <= y2` means `y1 <= y < y2`, otherwise the range wraps (`y >= y1 || y < y2`).
-/// Horizontally the same, with `x2 > 240` clamped to 240 and an unreachable `x1 > 240` with
-/// `x1 > x2` treated as 0.
+/// Horizontally the same, with `x2 > 240` clamped to 240 (GBATEK: "garbage values of X2>240 or
+/// X1>X2 are interpreted as X2=240"); an `x1 > 240` beyond that clamp is clamped too, so a
+/// window such as WIN0H=FEFFh (X1=254, X2=255) is empty rather than wrapping over the whole
+/// line (Super Mario Advance 2 writes exactly that every H-Blank to hide a window and relies on
+/// the level staying visible). An unreachable `x1 > 240` with `x1 > x2` is treated as 0 (mGBA).
 fn apply_window(win: &Window, y: u32, ctrl: u8, out: &mut [u8; SCREEN_W]) {
     let in_y = if win.y1 <= win.y2 { y >= win.y1 && y < win.y2 } else { y >= win.y1 || y < win.y2 };
     if !in_y {
@@ -49,6 +52,9 @@ fn apply_window(win: &Window, y: u32, ctrl: u8, out: &mut [u8; SCREEN_W]) {
     }
     if x2 > SCREEN_W {
         x2 = SCREEN_W;
+        if x1 > SCREEN_W {
+            x1 = SCREEN_W;
+        }
     }
     if x2 < x1 {
         out[..x2].fill(ctrl);

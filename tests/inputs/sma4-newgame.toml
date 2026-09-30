@@ -1,0 +1,30 @@
+# Super Mario Advance 4 (USA, Australia) (Rev 1): "Formatting saved data" on a blank flash, curtain
+# intro; START at 910 -> SUPER MARIO ADVANCE 4 title with Single Player / Multiplayer (golden 1800).
+# START at 2410 -> game select (SUPER MARIO BROS. 3 / MARIO BROS.); START at 3910 -> curtain -> SMB3
+# title demo; START at 4810 -> Select a File; A at 5410 = File 1; A at 6010 = MARIO on Select a Mode;
+# A at 6610 -> World 1 map at ~6900 with Mario on START. RIGHT at 7200 walks him to the junction,
+# UP at 7500 onto the level-1 panel, A at 7800 enters it (MARIO START! at ~7900). Golden at 8100:
+# level 1-1 with Mario idle at the left, timer ~298, two Goombas walking in (he dies to them at ~8500
+# with no input). Control: RIGHT held 8100-8400 runs Mario right past the ? blocks (hashes diverge).
+steps = [
+  { frame = 910, press = "START" },
+  { frame = 915, release = "START" },
+  { frame = 2410, press = "START" },
+  { frame = 2415, release = "START" },
+  { frame = 3910, press = "START" },
+  { frame = 3915, release = "START" },
+  { frame = 4810, press = "START" },
+  { frame = 4815, release = "START" },
+  { frame = 5410, press = "A" },
+  { frame = 5415, release = "A" },
+  { frame = 6010, press = "A" },
+  { frame = 6015, release = "A" },
+  { frame = 6610, press = "A" },
+  { frame = 6615, release = "A" },
+  { frame = 7200, press = "RIGHT" },
+  { frame = 7205, release = "RIGHT" },
+  { frame = 7500, press = "UP" },
+  { frame = 7505, release = "UP" },
+  { frame = 7800, press = "A" },
+  { frame = 7805, release = "A" },
+]

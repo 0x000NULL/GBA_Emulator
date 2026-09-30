@@ -253,3 +253,145 @@ frames = 19500
 input_file = "tests/inputs/ffta-newgame.toml"
 golden = "bc593998372022b2"
 note = "NEW GAME -> snowball-fight intro (A pages) -> name Marche (START, LEFT, A) -> Mewt/Ritz tutorial -> first player turn with Ritz's command menu (Move/Action/Wait/Status); player control verified (UP held 19500-19800 moves the menu cursor to Wait, hashes diverge; LEFT/RIGHT are no-ops on the vertical menu)"
+
+# ---- stretch list, batch 2 (2026-09-30) ----
+# Batch 2 (pinned 2026-09-30 with target/release/gba-test.exe, HLE BIOS; every golden re-run from
+# zero with the committed script and PNG reviewed). Append after the existing entries.
+
+[[rom]]
+path = "Games/Mario Party Advance (USA).zip"
+frames = 3000
+input_file = "tests/inputs/mpa-newgame.toml"
+golden = "e010183ef13054ff"
+note = "title with Press START (A at 300 leaves the health & safety screen); B8ME, 8 MB, EEPROM"
+
+[[rom]]
+path = "Games/Mario Party Advance (USA).zip"
+frames = 32100
+input_file = "tests/inputs/mpa-newgame.toml"
+golden = "7c55cb75c6d01193"
+note = "passport interview (name/month/face/hobby/comment/two questions) -> Bowser Rampage cutscene -> Shroom City as Mario -> Tumble's tutorial -> Town area map with the dice block spinning over Mario's kart (x04 mushrooms); player control verified (A at 32100 stops the dice on 9 and the Control Pad prompt appears; hashes at 32400 diverge: idle 334cdf5529fea8b4 vs 2576e537a8b80727)"
+
+[[rom]]
+path = "Games/Mario Pinball Land (USA, Australia).zip"
+frames = 3000
+input_file = "tests/inputs/pinball-newgame.toml"
+golden = "64993fb92f89e289"
+note = "title with PRESS START after the attract movie; BMVE, 8 MB, EEPROM (27522 FIFO underruns during the boot logos, none after frame 600)"
+
+[[rom]]
+path = "Games/Mario Pinball Land (USA, Australia).zip"
+frames = 3400
+input_file = "tests/inputs/pinball-newgame.toml"
+golden = "38bfa1e3d42d2213"
+note = "START at 3010 -> first Grassland table with Mario-ball rolling toward the right flipper; control verified (A held 3400-3700 raises the right flipper and deflects the ball, LEFT held nudges and drains it to BALL BONUS; three distinct hashes at 3700: e0ea9aa39c0253be / 94d7681dea63623b / 4139068157d64f78)"
+
+[[rom]]
+path = "Games/Mario Tennis - Power Tour (USA, Australia) (En,Fr,De,Es,It).zip"
+golden = "22ebe7ed2cd558b4"
+note = "language select (English highlighted); BTME, 16 MB, SRAM 32K. Booted black until 2026-09-30: the game DMA3-copies a routine onto the stack and branches to it in the next instruction, which needs the immediate DMA to win the bus before the opcode fetch (Bus::arbitrate on RAM fetches)"
+
+[[rom]]
+path = "Games/Max Payne (USA).zip"
+frames = 1200
+input_file = "tests/inputs/maxpayne-newgame.toml"
+golden = "da61bc29d0c1450f"
+note = "MAX PAYNE menu (New Game / Choose Level / Options / Extras) after A at 900 skips the graphic-novel intro; BMEE (maker 7S), 16 MB, EEPROM"
+
+[[rom]]
+path = "Games/Max Payne (USA).zip"
+frames = 2300
+input_file = "tests/inputs/maxpayne-newgame.toml"
+golden = "cf31679f4924603a"
+note = "New Game -> chapter comic skipped -> Roscoe Street Station with Max idle after both caption boxes (ammo 130/162, M9); player control verified (LEFT held 2300-2600 walks him down-left along the platform, UP held walks him up past the pillar; three distinct hashes: 27f7814607a90554 / 7943bf271dc2e46e / fca9baaf64583f68)"
+
+[[rom]]
+path = "Games/Need for Speed - Carbon - Own the City (USA, Europe) (En,Fr,De,Es,It).zip"
+frames = 2700
+input_file = "tests/inputs/nfscarbon-race.toml"
+golden = "16408dd995f3531a"
+note = "title art with LICENSED BY NINTENDO (English picked at 300, START at 1500 leaves health & safety); BN7E (maker 69), 8 MB, EEPROM"
+
+[[rom]]
+path = "Games/Need for Speed - Carbon - Own the City (USA, Europe) (En,Fr,De,Es,It).zip"
+frames = 6900
+input_file = "tests/inputs/nfscarbon-race.toml"
+golden = "687a0daa65ba8e40"
+note = "profile \"1\" -> QUICK PLAY -> RANDOM -> ELIMINATION settings -> Chevy Cobalt SS race; golden on the first straight (lap 1/3, 4/4, ~49 MPH) with A held from 6600; steering verified (LEFT or RIGHT held with A 6900-7200 turns the car, A alone stops against the wall at 000 MPH; three distinct hashes: f328226c052e3614 / 47504013dc08dca9 / 2e3609f9259723ef)"
+
+[[rom]]
+path = "Games/Need for Speed - Most Wanted (USA, Europe) (En,Fr,De,It).zip"
+frames = 1500
+input_file = "tests/inputs/nfsmw-race.toml"
+golden = "89bf23168fe2ede0"
+note = "title with PRESS START (English picked at 600); BNWE (maker 69), 8 MB, EEPROM"
+
+[[rom]]
+path = "Games/Need for Speed - Most Wanted (USA, Europe) (En,Fr,De,It).zip"
+frames = 6600
+input_file = "tests/inputs/nfsmw-race.toml"
+golden = "5741decb77b74fc7"
+note = "profile \"1\" -> buy the Lexus IS300 -> QUICK PLAY -> QUICK RACE -> TOLLBOOTH checkpoint race; golden on the straight at 59 MPH (~00:37 left) with A held from 6300; steering verified (LEFT or RIGHT held with A 6600-6900: A alone sits against the wall at 6 MPH, LEFT shows the wrong-way X, RIGHT rolls on at 23 MPH; three distinct hashes: 5d444e613753b74c / 9033f4ad03b5f385 / 46d700e6078b600b)"
+
+[[rom]]
+path = "Games/Need for Speed - Underground (USA, Europe) (En,Fr,De,It).zip"
+frames = 2100
+input_file = "tests/inputs/nfsu-race.toml"
+golden = "e99a6ad47ffdf804"
+note = "title with PRESS START (ENGLISH at 300, START at 1500 during the PSA jumps to the title); BNSE (maker 69), 8 MB, EEPROM"
+
+[[rom]]
+path = "Games/Need for Speed - Underground (USA, Europe) (En,Fr,De,It).zip"
+frames = 7300
+input_file = "tests/inputs/nfsu-race.toml"
+golden = "d760aa2d0b2397d3"
+note = "name \"1\" -> QUICK RACE -> CIRCUIT -> Ford Focus ZX3 -> STADIUM; golden sliding into the first bend behind the yellow chevrons (~87 MPH, lap 1/4) with A held from 7000; steering verified (LEFT or RIGHT held with A 7300-7600 changes the line; three distinct hashes: d4a337613a1d3ce5 / b616960338d2842c / 13743c8f9392cc9b)"
+
+[[rom]]
+path = "Games/Super Mario Advance (USA, Europe).zip"
+frames = 2400
+input_file = "tests/inputs/sma1-newgame.toml"
+golden = "ad643d3cee4d72fa"
+note = "SUPER MARIO ADVANCE title with Single Player / Multiplayer after the attract demo; AMAE, 4 MB, EEPROM"
+
+[[rom]]
+path = "Games/Super Mario Advance (USA, Europe).zip"
+frames = 5700
+input_file = "tests/inputs/sma1-newgame.toml"
+golden = "25431651549ee820"
+note = "Super Mario 2 -> file A -> Mario -> world 1-1: Mario idle on the cloud platform after the drop; player control verified (RIGHT held 5700-6000 walks him off the cloud and scrolls the screen: 7999e52682967087 idle vs 304979af55f675f1). 4416 FIFO underruns between 600 and 5700 (4720 total) - the only title in this batch with a steady underrun stream"
+
+[[rom]]
+path = "Games/Super Mario Advance 2 - Super Mario World (USA, Australia).zip"
+frames = 1200
+input_file = "tests/inputs/sma2-newgame.toml"
+golden = "161f989e7905c6d9"
+note = "SUPER MARIO WORLD / SUPER MARIO ADVANCE 2 title with Single Player (START at 300 skips the map attract); AA2E, 4 MB, EEPROM"
+
+[[rom]]
+path = "Games/Super Mario Advance 2 - Super Mario World (USA, Australia).zip"
+frames = 5300
+input_file = "tests/inputs/sma2-newgame.toml"
+golden = "08554ca3e9fd0c3b"
+note = "CHOOSE A GAME -> SMW title -> file A -> Welcome to Dinosaur Land -> overworld map at YOSHI'S HOUSE (re-pinned after the window fix, which was blanking part of this screen too)"
+
+[[rom]]
+path = "Games/Super Mario Advance 2 - Super Mario World (USA, Australia).zip"
+frames = 6300
+input_file = "tests/inputs/sma2-newgame.toml"
+golden = "db83115743ff293d"
+note = "Yoshi's House with Mario; player control verified (RIGHT held 6000-6300 walks Mario out onto the overworld map, hash e80b944c0284a48c). Rendered as a flat backdrop until 2026-09-30: the game parks window 0 at WIN0H=FEFFh every H-Blank, which must be an empty window (GBATEK X2=240 clamp), not a wrap"
+
+[[rom]]
+path = "Games/Super Mario Advance 4 - Super Mario Bros. 3 (USA, Australia) (Rev 1).zip"
+frames = 1800
+input_file = "tests/inputs/sma4-newgame.toml"
+golden = "be95eea76ab51a9e"
+note = "SUPER MARIO ADVANCE 4 title with Single Player / Multiplayer (START at 910 after the save format + curtain intro); AX4E, 4 MB, Flash128K (117192 FIFO underruns before frame 600 during \"Formatting saved data\", ~2000 more by 8100)"
+
+[[rom]]
+path = "Games/Super Mario Advance 4 - Super Mario Bros. 3 (USA, Australia) (Rev 1).zip"
+frames = 8100
+input_file = "tests/inputs/sma4-newgame.toml"
+golden = "603e4339f66b368c"
+note = "SMB3 -> file 1 -> MARIO -> World 1 map (RIGHT, UP, A enter level 1) -> level 1-1 with Mario idle at the start, timer ~298, two Goombas walking in; player control verified (RIGHT held 8100-8400 runs Mario right past the ? blocks: eba76484dbcf3e89 idle vs 5f6201dea65a3ae8)"

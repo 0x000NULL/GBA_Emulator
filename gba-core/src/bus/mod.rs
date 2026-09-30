@@ -238,8 +238,12 @@ impl Bus {
     /// "DMAn 16/32" stores). An access on the very cycle the latency ends still belongs to the
     /// CPU: with code in IWRAM the timer read right after the enable write lands there, and the
     /// mgba-suite timing tests ("Trivial DMA", IWRAM column) expect it to precede the transfer.
-    /// Opcode fetches are not arbitrated: they cannot observe the transfer and the total cycle
-    /// count is the same either way.
+    /// Opcode fetches from RAM/BIOS are arbitrated the same way: a DMA that copies code to the
+    /// address the CPU is about to fetch must land first (Mario Tennis: Power Tour DMAs a
+    /// routine onto the stack and branches to it in the very next instruction). Fetches from the
+    /// game pak are not: DMA cannot write ROM, so the ordering is timing-only there, and the
+    /// prefetch-buffer model (mgba-suite "Trivial DMA" P columns) is calibrated with the DMA
+    /// landing at the next data access instead.
     #[inline]
     fn arbitrate(&mut self) {
         if self.sched.now > self.dma.next_start && !self.in_dma {
@@ -570,6 +574,9 @@ impl MemoryBus for Bus {
     fn fetch16(&mut self, addr: u32, a: Access) -> u16 {
         let c = self.fetch_cost(addr, 2, a);
         self.tick(c);
+        if addr >> 24 < 0x08 {
+            self.arbitrate();
+        }
         self.last_fetch = addr;
         let v = self.read16_inner(addr);
         // Open bus after a Thumb fetch: the halfword replicated (GBATEK "Unpredictable Things";
@@ -582,6 +589,9 @@ impl MemoryBus for Bus {
     fn fetch32(&mut self, addr: u32, a: Access) -> u32 {
         let c = self.fetch_cost(addr, 4, a);
         self.tick(c);
+        if addr >> 24 < 0x08 {
+            self.arbitrate();
+        }
         self.last_fetch = addr;
         let v = self.read32_inner(addr);
         self.open_bus = v;

@@ -24,6 +24,8 @@ pub struct DebugHooks {
     mgba_flags: u16,
     /// Lines printed through the debug registers, in order.
     pub log: Vec<String>,
+    /// Log every HLE SWI dispatch (number, name, r0-r3) into `log`.
+    pub log_swi: bool,
 }
 
 impl Default for DebugHooks {
@@ -38,6 +40,7 @@ impl Default for DebugHooks {
             mgba_enable_lo: 0,
             mgba_buf: [0; 0x100],
             mgba_flags: 0,
+            log_swi: false,
             log: Vec::new(),
         }
     }

@@ -1,0 +1,10 @@
+# Mario Pinball Land (USA, Australia): Fuse logo / attract movie, title at ~2700, PRESS START at 3000
+# (title golden 3000). START at 3010 starts a game straight away (no file screen on a blank EEPROM):
+# flipper close-up at ~3100, then the first Grassland table at 3200 with Mario-ball launched from the
+# top. Golden at 3400 (ball rolling toward the right flipper, score 00). Flippers: A held 3400-3700
+# raises the right flipper and deflects the ball; LEFT held 3400-3700 nudges the table and drains the
+# ball (BALL BONUS screen); three distinct hashes at 3700.
+steps = [
+  { frame = 3010, press = "START" },
+  { frame = 3015, release = "START" },
+]

@@ -1,0 +1,24 @@
+# Super Mario Advance 2 (USA, Australia): START at 300 skips the map attract -> SUPER MARIO WORLD /
+# SUPER MARIO ADVANCE 2 title with Single Player at ~600 (golden 1200). START at 1510 -> CHOOSE A GAME
+# (SUPER MARIO WORLD / MARIO BROS.); START at 3010 -> the SMW title demo; START at 3610 -> Choose a
+# File; A at 4210 = File A; A at 4810 advances the "Welcome to Dinosaur Land!" message; A at 5410 is a
+# no-op on the "x5 YOSHI'S HOUSE" level card (5100-5400, golden 5300). The level itself loads at ~5520
+# and, until the PPU window fix lands, renders as a flat cream backdrop (the game writes WIN0H=0xFEFF,
+# an empty window, every line; compose.rs turns it into a full-width mask); add the gameplay golden
+# once the level is visible.
+steps = [
+  { frame = 300, press = "START" },
+  { frame = 305, release = "START" },
+  { frame = 1510, press = "START" },
+  { frame = 1515, release = "START" },
+  { frame = 3010, press = "START" },
+  { frame = 3015, release = "START" },
+  { frame = 3610, press = "START" },
+  { frame = 3615, release = "START" },
+  { frame = 4210, press = "A" },
+  { frame = 4215, release = "A" },
+  { frame = 4810, press = "A" },
+  { frame = 4815, release = "A" },
+  { frame = 5410, press = "A" },
+  { frame = 5415, release = "A" },
+]

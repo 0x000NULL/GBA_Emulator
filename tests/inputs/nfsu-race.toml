@@ -1,0 +1,33 @@
+# Need for Speed: Underground (USA, Europe): A at 300 picks ENGLISH -> EA logo -> PSA -> attract race;
+# START at 1500 (during the PSA) jumps to the title, PRESS START shows at ~2100 (golden 2100). START at
+# 2110 opens ENTER NAME: A at 2700 types "1", START at 3000 accepts -> MAIN MENU (QUICK RACE) at 3300.
+# A at 3610 = QUICK RACE, A at 4210 = CIRCUIT, A at 4810 picks the Ford Focus ZX3, A at 5410 answers
+# SELECT CAR? YES, A at 6010 = CONTINUE on CIRCUIT MODE OPTIONS, A at 6610 = STADIUM track -> the race
+# is live at ~6900 (grid, 1/4 laps, 000 MPH). A (throttle) is held from 7000; golden at 7300 (car
+# sliding into the first bend behind the yellow chevrons). Steering: LEFT or RIGHT held with A
+# 7300-7600 changes the line through the bend (three distinct hashes).
+steps = [
+  { frame = 300, press = "A" },
+  { frame = 305, release = "A" },
+  { frame = 1500, press = "START" },
+  { frame = 1505, release = "START" },
+  { frame = 2110, press = "START" },
+  { frame = 2115, release = "START" },
+  { frame = 2700, press = "A" },
+  { frame = 2705, release = "A" },
+  { frame = 3000, press = "START" },
+  { frame = 3005, release = "START" },
+  { frame = 3610, press = "A" },
+  { frame = 3615, release = "A" },
+  { frame = 4210, press = "A" },
+  { frame = 4215, release = "A" },
+  { frame = 4810, press = "A" },
+  { frame = 4815, release = "A" },
+  { frame = 5410, press = "A" },
+  { frame = 5415, release = "A" },
+  { frame = 6010, press = "A" },
+  { frame = 6015, release = "A" },
+  { frame = 6610, press = "A" },
+  { frame = 6615, release = "A" },
+  { frame = 7000, press = "A" },
+]

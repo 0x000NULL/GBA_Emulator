@@ -845,6 +845,41 @@ fn obj_bitmap_mode_ignores_low_tiles() {
     assert_eq!(px(&p, 16, 0), RED);
 }
 
+/// GBATEK: "garbage values of X2>240 or X1>X2 are interpreted as X2=240". A window with both
+/// edges past 240 (Super Mario Advance 2 writes WIN0H=FEFFh every H-Blank to park window 0) is
+/// therefore empty: the outside control applies everywhere. A wrapped range (x1 > x2, both on
+/// screen) still covers both ends of the line.
+#[test]
+fn window_with_both_edges_past_the_screen_is_empty() {
+    let mut p = ppu();
+    pal(&mut p, 0, BACKDROP);
+    pal(&mut p, 1, BLUE);
+    set16(&mut p, 0x00, 1 << 8 | 1 << 13); // BG0 + window 0
+    set16(&mut p, 0x08, bgcnt(0, 0, 8, 0, false));
+    tile4_solid(&mut p, 32, 1);
+    for i in 0..32 {
+        vram16(&mut p, 0x4000 + i * 2, 1);
+    }
+    set16(&mut p, 0x44, 0xA0); // WIN0V: y 0..160
+    set16(&mut p, 0x48, 0x00); // WININ: nothing inside window 0
+    set16(&mut p, 0x4A, 0x3F); // WINOUT: everything outside
+    set16(&mut p, 0x40, 0xFEFF); // X1=254, X2=255: empty
+    render(&mut p, 0);
+    assert_eq!(px(&p, 0, 0), BLUE);
+    assert_eq!(px(&p, 120, 0), BLUE);
+    assert_eq!(px(&p, 239, 0), BLUE, "empty window must not hide the line");
+    set16(&mut p, 0x40, 0xF010); // X1=240, X2=16: wraps (x >= 240 is off-screen, so only 0..16)
+    render(&mut p, 0);
+    assert_eq!(px(&p, 0, 0), BACKDROP);
+    assert_eq!(px(&p, 15, 0), BACKDROP);
+    assert_eq!(px(&p, 16, 0), BLUE);
+    set16(&mut p, 0x40, 0xC810); // X1=200, X2=16: wraps
+    render(&mut p, 0);
+    assert_eq!(px(&p, 100, 0), BLUE);
+    assert_eq!(px(&p, 200, 0), BACKDROP);
+    assert_eq!(px(&p, 8, 0), BACKDROP);
+}
+
 #[test]
 fn obj_window_masks_layers() {
     let mut p = ppu();

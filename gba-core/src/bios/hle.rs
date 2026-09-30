@@ -85,6 +85,13 @@ impl Bus {
     /// (so a waiting function can rewind and re-execute it). Returns true when handled.
     pub(crate) fn hle_swi(&mut self, num: u8, regs: &mut Regs) -> bool {
         self.bios.swi_count += 1;
+        if self.debug.log_swi {
+            let line = format!(
+                "swi {:02X} {} r0={:08X} r1={:08X} r2={:08X} r3={:08X} pc={:08X} line={} cycle={}",
+                num, swi::name(num), regs.r[0], regs.r[1], regs.r[2], regs.r[3], regs.r[15], self.ppu.vcount, self.sched.now
+            );
+            self.debug.log.push(line);
+        }
         self.bios.open_bus = super::BIOS_OPENBUS_AFTER_SWI;
         // The routines modelled from the real BIOS listing (`swi_timing`) pay the itemised
         // handler entry/exit plus their body, and the CPU refills the pipeline at the return

@@ -1,0 +1,30 @@
+# Need for Speed: Carbon - Own the City (USA, Europe): A at 300 picks English on the flag screen ->
+# health & safety (START at 1500 continues) -> PSA -> title with LICENSED BY NINTENDO at ~2400
+# (golden 2700; PRESS START only appears later). START at 3010 opens ERASE/CREATE PROFILE: A at 3400
+# types "1", START at 3700 accepts -> MAIN MENU (QUICK PLAY) at 3900. A at 4210 = QUICK PLAY, A at
+# 4810 = RANDOM event, A at 5410 accepts SETTING ELIMINATION (forward, 3 laps, easy, 3 opponents),
+# A at 6010 accepts RACE INFO (Chevy Cobalt SS) -> the race is live at ~6300 (timer running, 000 MPH).
+# A (throttle) is held from 6600; golden at 6900 (lap 1/3, 4/4, ~49 MPH on the first straight).
+# Steering: LEFT or RIGHT held with A 6900-7200 turns the car (A alone runs it into the wall at the
+# first bend, 000 MPH by 7200); three distinct hashes.
+steps = [
+  { frame = 300, press = "A" },
+  { frame = 305, release = "A" },
+  { frame = 1500, press = "START" },
+  { frame = 1505, release = "START" },
+  { frame = 3010, press = "START" },
+  { frame = 3015, release = "START" },
+  { frame = 3400, press = "A" },
+  { frame = 3405, release = "A" },
+  { frame = 3700, press = "START" },
+  { frame = 3705, release = "START" },
+  { frame = 4210, press = "A" },
+  { frame = 4215, release = "A" },
+  { frame = 4810, press = "A" },
+  { frame = 4815, release = "A" },
+  { frame = 5410, press = "A" },
+  { frame = 5415, release = "A" },
+  { frame = 6010, press = "A" },
+  { frame = 6015, release = "A" },
+  { frame = 6600, press = "A" },
+]

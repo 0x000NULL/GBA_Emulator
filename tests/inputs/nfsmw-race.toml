@@ -1,0 +1,29 @@
+# Need for Speed: Most Wanted (USA, Europe): A at 600 picks English -> PSA -> title at ~1200, PRESS
+# START at ~1500 (golden 1500). START at 1810 opens CREATE PROFILE: A at 2500 types "1", START at 2800
+# accepts -> CAR SELECT (Lexus IS300): A at 3300 = PURCHASE, A at 3900 = YES -> MAIN MENU at ~4200.
+# A at 4510 = QUICK PLAY, A at 5110 = QUICK RACE, A at 5710 accepts RACE INFO (TOLLBOOTH event) -> the
+# checkpoint race is live at ~6000 (Time 00:47 counting down, 000 MPH). A (throttle) is held from
+# 6300; golden at 6600 (59 MPH on the straight, ~00:37 left). Steering: LEFT or RIGHT held with A
+# 6600-6900 (A alone hits the wall at the first bend and sits at 6 MPH by 6900; LEFT shows the
+# wrong-way X, RIGHT keeps rolling at 23 MPH); three distinct hashes.
+steps = [
+  { frame = 600, press = "A" },
+  { frame = 605, release = "A" },
+  { frame = 1810, press = "START" },
+  { frame = 1815, release = "START" },
+  { frame = 2500, press = "A" },
+  { frame = 2505, release = "A" },
+  { frame = 2800, press = "START" },
+  { frame = 2805, release = "START" },
+  { frame = 3300, press = "A" },
+  { frame = 3305, release = "A" },
+  { frame = 3900, press = "A" },
+  { frame = 3905, release = "A" },
+  { frame = 4510, press = "A" },
+  { frame = 4515, release = "A" },
+  { frame = 5110, press = "A" },
+  { frame = 5115, release = "A" },
+  { frame = 5710, press = "A" },
+  { frame = 5715, release = "A" },
+  { frame = 6300, press = "A" },
+]

@@ -50,6 +50,7 @@ cargo run -p gba-test -- <rom> --frames 5 --trace trace.txt          # mGBA-form
 cargo run -p gba-test -- <rom> --frames N --watch 0x040000C4..0x040000C7 --watch-log   # log every write to a range (omit --watch-log to stop at the first)
 cargo run -p gba-test -- <rom> --frames 1800 --pcm out.wav --stats-from 1200   # audio capture + underruns
 cargo run -p gba-test -- <rom> --frames 1900 --fifo-stats 1800                # per-frame FIFO pushed/popped/underruns
+cargo run -p gba-test -- <rom> --frames 300 --log-swi                         # every HLE SWI call as a guest: line
 cargo run -p gba-test -- <rom> --frames 27400 --input tests/inputs/khcom-newgame.toml --save-state kh.state
 cargo run -p gba-test -- <rom> --frames 300 --load-state kh.state    # resume a savestate headless
 cargo run -p gba-test -- <rom> --frames N --record                   # print a manifest stanza

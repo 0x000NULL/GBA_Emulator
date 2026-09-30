@@ -1,0 +1,19 @@
+# Max Payne (USA): Rockstar / Mobius logos, the graphic-novel intro starts at ~700 and A at 900 skips
+# it to the MAX PAYNE menu (New Game / Choose Level / Options / Extras) by ~1000 (title golden 1200).
+# A at 1210 = New Game -> chapter comic ("I came in from the cold..."), skipped by A at 1400 -> Roscoe
+# Street Station at ~1500 with Max walking in (ammo 130/162, M9). Two caption boxes follow: A at 1800
+# dismisses "THE STATION WAS DRENCHED IN GLOOM...", A at 2100 dismisses "I'D HAVE TO LOOK FOR HIM.";
+# Max is idle and controllable from ~2200 (golden 2300). LEFT held 2300-2600 walks him down-left along
+# the platform, UP held walks him up past the pillar (screen scrolls); three distinct hashes.
+steps = [
+  { frame = 900, press = "A" },
+  { frame = 905, release = "A" },
+  { frame = 1210, press = "A" },
+  { frame = 1215, release = "A" },
+  { frame = 1400, press = "A" },
+  { frame = 1405, release = "A" },
+  { frame = 1800, press = "A" },
+  { frame = 1805, release = "A" },
+  { frame = 2100, press = "A" },
+  { frame = 2105, release = "A" },
+]

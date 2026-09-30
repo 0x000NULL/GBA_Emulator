@@ -2,7 +2,7 @@
 //!
 //! gba-test <rom|zip> --frames N [--golden HEX] [--check jsmolka|mgba-suite] [--reg r12]
 //!          [--input script.toml] [--trace [file]] [--trace-hash] [--break PC] [--watch LO..HI]
-//!          [--watch-log] [--exit-on-swi N] [--dump-io] [--png out.png] [--png-every N] [--pcm out.wav] [--record]
+//!          [--watch-log] [--log-swi] [--exit-on-swi N] [--dump-io] [--png out.png] [--png-every N] [--pcm out.wav] [--record]
 //!          [--bios file] [--hle] [--stats-from F] [--fifo-stats F] [--save-state f] [--load-state f]
 //! Exit code: 0 pass, 1 fail, 2 error.
 
@@ -57,6 +57,9 @@ struct Cli {
     /// Log every --watch / --break hit (frame, cycle, PC, access) and keep running instead of stopping.
     #[arg(long)]
     watch_log: bool,
+    /// Log every HLE SWI call (number, name, r0-r3, PC, scanline, cycle) as a `guest:` line.
+    #[arg(long)]
+    log_swi: bool,
     /// Stop when this SWI number executes (hex).
     #[arg(long, value_parser = parse_hex)]
     exit_on_swi: Option<u32>,
@@ -156,6 +159,7 @@ fn run() -> Result<bool> {
 
     gba.bus.debug.pc_breaks = cli.break_pc.clone();
     gba.bus.debug.write_watch = cli.watch.clone();
+    gba.bus.debug.log_swi = cli.log_swi;
     gba.bus.debug.refresh_enabled();
 
     let mut trace_out: Option<Box<dyn Write>> = match cli.trace.as_deref() {
@@ -235,10 +239,13 @@ fn run() -> Result<bool> {
             let (a, b) = (&gba.bus.apu.fifo_a, &gba.bus.apu.fifo_b);
             let d = |cur: u64, prev: &mut u64| { let v = cur - *prev; *prev = cur; v };
             let st = fifo_prev.get_or_insert([0; 6]);
+            let dma = &gba.bus.dma;
             println!(
-                "fifo frame={f} A: pushed={} popped={} underruns={} len={} | B: pushed={} popped={} underruns={} len={}",
+                "fifo frame={f} A: pushed={} popped={} underruns={} len={} | B: pushed={} popped={} underruns={} len={} | dma1 ctl={:04X} dst={:08X} src={:08X} rem={} prog={} dma2 ctl={:04X} dst={:08X} pending={:02X} soundcnt_h={:04X}",
                 d(a.pushed, &mut st[0]), d(a.popped, &mut st[1]), d(a.underruns, &mut st[2]), a.len(),
-                d(b.pushed, &mut st[3]), d(b.popped, &mut st[4]), d(b.underruns, &mut st[5]), b.len()
+                d(b.pushed, &mut st[3]), d(b.popped, &mut st[4]), d(b.underruns, &mut st[5]), b.len(),
+                dma.ch[1].cnt_h, dma.ch[1].dst, dma.ch[1].src, dma.ch[1].remaining, dma.ch[1].in_progress,
+                dma.ch[2].cnt_h, dma.ch[2].dst, dma.pending, gba.bus.apu.read_io8(0x82) as u16 | (gba.bus.apu.read_io8(0x83) as u16) << 8
             );
         }
     }

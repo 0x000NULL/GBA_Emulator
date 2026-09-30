@@ -1,0 +1,18 @@
+# Super Mario Advance (USA, Europe): attract demo, SUPER MARIO ADVANCE title with Single Player /
+# Multiplayer at ~2400 (golden 2400). START at 2710 -> Choose a Game (SUPER MARIO 2 / MARIO BROS.);
+# A at 3310 picks Super Mario 2 -> Select a File (A at 3910 = file A, NEW) -> Choose a Player (A at
+# 4510 = Mario) -> world 1-1 level select (A at 5110). Mario drops out of the sky at ~5100 and lands on
+# the cloud platform by ~5400; golden at 5700 (idle on the cloud, WORLD 1-1, M x5). Control: RIGHT held
+# 5700-6000 walks Mario off the cloud and scrolls the screen (hashes diverge).
+steps = [
+  { frame = 2710, press = "START" },
+  { frame = 2715, release = "START" },
+  { frame = 3310, press = "A" },
+  { frame = 3315, release = "A" },
+  { frame = 3910, press = "A" },
+  { frame = 3915, release = "A" },
+  { frame = 4510, press = "A" },
+  { frame = 4515, release = "A" },
+  { frame = 5110, press = "A" },
+  { frame = 5115, release = "A" },
+]

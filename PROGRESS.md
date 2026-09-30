@@ -61,6 +61,16 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
 | Final Fantasy V Advance (USA) | BZ5E | SRAM 32K | Bartz on chocobo on the world map, LEFT/DOWN move | title 1800, gameplay 19000 |
 | Final Fantasy VI Advance (USA) | BZ6E | SRAM 32K | Terra's Magitek armor in Narshe, UP/DOWN/LEFT move | title 3000, gameplay 15300 |
 | Final Fantasy Tactics Advance (USA) | AFXE | Flash 64K | Snowball fight command menu, UP moves the cursor | title 4500, gameplay 19500 |
+| Mario Party Advance (USA) | B8ME | EEPROM | Shroom City map, A stops the dice | title 3000, gameplay 32100 |
+| Mario Pinball Land (USA) | BMVE | EEPROM | First table; A flips, LEFT nudges | title 3000, gameplay 3400 |
+| Mario Tennis: Power Tour (USA) | BTME | SRAM 32K | Language select (hung black before the 2026-09-30 fetch-arbitration fix); route to a match not scripted yet | title 1800 |
+| Max Payne (USA) | BMEE | EEPROM | Roscoe St. Station, LEFT/UP move | menu 1200, gameplay 2300 |
+| NFS Carbon: Own the City (USA/EU) | BN7E | EEPROM | Elimination race, LEFT/RIGHT steer | title 2700, race 6900 |
+| NFS Most Wanted (USA/EU) | BNWE | EEPROM | Tollbooth race, LEFT/RIGHT steer | title 1500, race 6600 |
+| NFS Underground (USA/EU) | BNSE | EEPROM | Stadium circuit, LEFT/RIGHT steer | title 2100, race 7300 |
+| Super Mario Advance (USA/EU) | AMAE | EEPROM | 1-1 on the cloud, RIGHT moves Mario | title 2400, gameplay 5700 |
+| Super Mario Advance 2 (USA) | AA2E | EEPROM | Yoshi's House, RIGHT walks out to the map (level was invisible before the 2026-09-30 window fix) | title 1200, card 5300, gameplay 6300 |
+| Super Mario Advance 4 (USA) | AX4E | Flash 128K | 1-1 start, RIGHT moves Mario | title 1800, gameplay 8100 |
 | Final Fantasy IV Advance (USA) | BZ4E | SRAM 32K | Red Wings intro, scripted battles, Baron castle; Cecil controllable in the corridor (four directions verified). Its `swi 0xFF` is a logged no-op (GBATEK: 2Bh+ jump to garbage on hardware) | title 2400, gameplay 19800 |
 
 ## Environment facts
@@ -192,6 +202,28 @@ previous notes were really two independent families:
 - Tests: `irq_pending_at_exception_return_pays_the_refill_then_preempts_the_target`,
   `irq_after_a_branch_preempts_its_target` (cpu/tests/exceptions.rs);
   `alu_write_to_pc_branches_and_aligns` now asserts the refill happens inside the branch step.
+
+## Fix log (stretch compat bugs, 2026-09-30)
+- **Window with both edges past 240 wrapped over the whole line.** Super Mario Advance 2 parks
+  window 0 with WIN0H=FEFFh (X1=254, X2=255) from its H-Blank handler; `apply_window` clamped X2
+  to 240, left X1 at 254 and took the wrap branch, masking every pixel with WININ=0 so the level
+  showed only the backdrop. GBATEK: "garbage values of X2>240 or X1>X2 are interpreted as
+  X2=240"; X1 past the screen is clamped with it (mGBA does the same), giving an empty window.
+  Test `window_with_both_edges_past_the_screen_is_empty`.
+- **Immediate DMA vs opcode fetch.** Mario Tennis: Power Tour DMA3-copies a routine from ROM onto
+  the stack and branches to it in the next instruction; hardware starts the DMA 2 cycles after
+  the enable and stalls the CPU, so the code is there before the fetch. `Bus::arbitrate` ran
+  only for data accesses, so the CPU fetched stale stack words, hit an undefined instruction and
+  ended in the game's cart-removal loop (black screen, SWI 3 forever). Fetches from RAM/BIOS now
+  arbitrate too; fetches from the game pak do not (DMA cannot write ROM, and the prefetch-buffer
+  model is calibrated with the DMA landing at the next data access: arbitrating ROM fetches
+  moved 32 "Trivial DMA" P-column rows by one cycle). Test
+  `due_immediate_dma_takes_the_bus_before_an_opcode_fetch`.
+- Super Mario Advance's ~4.4k FIFO underruns are bursts at level transitions (e.g. frames
+  2801-2803: DMA1/2CNT_H written 0000 by the game with IME=0 while timer 0 keeps popping;
+  `--fifo-stats` shows both channels disabled and nothing pushed), i.e. game-driven like the
+  Classic NES and Backyard Baseball cases. SMA4's 117k during its flash format not checked but
+  presumably the same.
 
 ## Fix log (merge of the SWI-timing and timer branches, 2026-09-30)
 Merged separately each branch held its rows; together the Timing row dropped 1956 -> 1900: the
