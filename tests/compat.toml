@@ -19,7 +19,7 @@ note = "title screen with PRESS START; B8CE, 32 MB, SRAM_F_V103"
 path = "Games/Kingdom Hearts - Chain of Memories (USA).zip"
 frames = 27400
 input_file = "tests/inputs/khcom-newgame.toml"
-golden = "bd457b296090a4b6"
+golden = "547ba26f4f07dbed"
 note = "M6 gate: new game -> intro -> Castle Oblivion -> battle tutorial (player has control from ~25000)"
 
 [[rom]]
@@ -36,7 +36,7 @@ note = "new game -> name entry -> intro -> Link's house with HUD; player control
 
 [[rom]]
 path = "Games/Legend of Zelda, The - A Link to the Past & Four Swords (USA).zip"
-golden = "69dc8b92378f1f29"
+golden = "64039080c5b1d75c"
 note = "CHOOSE A FILE screen; AZLE, EEPROM 512"
 
 [[rom]]

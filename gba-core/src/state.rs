@@ -74,7 +74,7 @@ pub mod bytes_arr {
 
 /// Magic + version prefix so stale states are rejected instead of misparsed.
 pub const STATE_MAGIC: &[u8; 4] = b"GBAS";
-pub const STATE_VERSION: u32 = 2;
+pub const STATE_VERSION: u32 = 3;
 
 #[derive(Debug)]
 pub enum StateError {
