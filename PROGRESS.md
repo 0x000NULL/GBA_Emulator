@@ -63,7 +63,7 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
 | Final Fantasy Tactics Advance (USA) | AFXE | Flash 64K | Snowball fight command menu, UP moves the cursor | title 4500, gameplay 19500 |
 | Mario Party Advance (USA) | B8ME | EEPROM | Shroom City map, A stops the dice | title 3000, gameplay 32100 |
 | Mario Pinball Land (USA) | BMVE | EEPROM | First table; A flips, LEFT nudges | title 3000, gameplay 3400 |
-| Mario Tennis: Power Tour (USA) | BTME | SRAM 32K | Language select (hung black before the 2026-09-30 fetch-arbitration fix); route to a match not scripted yet | title 1800 |
+| Mario Tennis: Power Tour (USA) | BTME | SRAM 32K | Story mode through character setup and the dorm to the academy courts, Clay controllable (LEFT walks to the fence); no match reachable from power-on without save data (hung black before the 2026-09-30 fetch-arbitration fix) | title 1800, overworld 30600 |
 | Max Payne (USA) | BMEE | EEPROM | Roscoe St. Station, LEFT/UP move | menu 1200, gameplay 2300 |
 | NFS Carbon: Own the City (USA/EU) | BN7E | EEPROM | Elimination race, LEFT/RIGHT steer | title 2700, race 6900 |
 | NFS Most Wanted (USA/EU) | BNWE | EEPROM | Tollbooth race, LEFT/RIGHT steer | title 1500, race 6600 |
@@ -350,7 +350,8 @@ hardware except the timer-start offset, HLE BIOS calls and DMA-during-fetch (all
 ## Next steps, in order of value
 1. Misc edge H-blank bit / DMA prefetch rows (6/12, see "Misc edge attempt").
 2. Initial D garage screens (phone, driving technique) render blank content areas: verify and fix
-   (see Known gaps). Mario Tennis into a match (script in progress).
+   (see Known gaps). Mario Tennis: the first match is behind the story's center-court cutscene;
+   not scripted.
 3. Reference-emulator audio comparison (needs an mGBA build with headless audio dump).
 
 ## Fix log (ROM-to-ROM DMA, Halt exit; 2026-09-30)
