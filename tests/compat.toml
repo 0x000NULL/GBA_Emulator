@@ -67,3 +67,17 @@ note = "title -> register name -> file 1 -> Zelda's palace; player control verif
 path = "Games/Initial D - Another Stage (Japan).zip"
 golden = "dc16416e96eb76e3"
 note = "title screen PRESS START BUTTON; AINJ, SRAM_V112"
+
+[[rom]]
+path = "Games/Classic NES Series - The Legend of Zelda (USA, Europe).zip"
+frames = 2600
+input_file = "tests/inputs/neszelda1-newgame.toml"
+golden = "83fe2a9d0bd5dfff"
+note = "title -> register name A -> file 1 -> overworld start screen with HUD; player control verified (LEFT 2600-2900 walks Link onto the western screen; hashes diverge)"
+
+[[rom]]
+path = "Games/Initial D - Another Stage (Japan).zip"
+frames = 27500
+input_file = "tests/inputs/initiald-race.toml"
+golden = "c2b3e7c8fdc7ca59"
+note = "Story: name entry -> AE86 -> gas-station dialogue -> garage EXIT -> Akina tutorial race with Ikeya; golden while the driving-line prompt is up (LIMIT countdown); player control verified (LEFT or RIGHT held 27500-27800 puts the car on that line, three distinct hashes)"

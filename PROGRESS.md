@@ -45,10 +45,10 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
 | Kingdom Hearts: Chain of Memories (USA) | B8CE | SRAM_F 32K | Battle tutorial, controllable; music plays | title 1800, gameplay 27400 |
 | Zelda: The Minish Cap (USA) | BZME | EEPROM 8K | Link's house with HUD, controllable | title 1800, gameplay 12000 |
 | Zelda: A Link to the Past & Four Swords (USA) | AZLE | EEPROM 512 | Link's house after the telepathy intro, controllable (DOWN walks Link to the door) | title 1800, gameplay 18000 |
-| Classic NES Series: Zelda (USA/EU) | FZLE | EEPROM (forced) | Story scroll (ROM mirroring, VRAM execution OK) | 1800 |
+| Classic NES Series: Zelda (USA/EU) | FZLE | EEPROM (forced) | Overworld start screen with HUD, controllable (LEFT scrolls to the next screen) | title 1800, gameplay 2600 |
 | Classic NES Series: Zelda II (USA/EU) | FLBE | EEPROM (forced) | Zelda's palace, controllable (LEFT walks Link out to the overworld) | title 1800, gameplay 4200 |
-| Initial D: Another Stage (J) | AINJ | SRAM 32K | Name entry, car select, story dialogue | title 1800 |
-| Final Fantasy IV Advance (USA) | | | Health warning screen; executes `swi 0xFF` (logged) | no |
+| Initial D: Another Stage (J) | AINJ | SRAM 32K | Story mode through name entry, car select, garage, to the Akina tutorial race; LEFT/RIGHT change the racing line | title 1800, race 27500 |
+| Final Fantasy IV Advance (USA) | | | Title with New Game menu (START skips the health screen; its `swi 0xFF` is a logged no-op, GBATEK: 2Bh+ jump to garbage on hardware) | no |
 
 ## Environment facts
 - Rust 1.95 stable-msvc; no devkitARM; no BIOS dump. HLE is the only boot path.
@@ -73,6 +73,11 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   Harness: `--check mgba-suite --input <script> --expect p/t`. Debug regs implemented in `bus/debug.rs`.
 
 ## Known gaps / judgement calls
+- Initial D (garage, script frame ~22900 of `tests/inputs/initiald-race.toml`): the phone screen
+  (A) draws a blank white panel with only the signal/battery icons, and the driving-technique
+  screen (DOWN x2, A) has its content area solid black. Unverified against hardware; could be a
+  missing text layer or a blend/window case. Classic NES Zelda: on the SELECT screen after
+  registering a name (frame 2000) an extra "O" appears one row below the "A"; unverified.
 - PPU: no per-scanline OBJ cycle budget; OAM evaluated on the rendered line; forced blank does not
   advance affine references (mGBA-like); window `x1 > 240 && x1 > x2` covers the whole line (mGBA).
 - APU: PSG mix scale derived from GBATEK maxima, not measured against hardware; wave RAM
@@ -91,7 +96,11 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   reads 0xFF.
 - Audio: HLE SWIs still complete atomically with respect to IRQs (an IRQ raised during a BIOS
   routine is taken when the SWI returns rather than mid-routine, as the real BIOS allows).
-  ALttP shows 1910 over 18000 frames, Zelda II 43452 over 4200 (Classic NES sound driver).
+  ALttP shows 1910 over 18000 frames, Zelda II 43452 over 4200 and Zelda 1 65242 over 2600.
+  The Classic NES ones are the games' own behaviour: their driver refills FIFO A from a timer-1
+  IRQ (immediate DMA1 of 4 words, then re-arm as 16-bit special DMA), and during menu
+  transitions they mask that IRQ (IE=2041 with the timer request pending in IF, DMA1 left
+  disabled), so the FIFO starves on hardware as well. Traced with `--watch-log` on 2026-09-30.
 
 ## Fix log (IRQ entry cycles, 2026-09-30)
 mgba-suite Timer IRQ 69 -> 90/90, Timer count-up 483 -> 582/936. Every remaining Timer IRQ
@@ -182,4 +191,4 @@ hardware except the timer-start offset, HLE BIOS calls and DMA-during-fetch (all
    the Timer count-up / Timer IRQ rows that depend on ROM fetch timing.
 3. Initial D into a race (affine road, H-Blank scroll writes); Classic NES Zelda 1 past the story
    scroll; pin goldens in `tests/compat.toml`.
-4. Investigate FF IV Advance's `swi 0xFF` (what the real BIOS does for out-of-range SWI numbers).
+4. FF IV Advance: script New Game into gameplay and pin a golden (title reached 2026-09-30).

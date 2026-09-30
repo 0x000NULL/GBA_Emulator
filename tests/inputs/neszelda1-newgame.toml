@@ -1,0 +1,21 @@
+# Classic NES Series: The Legend of Zelda (USA, Europe): title START -> SELECT screen START
+# (cursor is already on REGISTER YOUR NAME) -> letter A -> SELECT x3 moves the cursor to END ->
+# START -> file 1 START -> overworld start screen; Link is controllable from ~2300 (golden at 2600).
+steps = [
+  { frame = 700, press = "START" },
+  { frame = 705, release = "START" },
+  { frame = 1000, press = "START" },
+  { frame = 1005, release = "START" },
+  { frame = 1200, press = "A" },
+  { frame = 1205, release = "A" },
+  { frame = 1400, press = "SELECT" },
+  { frame = 1405, release = "SELECT" },
+  { frame = 1500, press = "SELECT" },
+  { frame = 1505, release = "SELECT" },
+  { frame = 1600, press = "SELECT" },
+  { frame = 1605, release = "SELECT" },
+  { frame = 1800, press = "START" },
+  { frame = 1805, release = "START" },
+  { frame = 2100, press = "START" },
+  { frame = 2105, release = "START" },
+]
