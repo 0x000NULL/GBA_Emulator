@@ -35,8 +35,9 @@ through: RAM regions align them, the 8-bit SRAM/Flash bus uses the low bits to p
 - BIOS-region reads from outside the BIOS return the GBATEK open-bus values (E129F000 after boot,
   E3A02004 after SWI, E25EF004 during IRQ, E55EC002 after IRQ return).
 - Pipeline: two fetched words; the executing instruction came from an earlier fetch, so a store
-  over PC+8 does not change what runs (Classic NES Series depends on it). PC writes flush; the next
-  step refills with an N then an S fetch.
+  over PC+8 does not change what runs (Classic NES Series depends on it). PC writes flush; the step that wrote
+  PC ends with the refill (an N then an S fetch), so an IRQ sampled at the next step boundary is
+  taken after the branch/exception-return has paid for it.
 - Fetch `Access`: the CPU passes `S` only when the bus cycle before the fetch was the fetch of the
   preceding opcode. After a data access (STR/STM: the datasheet's "2N") or an internal cycle
   (LDR/LDM/MUL/shift-by-register: GBATEK's "prefetch disable bug") it passes `N`, and the first

@@ -8,6 +8,14 @@ use super::{swi, HLE_IRQ_RETURN_ADDR};
 use crate::bus::{Access, Bus, MemoryBus};
 use crate::cpu::regs::{Regs, MODE_IRQ, MODE_SVC, MODE_SYS};
 
+/// Cycles the real BIOS spends between the wake-up IRQ returning into IntrWait and control
+/// coming back to the caller (flag check, SWI return path), beyond the flat `idle(10)` charged on
+/// every HLE SWI. Fitted, not derived from a BIOS dump: the mgba-suite "Timer count-up tests" start
+/// a prescaled timer right after an IntrWait that was released by a timer IRQ aligned to the
+/// free-running prescaler, so every 64/256/1024 cycle row pins this sum modulo the prescaler
+/// (31 with the return stub below was the only pair found, scanning 0..64 x -3..4, that matches all 936 rows).
+pub const INTR_WAIT_EXIT_CYCLES: u32 = 31;
+
 /// BIOS mirror of acknowledged IRQ flags, used by IntrWait.
 pub const INTR_FLAGS_MIRROR: u32 = 0x0300_7FF8;
 /// SoftReset re-entry flag (00h = ROM 08000000h, else RAM 02000000h).
@@ -60,8 +68,12 @@ impl Bus {
                 regs.r[15] = if regs.thumb() { target & !1 } else { target & !3 };
                 self.bios.open_bus = super::BIOS_OPENBUS_AFTER_IRQ;
                 // ldmfd of 6 registers (6S+1N+1I = 8, 6 paid by the reads above) and
-                // `subs r15,r14,4` (2S+1N = 3, 2 paid by the CPU's refill).
-                self.idle(2 + 1);
+                // `subs r15,r14,4` (2S+1N = 3, 2 paid by the pipeline refill `Cpu::step` runs at
+                // the end of this "instruction"). That would leave 3 idle cycles; the hardware-
+                // recorded mgba-suite "Timer count-up tests" (all 936 rows, with
+                // INTR_WAIT_EXIT_CYCLES) are matched only with 2, so the ALU cycle of the `subs`
+                // is taken to overlap the ldmfd's internal cycle (fitted, see PROGRESS.md).
+                self.idle(2);
                 true
             }
             _ => false,
@@ -196,6 +208,7 @@ impl Bus {
             mirror &= !flags;
             self.write16(INTR_FLAGS_MIRROR, mirror, Access::N);
             self.bios.intr_wait = None;
+            self.idle(INTR_WAIT_EXIT_CYCLES);
             return;
         }
         // Park: halt and re-execute the SWI after the next interrupt.

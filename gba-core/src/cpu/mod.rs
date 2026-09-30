@@ -16,9 +16,13 @@
 //! (PC+2 in THUMB). Each step first prefetches PC+8 (PC+4), shifts the pipeline, then executes the
 //! word that was fetched two steps earlier, so a store that overwrites an already-fetched
 //! instruction has no effect on it (Classic NES Series relies on this). Any write to PC
-//! invalidates the pipeline; the next `step` refills it with a non-sequential fetch at the target
-//! followed by a sequential one, which together with the branch's own prefetch gives GBATEK's
-//! 2S+1N.
+//! invalidates the pipeline; the same `step` ends by refilling it with a non-sequential fetch at
+//! the target followed by a sequential one, which together with the branch's own prefetch gives
+//! GBATEK's 2S+1N. The refill belongs to the branch (the ARM7TDMI only samples nIRQ once the
+//! instruction, refill included, has finished), so an IRQ that is pending when an exception return
+//! re-enables interrupts is taken after the refill and before the target instruction runs.
+//! Exception entry is the exception: it leaves the pipeline empty and the vector code (or the HLE
+//! vector emulation) pays for the vector fetches.
 //!
 //! Opcode fetch sequentiality (the `Access` passed to `fetch16/32`) follows the ARM7TDMI SEQ
 //! signal as the GBA memory controller sees it: a fetch is sequential only when the bus cycle
@@ -160,6 +164,7 @@ impl Cpu {
         }
         if self.regs.r[15] < 0x4000 && bus.is_hle_bios() && bus.bios_hle_vector(&mut self.regs) {
             self.flush_pipeline();
+            self.refill_pipeline(bus);
             return (bus.now() - start) as u32;
         }
         if self.regs.thumb() {
@@ -168,7 +173,28 @@ impl Cpu {
             self.step_arm(bus);
         }
         self.instr_count += 1;
+        if !self.next_fetch_seq {
+            self.refill_pipeline(bus);
+        }
         (bus.now() - start) as u32
+    }
+
+    /// Refill the pipeline after a PC write: N fetch at PC, S fetch at PC+size.
+    fn refill_pipeline<B: MemoryBus>(&mut self, bus: &mut B) {
+        if self.regs.thumb() {
+            let pc = self.regs.r[15] & !1;
+            self.regs.r[15] = pc;
+            self.pipeline[0] = bus.fetch16(pc, Access::N) as u32;
+            let next = pc.wrapping_add(2);
+            self.pipeline[1] = bus.fetch16(next, Self::seq_unless_block_start(next)) as u32;
+        } else {
+            let pc = self.regs.r[15] & !3;
+            self.regs.r[15] = pc;
+            self.pipeline[0] = bus.fetch32(pc, Access::N);
+            let next = pc.wrapping_add(4);
+            self.pipeline[1] = bus.fetch32(next, Self::seq_unless_block_start(next));
+        }
+        self.next_fetch_seq = true;
     }
 
     /// Access type of the pipeline fetch at `addr` when the pipeline is already valid: sequential
