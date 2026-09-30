@@ -101,6 +101,9 @@ impl Gba {
                 self.bus.dma_run();
                 continue;
             }
+            // Requests raised with a latency (timer overflows) reach the CPU line here; an
+            // `IrqLatch` event guarantees the halted-CPU sleep below ends when one matures.
+            self.bus.irq.sync(self.bus.sched.now);
             if self.bus.irq.halted || self.bus.irq.stopped {
                 if self.bus.irq.wake_condition() {
                     self.bus.irq.halted = false;
