@@ -1,33 +1,47 @@
 # Commercial-ROM compatibility manifest (M6). Paths resolve against the repo root (Games/ is
 # gitignored, so these entries are skipped on machines without the ROMs). Golden hashes are pinned
-# once the title screen renders correctly; `frames` is the frame at which the title is stable.
+# from runs whose PNG was reviewed; `frames` is the frame at which the screen was captured.
 # Run one entry: cargo run -p gba-test -- "<path>" --frames N --png out.png
+# Pinned 2026-09-29 (HLE BIOS, commit after M1-M5 + DMA preemption).
 
 [defaults]
 hash = "xxh3-64"
-frames = 600
+frames = 1800
 bios = "hle"
 
 [[rom]]
 path = "Games/Kingdom Hearts - Chain of Memories (USA).zip"
-note = "primary target; B8CE, 32 MB, SRAM_F_V103"
+golden = "d6f5ac977e710954"
+note = "title screen with PRESS START; B8CE, 32 MB, SRAM_F_V103"
+
+[[rom]]
+path = "Games/Kingdom Hearts - Chain of Memories (USA).zip"
+frames = 27400
+input_file = "tests/inputs/khcom-newgame.toml"
+golden = "547ba26f4f07dbed"
+note = "M6 gate: new game -> intro -> Castle Oblivion -> battle tutorial (player has control from ~25000)"
 
 [[rom]]
 path = "Games/Legend of Zelda, The - The Minish Cap (USA).zip"
-note = "BZME, EEPROM 8K, heavy SWI decompression"
+golden = "f987ce1115458598"
+note = "title screen; BZME, EEPROM 8K"
 
 [[rom]]
 path = "Games/Legend of Zelda, The - A Link to the Past & Four Swords (USA).zip"
-note = "AZLE, EEPROM 512, H-Blank register tricks (mode 7 map)"
+golden = "64039080c5b1d75c"
+note = "CHOOSE A FILE screen; AZLE, EEPROM 512"
 
 [[rom]]
 path = "Games/Classic NES Series - The Legend of Zelda (USA, Europe).zip"
-note = "FZLE, anti-emulation: ROM mirroring, VRAM execution, STM write order, prefetch"
+golden = "53dcceb94d6c0f4f"
+note = "story scroll; FZLE, anti-emulation: ROM mirroring, VRAM execution, STM write order"
 
 [[rom]]
 path = "Games/Classic NES Series - Zelda II - The Adventure of Link (USA, Europe).zip"
+golden = "c8dd189546cc6a19"
 note = "FLBE, same tricks as Zelda 1"
 
 [[rom]]
 path = "Games/Initial D - Another Stage (Japan).zip"
-note = "AINJ, SRAM_V112, affine road rendering"
+golden = "dc16416e96eb76e3"
+note = "title screen PRESS START BUTTON; AINJ, SRAM_V112"

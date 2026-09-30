@@ -35,6 +35,10 @@ impl InputScript {
         self.steps.is_empty()
     }
 
+    pub fn into_steps(self) -> Vec<InputStep> {
+        self.steps
+    }
+
     /// Last frame referenced by the script.
     pub fn last_frame(&self) -> u32 {
         self.steps.last().map(|s| s.frame).unwrap_or(0)

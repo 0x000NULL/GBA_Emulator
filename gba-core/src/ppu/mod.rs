@@ -141,7 +141,9 @@ impl Ppu {
         }
     }
 
-    pub fn on_line_end(&mut self, ctx: &mut SysCtx) {
+    /// `at` is the cycle the LineEnd event was scheduled for; the next line is timed from it, not
+    /// from `sched.now`, so CPU/DMA overshoot never lengthens the frame.
+    pub fn on_line_end(&mut self, ctx: &mut SysCtx, at: u64) {
         self.hblank = false;
         self.vcount = (self.vcount + 1) % LINES_PER_FRAME;
         match self.vcount {
@@ -159,7 +161,7 @@ impl Ppu {
         if self.dispstat & (1 << 5) != 0 && self.vcount == (self.dispstat >> 8) as u32 {
             ctx.irq.raise(Irq::VCount);
         }
-        let line_start = ctx.sched.now;
+        let line_start = at;
         ctx.sched.schedule(Event::HBlank, line_start + HDRAW_CYCLES);
         ctx.sched.schedule(Event::LineEnd, line_start + CYCLES_PER_LINE);
     }
@@ -311,7 +313,7 @@ mod timing_tests {
             match ev {
                 Event::HBlank => ppu.on_hblank(&mut ctx),
                 Event::LineEnd => {
-                    ppu.on_line_end(&mut ctx);
+                    ppu.on_line_end(&mut ctx, deadline);
                     lines += 1;
                 }
                 _ => unreachable!(),

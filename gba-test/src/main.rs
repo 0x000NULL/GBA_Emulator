@@ -68,6 +68,9 @@ struct Cli {
     /// Print a golden.toml stanza for this run.
     #[arg(long)]
     record: bool,
+    /// Report FIFO underruns and audio samples counted from this frame onward (skips boot silence).
+    #[arg(long)]
+    stats_from: Option<u32>,
     /// BIOS image (default: GBA_BIOS env, else HLE).
     #[arg(long)]
     bios: Option<PathBuf>,
@@ -143,6 +146,7 @@ fn run() -> Result<bool> {
     let mut log = Vec::new();
     let mut audio = Vec::new();
     let mut stopped: Option<Hit> = None;
+    let mut stats_base: Option<(u64, u64)> = None;
     let tracing = trace_out.is_some() || cli.exit_on_swi.is_some();
 
     'frames: for f in 0..cli.frames {
@@ -189,6 +193,13 @@ fn run() -> Result<bool> {
         } else {
             gba.bus.apu.samples.clear();
         }
+        if cli.stats_from == Some(f) {
+            stats_base = Some((gba.bus.apu.fifo_a.underruns + gba.bus.apu.fifo_b.underruns, gba.bus.apu.sample_count));
+        }
+    }
+    if let (Some(from), Some((u0, s0))) = (cli.stats_from, stats_base) {
+        let u1 = gba.bus.apu.fifo_a.underruns + gba.bus.apu.fifo_b.underruns;
+        println!("stats_from={from} underruns={} samples={}", u1 - u0, gba.bus.apu.sample_count - s0);
     }
     if let Some(out) = trace_out.as_mut() {
         out.flush()?;
@@ -216,8 +227,10 @@ fn run() -> Result<bool> {
         println!("png={}", p.display());
     }
     if let Some(p) = &cli.pcm {
-        write_wav(p, &audio, 32768)?;
-        println!("pcm={} samples={}", p.display(), audio.len());
+        // Output rate follows SOUNDBIAS (32768 Hz default; KH:CoM selects 65536 Hz).
+        let rate = (gba_core::timing::CLOCK_HZ / gba.bus.apu.cycles_per_sample()) as u32;
+        write_wav(p, &audio, rate)?;
+        println!("pcm={} samples={} rate={}", p.display(), audio.len(), rate);
     }
 
     let mut ok = true;

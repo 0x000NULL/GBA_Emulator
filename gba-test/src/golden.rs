@@ -82,6 +82,9 @@ pub struct RomEntry {
     pub frames: Option<u32>,
     #[serde(default)]
     pub input: Vec<InputStep>,
+    /// Input script file (relative to the repo root), merged with `input`.
+    #[serde(default)]
+    pub input_file: Option<String>,
     #[serde(default)]
     pub expect: Option<String>,
     #[serde(default)]

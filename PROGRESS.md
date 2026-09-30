@@ -14,8 +14,8 @@ Design: `docs/ARCHITECTURE.md`. Rules: `CLAUDE.md`.
 | M3 | PPU modes 0-5, OBJ, windows, blending, mosaic, timing | jsmolka ppu/* golden hashes; mgba-suite video | **DONE (jsmolka side) 2026-09-29**: hello/shades/stripes goldens pinned, 56 PPU unit tests; gaps: per-line OBJ cycle budget, OAM evaluated on the rendered line; mgba-suite video blocked as above |
 | M4 | BIOS HLE, every listed SWI | `bios.gba` under HLE; per-SWI unit tests | **DONE 2026-09-29**: `bios.gba` passes under HLE; all listed SWIs + IRQ vector/return emulation; 14 unit tests incl. LZ77/RL/Huffman encoder round trips. BIOS sound-driver SWIs (1A-1E, 28, 29) are logged no-ops. LLE differential deferred (no BIOS) |
 | M5 | Save detection, SRAM/Flash/EEPROM, `<rom>.sav` | jsmolka save/*; round trip | **DONE 2026-09-29**: none/sram/flash64/flash128 pass (flash needs 400 frames: test 10/11 program 64K bytes one command sequence at a time); 8 cart unit tests incl. EEPROM protocol and save round trip; `.sav` persistence in the frontend |
-| M6 | KH:CoM title -> new game -> first room | title golden + input script | not started |
-| M7 | APU PSG + FIFO + mixing | PCM capture vs mGBA | stub (FIFOs work, silence out) |
+| M6 | KH:CoM title -> new game -> first room | title golden + input script | **DONE 2026-09-29**: title golden (frame 1800) and `tests/inputs/khcom-newgame.toml` reach the battle tutorial with player control (LEFT vs RIGHT runs diverge at frame 27400; golden pinned in `tests/compat.toml`). Minish Cap, ALttP+FS, Classic NES Zelda 1 and 2, Initial D all reach their title/file screens; goldens pinned. `cargo test` runs them (~66 s) when `Games/` is present |
+| M7 | APU PSG + FIFO + mixing | PCM capture vs mGBA | **DONE (underrun half) 2026-09-29**: 70 APU unit tests; KH title capture (`--pcm`, 65536 Hz) has **0 underruns** from frame 1200 to 1800 and clean stereo music (RMS ~3000, no clipping). **Reference comparison deferred**: the portable mGBA build has no headless audio dump; procedure in `scripts/compare-wav.py` docstring for a manual GUI recording |
 | M8 | Prefetch, timing polish, savestates, fast-forward | mgba-suite timing improves | not started |
 
 ## Environment facts (2026-09-29)
@@ -56,6 +56,19 @@ Design: `docs/ARCHITECTURE.md`. Rules: `CLAUDE.md`.
 - DMAxDAD byte writes used the raw register offset as the shift (bus unit test).
 - Reference-emulator trace diffing: the mGBA 0.10.5 Windows build has no CLI debugger (`-d`), only
   GDB (`-g`). Trace diffs need a build with the CLI debugger or a GDB-driven stepper; not needed yet.
+- **Frame drift** (found via KH audio clicks): `Ppu::on_line_end` timed the next line from
+  `sched.now`, which is past the event's scheduled time whenever the CPU or a DMA overshot, so
+  every frame ran a little long and drifted against the 15768 Hz sound timer; the m4a driver's
+  6-frame DMA restart then let the FIFO fetch 16 bytes past its buffer (periodic left-channel
+  clicks in the silent intro). Scanline and APU events are now scheduled from the event time.
+- **DMA priority**: a long low-priority transfer (e.g. a DMA3 graphics copy) ran to completion
+  while timer overflows queued up, then a burst of FIFO pops hit an empty FIFO (FF IV Advance:
+  58-89 underruns per quarter frame). Transfers now fire due events after every unit and yield to
+  a higher-priority pending channel, resuming afterwards (GBATEK: higher-priority DMA may
+  offhold sound DMA). FF IV underruns over 900 frames dropped to 270 (all in its boot phase).
+- `--pcm` WAV rate now follows SOUNDBIAS (KH selects 65536 Hz).
+- FF IV Advance executes `swi 0xFF` (logged as unimplemented; the real BIOS jumps through an
+  out-of-range table entry). Not investigated; the game reaches its health warning screen.
 
 ## Attempts log
 - 2026-09-29 M0: full workspace builds; `cargo test` runs 9 unit tests + the golden driver, which

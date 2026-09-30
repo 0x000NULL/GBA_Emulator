@@ -377,7 +377,7 @@ impl Bus {
 
     /// Dispatch every event whose time has come.
     pub fn process_events(&mut self) {
-        while let Some((ev, _at)) = self.sched.pop_due() {
+        while let Some((ev, at)) = self.sched.pop_due() {
             match ev {
                 Event::HBlank => {
                     let Bus { sched, irq, dma, ppu, .. } = self;
@@ -385,7 +385,7 @@ impl Bus {
                 }
                 Event::LineEnd => {
                     let Bus { sched, irq, dma, ppu, .. } = self;
-                    ppu.on_line_end(&mut SysCtx { sched, irq, dma });
+                    ppu.on_line_end(&mut SysCtx { sched, irq, dma }, at);
                 }
                 Event::TimerOverflow(t) => {
                     let Bus { sched, irq, timers, apu, dma, .. } = self;
@@ -401,11 +401,11 @@ impl Bus {
                 Event::DmaStart(ch) => self.dma.on_start_event(ch),
                 Event::ApuSample => {
                     self.apu.on_sample();
-                    self.sched.schedule(Event::ApuSample, self.sched.now + self.apu.cycles_per_sample());
+                    self.sched.schedule(Event::ApuSample, at + self.apu.cycles_per_sample());
                 }
                 Event::ApuFrameSeq => {
                     self.apu.on_frame_seq();
-                    self.sched.schedule(Event::ApuFrameSeq, self.sched.now + crate::timing::CYCLES_PER_FRAME_SEQ);
+                    self.sched.schedule(Event::ApuFrameSeq, at + crate::timing::CYCLES_PER_FRAME_SEQ);
                 }
                 Event::KeypadPoll => self.keypad.check_irq(&mut self.irq),
                 Event::IrqLatch => {}

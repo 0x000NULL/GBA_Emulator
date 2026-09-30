@@ -28,6 +28,8 @@ pub struct DmaChannel {
     pub src: u32,
     pub dst: u32,
     pub remaining: u32,
+    /// A transfer has started and may have been paused by a higher-priority channel.
+    pub in_progress: bool,
 }
 
 impl DmaChannel {
@@ -152,6 +154,7 @@ impl DmaController {
                     }
                 } else if was_enabled && !now_enabled {
                     self.pending &= !(1 << ch);
+                    self.ch[ch].in_progress = false;
                     sched.cancel(Event::DmaStart(ch as u8));
                 }
             }

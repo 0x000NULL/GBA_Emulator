@@ -1,17 +1,23 @@
-//! DMA transfer execution. Runs to completion between CPU instructions; the CPU is stalled.
-//! Source: GBATEK "GBA DMA Transfers" (timing: 2N + 2(n-1)S + xI; x = 2, or 4 when both
-//! source and destination are in the game pak).
+//! DMA transfer execution. Runs between CPU instructions; the CPU is stalled while any channel
+//! is active. Source: GBATEK "GBA DMA Transfers" (timing: 2N + 2(n-1)S + xI; x = 2, or 4 when
+//! both source and destination are in the game pak; "DMA channels of higher priority may
+//! offhold sound DMA" i.e. a running low-priority transfer is paused to serve a higher one).
+//!
+//! Transfers are resumable: after every unit the scheduler is checked, due events fire (so
+//! timers keep clocking the sound FIFOs and the PPU keeps rendering during a long copy), and if a
+//! higher-priority channel became pending this one saves its progress and yields.
 
 use super::{Access, Bus, MemoryBus};
 use crate::irq::Irq;
 
 impl Bus {
-    /// Execute every pending channel, lowest number (highest priority) first.
+    /// Execute pending channels, lowest number (highest priority) first, until none remain.
     pub fn dma_run(&mut self) {
         while self.dma.pending != 0 {
             let ch = self.dma.pending.trailing_zeros() as usize;
             self.dma.pending &= !(1 << ch);
             if !self.dma.ch[ch].enabled() {
+                self.dma.ch[ch].in_progress = false;
                 continue;
             }
             self.dma_transfer(ch);
@@ -20,26 +26,37 @@ impl Bus {
 
     fn dma_transfer(&mut self, ch: usize) {
         let fifo = self.dma.is_fifo(ch);
-        let c = self.dma.ch[ch];
-        // FIFO mode: always 4 words of 32 bits, destination fixed.
-        let word32 = fifo || c.word32();
+        let word32 = fifo || self.dma.ch[ch].word32();
         let step: u32 = if word32 { 4 } else { 2 };
-        let count = if fifo { 4 } else { c.remaining };
-        let src_ctrl = c.src_ctrl();
-        let dst_ctrl = if fifo { 2 } else { c.dst_ctrl() };
-        let mut src = c.src & if word32 { !3 } else { !1 };
-        let mut dst = c.dst & if word32 { !3 } else { !1 };
+        let src_ctrl = self.dma.ch[ch].src_ctrl();
+        let dst_ctrl = if fifo { 2 } else { self.dma.ch[ch].dst_ctrl() };
 
-        // A DMA into the EEPROM region is a serial request; its length reveals the EEPROM size.
-        if dst >> 24 == 0x0D && !word32 {
-            self.cart.eeprom_dma_hint(count);
+        if !self.dma.ch[ch].in_progress {
+            let c = &mut self.dma.ch[ch];
+            c.in_progress = true;
+            if fifo {
+                c.remaining = 4;
+            }
+            c.src &= if word32 { !3 } else { !1 };
+            c.dst &= if word32 { !3 } else { !1 };
+            let (src, dst, count) = (c.src, c.dst, c.remaining);
+            // A DMA into the EEPROM region is a serial request; its length reveals the EEPROM size.
+            if dst >> 24 == 0x0D && !word32 {
+                self.cart.eeprom_dma_hint(count);
+            }
+            let both_pak = (0x08..=0x0D).contains(&(src >> 24)) && (0x08..=0x0D).contains(&(dst >> 24));
+            self.idle(if both_pak { 4 } else { 2 });
         }
-        self.in_dma = true;
-        let both_pak = (0x08..=0x0D).contains(&(src >> 24)) && (0x08..=0x0D).contains(&(dst >> 24));
-        self.idle(if both_pak { 4 } else { 2 });
 
-        for i in 0..count {
-            let access = if i == 0 { Access::N } else { Access::S };
+        let c = self.dma.ch[ch];
+        let mut src = c.src;
+        let mut dst = c.dst;
+        let mut remaining = c.remaining;
+        let higher = (1u8 << ch) - 1;
+
+        self.in_dma = true;
+        let mut access = Access::N;
+        while remaining > 0 {
             if word32 {
                 let v = self.read32(src, access);
                 self.write32(dst, v, access);
@@ -49,6 +66,7 @@ impl Bus {
                 self.write16(dst, v, access);
                 self.open_bus = v as u32 | (v as u32) << 16;
             }
+            access = Access::S;
             src = match src_ctrl {
                 0 => src.wrapping_add(step),
                 1 => src.wrapping_sub(step),
@@ -59,6 +77,21 @@ impl Bus {
                 1 => dst.wrapping_sub(step),
                 _ => dst,
             };
+            remaining -= 1;
+
+            if self.sched.now >= self.sched.next_deadline() {
+                self.process_events();
+                if remaining > 0 && self.dma.pending & higher != 0 {
+                    // Yield to the higher-priority channel; resume later from here.
+                    let c = &mut self.dma.ch[ch];
+                    c.src = src;
+                    c.dst = dst;
+                    c.remaining = remaining;
+                    self.dma.pending |= 1 << ch;
+                    self.in_dma = false;
+                    return;
+                }
+            }
         }
         self.in_dma = false;
 
@@ -67,6 +100,7 @@ impl Bus {
             c.src = src;
             c.dst = dst;
             c.remaining = 0;
+            c.in_progress = false;
             (c.irq_on_end(), c.repeat() && c.timing() != 0)
         };
         if irq_on_end {

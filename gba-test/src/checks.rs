@@ -150,7 +150,12 @@ pub fn run_entry(file: &GoldenFile, e: &RomEntry) -> Result<RunOutcome> {
     let path = resolve_rom_path(&e.path)?;
     let bios = if file.defaults.bios == "hle" { Some(BiosMode::Hle) } else { None };
     let mut gba = build_gba(&path, bios, None)?;
-    let script = InputScript::from_steps(e.input.clone());
+    let mut steps = e.input.clone();
+    if let Some(f) = &e.input_file {
+        let p = crate::repo_root().join(f);
+        steps.extend(InputScript::load(&p)?.into_steps());
+    }
+    let script = InputScript::from_steps(steps);
     let frames = file.frames_for(e);
     let mut out = run_and_check(&mut gba, frames, &script, &e.check, e.reg.as_deref(), e.expect.as_deref())?;
     if let Some(g) = &e.golden {
