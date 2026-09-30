@@ -95,3 +95,29 @@ frames = 19800
 input_file = "tests/inputs/ff4-newgame.toml"
 golden = "daee5dd93be24786"
 note = "new game -> Red Wings -> Mysidia flashback -> scripted battles -> Baron throne room -> Cecil and Kain pushed out into the corridor (player has control from ~19500); player control verified (LEFT/RIGHT/DOWN held 19800-20100 walk Cecil into the west guard room / east room / courtyard, four distinct hashes)"
+
+[[rom]]
+path = "Games/Mario Kart - Super Circuit (USA).zip"
+golden = "bbc81a4b4fcc082e"
+note = "title screen with the SINGLE PLAYER menu; AMKE, Flash64K"
+
+[[rom]]
+path = "Games/Mario Kart - Super Circuit (USA).zip"
+frames = 8100
+input_file = "tests/inputs/mariokart-race.toml"
+golden = "19207f8a0e507171"
+note = "Mario GP 50cc -> Mario -> Mushroom Cup -> Peach Circuit race; golden on the start straight (lap 1/3, 0'02\"28, 8th, Peach alongside) with A held from 8000; steering verified (LEFT or RIGHT held with A 8100-8400 turns the kart, three distinct hashes)"
+
+[[rom]]
+path = "Games/Crash Bandicoot - The Huge Adventure (USA).zip"
+frames = 2700
+input_file = "tests/inputs/crash-newgame.toml"
+golden = "1bd049aaf2207071"
+note = "title with the NEW GAME / LOAD GAME / CREDITS menu (START at 1810 skips the intro); ACQE, EEPROM"
+
+[[rom]]
+path = "Games/Crash Bandicoot - The Huge Adventure (USA).zip"
+frames = 6000
+input_file = "tests/inputs/crash-newgame.toml"
+golden = "50cf935c0d22396c"
+note = "new game -> Cortex cutscene (A pages) -> hub wheel -> level 1 Jungle Jam with Crash idle at the start; player control verified (RIGHT held 6000-6300 runs Crash to the first crate, hashes diverge)"

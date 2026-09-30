@@ -103,7 +103,8 @@ fn alu_write_to_pc_branches_and_aligns() {
         1,
     );
     assert_eq!(cpu.pc(), 0x2000);
-    assert!(!cpu.next_fetch_seq);
+    // The branch step ends with the pipeline refill (N at the target, S after it).
+    assert!(cpu.next_fetch_seq);
     cpu.step(&mut bus);
     assert_eq!(cpu.regs.r[1], 7);
     assert_eq!(cpu.pc(), 0x2004);

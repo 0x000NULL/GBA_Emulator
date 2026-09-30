@@ -17,8 +17,8 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
 - **mgba-suite is built and gated** (`suite.gba` via its `docker-build.sh`; 13 sub-suites in
   `tests/golden.toml`, each pinned at its current score so any regression fails `cargo test`).
   Scores after the 2026-09-30 merges: Memory 1552/1552, I/O read 130/130, Timing 1956/2020,
-  Timer count-up 582/936, Timer IRQ 90/90, Shifter/Carry/Multiply-long/BIOS-math all full,
-  DMA 1244/1244, SIO R/W 90/90, SIO timing 0/4, Misc edge 4/12.
+  Timer count-up 936/936, Timer IRQ 90/90, Shifter/Carry/Multiply-long/BIOS-math all full,
+  DMA 1244/1244, SIO R/W 90/90, SIO timing 0/4, Misc edge 6/12.
 - **Open**: frontend audio only unit-tested (no audio device here); reference-emulator audio
   comparison manual; Timing 1956/2020 (the rest: ROM-to-ROM DMA); KH:CoM's whole 27400-frame
   new-game run is FIFO-underrun-free apart from a handful at scene changes (was ~427k before
@@ -82,13 +82,10 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   advance affine references (mGBA-like); window `x1 > 240 && x1 > x2` covers the whole line (mGBA).
 - APU: PSG mix scale derived from GBATEK maxima, not measured against hardware; wave RAM
   shift-register read-back quirk not modelled; duty position not reset on restart.
-- CPU/timers: the 354 remaining mgba-suite Timer count-up rows are all the "2i" variants (the
-  handler stops the timer on the second IRQ, which is pending the moment the first handler
-  returns). Tight-loop results are 2 ticks high and loose-loop results 3 ticks low, so the
-  question is which instruction, if any, executes between the exception return and taking the
-  next pending IRQ, not a constant latency. Not investigated further.
 - CPU: MUL/MLA leave C unchanged (GBATEK says "destroyed"); only Div/DivArm/Sqrt/ArcTan/ArcTan2/
-  CpuSet/CpuFastSet have real BIOS cycle counts (other HLE SWIs still pay a flat 10). Prefetch buffer: the data-access stall rule is empirical
+  CpuSet/CpuFastSet have real BIOS cycle counts (other HLE SWIs still pay a flat 10, and the
+  IntrWait exit cost of 31 plus the IRQ return stub's 2 idle cycles are fitted to the Timer
+  count-up rows, not derived). Prefetch buffer: the data-access stall rule is empirical
   (see the prefetch fix log) and ROM-to-ROM DMA timing rows still fail in every column.
 - BIOS HLE: BgAffineSet/ObjAffineSet use f64 trig instead of the BIOS sine table (tiny rounding
   differences possible); division by zero returns mGBA's values instead of hanging.
@@ -133,6 +130,40 @@ in the suite and in the simulated loops.
 - Compat: KH title (frame 1800) and Initial D race prompt (frame 27500) shifted; PNGs reviewed
   (PRESS START title; Akina tutorial with the LIMIT countdown and line prompt), re-pinned. All other
   compat goldens unchanged.
+## Fix log (Timer count-up 2i rows, 2026-09-30)
+mgba-suite Timer count-up 582 -> 936/936 (Misc edge 4 -> 6/12 as a side effect: H-blank flips 4-6 now
+match; every other suite row unchanged, jsmolka unchanged). The "354 remaining 2i rows" in the
+previous notes were really two independent families:
+- **216 rows (every 6b/8b/10b prescaled test, sums only)**: the test synchronises on a timer IRQ
+  aligned to the free-running prescaler grid (IntrWait released by a 1024-divider timer) and then
+  starts the prescaled timer, so the row pins the cycle count of the BIOS path between the IRQ and
+  the caller modulo 64/256/1024. The HLE charged 10 cycles for the whole IntrWait wake-up (flat
+  SWI overhead); the real BIOS SWI entry, flag check and `movs pc,lr` cost considerably more.
+  `INTR_WAIT_EXIT_CYCLES = 31` is added when IntrWait completes. **This constant is fitted**, not
+  read from a BIOS dump: scanning it over 0..64 (with the return-stub idle over -3..4) the
+  216 rows are matched only at 31.
+- **138 rows (prescale 1, 2i/4i, plus a few 1i)**: the short-period rows have the next IRQ pending
+  when the first handler returns. The ARM7TDMI finishes the exception-return instruction
+  (`subs pc,lr,#4`: ALU cycle plus the N+S pipeline refill at the return address) before it
+  samples nIRQ, so the pending IRQ is taken after the refill and before the instruction at the
+  return address runs. `Cpu::step` used to leave the refill for the next step and sample the IRQ
+  first, so the refill was skipped entirely (3 cycles short in the tight loop, the "2 high /
+  3 low" pattern); a branch whose refill overlaps the IRQ assertion was likewise one instruction
+  late (the `0x0040 16xv 1i` row). Now every PC-writing step ends with the refill. Answer to the
+  original question: the instruction at the return address does NOT execute before the pending
+  IRQ; the difference is purely the refill cycles that the return instruction owns.
+- Return stub idle: with the refill moved into the step, the HLE stub (`ldmfd` + `subs`) charges
+  `idle(2)` (was 3). Accounting from the ARM7TDMI cycle tables says 3 (subs ALU cycle); the
+  hardware-recorded rows want 2, so the ALU cycle is treated as overlapping the ldmfd internal
+  cycle. Also fitted (unique: the full 936 was reached for exactly one (stub idle, exit cycles)
+  pair in the scanned grid).
+- Side effects: a halted CPU now refills its pipeline before sleeping rather than after waking
+  (same cycles, different position relative to the wake event). Initial D race golden re-pinned
+  (c2b3e7c8fdc7ca59 -> ff210aefde06663c; PNG reviewed, same screen with the LIMIT countdown a tick
+  apart); no other compat golden moved.
+- Tests: `irq_pending_at_exception_return_pays_the_refill_then_preempts_the_target`,
+  `irq_after_a_branch_preempts_its_target` (cpu/tests/exceptions.rs);
+  `alu_write_to_pc_branches_and_aligns` now asserts the refill happens inside the branch step.
 
 ## Fix log (IRQ entry cycles, 2026-09-30)
 mgba-suite Timer IRQ 69 -> 90/90, Timer count-up 483 -> 582/936. Every remaining Timer IRQ
@@ -250,7 +281,7 @@ hardware except the timer-start offset, HLE BIOS calls and DMA-during-fetch (all
 
 ## Next steps, in order of value
 1. Console check of frontend audio (see Environment facts).
-2. Timing rows still open: HLE BIOS call cycle costs (Div/Sqrt/ArcTan/CpuSet) and ROM-to-ROM DMA;
+   (Timer count-up is now complete; its two fitted BIOS-path constants are in the 2026-09-30 fix log).
    Timer count-up "2i" rows (see Known gaps).
 3. Initial D garage screens (phone, driving technique) render blank content areas: verify and fix
    (see Known gaps). More of the `Games/` stretch list (Mario, Crash, NFS) into gameplay.

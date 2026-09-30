@@ -106,7 +106,7 @@ path = "suite/suite.gba"
 check = "mgba-suite"
 frames = 1800
 input_file = "tests/inputs/suite/suite-03-timers.toml"
-expect = "582/936"
+expect = "936/936"
 note = "Timer count-up tests"
 
 [[rom]]
@@ -178,5 +178,5 @@ path = "suite/suite.gba"
 check = "mgba-suite"
 frames = 1200
 input_file = "tests/inputs/suite/suite-12-misc-edge.toml"
-expect = "4/12"
+expect = "6/12"
 note = "Misc. edge case tests"

@@ -162,3 +162,51 @@ fn reset_states() {
     assert!(cpu.regs.irq_disabled());
     assert_eq!(cpu.pc(), 0);
 }
+
+/// An exception return (`subs pc, lr, #4`) is 2S+1N: the ALU cycle plus the pipeline refill at the
+/// target, all inside the instruction. A pending IRQ that the restored CPSR now lets through is
+/// therefore taken after those fetches (mgba-suite "Timer count-up tests", hardware-recorded:
+/// the second IRQ of a short timer period is entered later than an entry that skips the
+/// refill), and before the instruction at the return address runs.
+#[test]
+fn irq_pending_at_exception_return_pays_the_refill_then_preempts_the_target() {
+    let mut cpu = arm_cpu();
+    let mut bus = TestBus::new();
+    // Interrupted code at CODE; the IRQ handler at VEC_IRQ is just `subs pc, lr, #4`.
+    bus.load_arm(CODE, &[mov_imm(0, 1), mov_imm(1, 2)]);
+    bus.load_arm(VEC_IRQ, &[dp_imm(SUB, true, 15, 14, 4, 0)]);
+    cpu.step(&mut bus); // mov r0,#1 (primes the pipeline)
+    bus.irq = true;
+    cpu.step(&mut bus); // IRQ entry; I is set so the asserted line is ignored from here
+    assert_eq!(cpu.pc(), VEC_IRQ);
+    let fetches_before = bus.fetches.len();
+    cpu.step(&mut bus); // subs pc, lr, #4: restores CPSR (I clear), line still asserted
+    assert_eq!(cpu.pc(), CODE + 4);
+    assert!(cpu.next_fetch_seq, "the refill belongs to the return instruction");
+    let f = &bus.fetches[fetches_before..];
+    assert_eq!(f.len(), 5, "vector refill (2) + the subs prefetch + target refill (2)");
+    assert!(f.contains(&(CODE + 4, Access::N)) && f.contains(&(CODE + 8, Access::S)));
+    // The next step takes the pending IRQ without running `mov r1,#2` at the return address.
+    cpu.step(&mut bus);
+    assert_eq!(cpu.regs.mode(), MODE_IRQ);
+    assert_eq!(cpu.regs.r[1], 0);
+    assert_eq!(cpu.regs.r[14], CODE + 4 + 4);
+}
+
+/// A branch's refill happens inside the branch step, so an IRQ that becomes visible to the CPU
+/// after the branch step is taken before the branch target executes.
+#[test]
+fn irq_after_a_branch_preempts_its_target() {
+    let mut cpu = arm_cpu();
+    let mut bus = TestBus::new();
+    bus.load_arm(CODE, &[branch(false, 2)]); // b CODE+16
+    bus.load_arm(CODE + 16, &[mov_imm(3, 9)]);
+    cpu.step(&mut bus);
+    assert_eq!(cpu.pc(), CODE + 16);
+    assert!(cpu.next_fetch_seq);
+    bus.irq = true;
+    cpu.step(&mut bus);
+    assert_eq!(cpu.regs.mode(), MODE_IRQ);
+    assert_eq!(cpu.regs.r[3], 0);
+    assert_eq!(cpu.regs.r[14], CODE + 16 + 4);
+}
