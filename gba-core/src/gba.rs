@@ -108,6 +108,12 @@ impl Gba {
                 if self.bus.irq.wake_condition() {
                     self.bus.irq.halted = false;
                     self.bus.irq.stopped = false;
+                    // No handler will run (IME or the CPSR I bit masks it): the BIOS's Halt
+                    // return path follows the wake-up directly.
+                    if self.bus.bios.halt_exit && (!self.bus.irq.ime || self.cpu.regs.irq_disabled()) {
+                        self.bus.bios.halt_exit = false;
+                        self.bus.sched.now += crate::bios::hle::HALT_EXIT_CYCLES as u64;
+                    }
                 } else {
                     // Sleep until the next event (or the target).
                     self.bus.sched.now = self.bus.sched.next_deadline().min(target);
