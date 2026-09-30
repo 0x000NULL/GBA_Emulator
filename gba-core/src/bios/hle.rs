@@ -196,6 +196,22 @@ impl Bus {
         regs.r[15] = regs.r[15].wrapping_sub(if regs.thumb() { 2 } else { 4 });
     }
 
+    /// A BIOS copy or decompression runs for thousands of cycles. Hardware keeps clocking the
+    /// timers and the LCD meanwhile, and a DMA request (sound FIFO refill, H-Blank DMA) halts the
+    /// CPU at whatever bus cycle it arrives on. The HLE loops call this once per unit so those
+    /// events fire at their scheduled time instead of piling up until the SWI returns (KH:CoM's
+    /// intro decompresses graphics while the m4a driver streams music: without this the FIFO
+    /// drained during every LZ77/CpuFastSet call and logged ~55 underruns per frame).
+    #[inline]
+    fn hle_service(&mut self) {
+        if self.sched.now >= self.sched.next_deadline() {
+            self.process_events();
+            if self.dma.pending != 0 {
+                self.dma_run();
+            }
+        }
+    }
+
     /// The BIOS copy routines "silently reject to do anything if the source start or end
     /// addresses are reaching into the BIOS area" (GBATEK BIOS Memory Copy). The real check is
     /// against the start of EWRAM: a source at 0x10000 or 0x01000000 is rejected too (mgba-suite
@@ -221,6 +237,7 @@ impl Bus {
         }
         if word {
             for _ in 0..count {
+                self.hle_service();
                 let v = self.read32(src, Access::S);
                 self.write32(dst, v, Access::S);
                 if !fill {
@@ -230,6 +247,7 @@ impl Bus {
             }
         } else {
             for _ in 0..count {
+                self.hle_service();
                 let v = self.read16(src, Access::S) as u32;
                 let v = if src & 1 != 0 { v.rotate_right(8) } else { v };
                 self.write16(dst, v as u16, Access::S);
@@ -253,6 +271,7 @@ impl Bus {
             return;
         }
         for _ in 0..count {
+            self.hle_service();
             let v = self.read32(src, Access::S);
             self.write32(dst, v, Access::S);
             if !fill {
@@ -424,6 +443,7 @@ impl Bus {
         let mut acc: u32 = 0;
         let mut acc_bits: u32 = 0;
         for _ in 0..len {
+            self.hle_service();
             let byte = self.read8(src, Access::S) as u32;
             src = src.wrapping_add(1);
             let mut bit = 0;
@@ -469,6 +489,7 @@ impl Bus {
         src = src.wrapping_add(4);
         let mut latch: u16 = 0;
         while remaining > 0 {
+            self.hle_service();
             let flags = self.read8(src, Access::S);
             src = src.wrapping_add(1);
             for i in 0..8 {
@@ -523,6 +544,7 @@ impl Bus {
         src = src.wrapping_add(4);
         let mut latch: u16 = 0;
         while remaining > 0 {
+            self.hle_service();
             let flag = self.read8(src, Access::S);
             src = src.wrapping_add(1);
             if flag & 0x80 != 0 {
@@ -574,6 +596,7 @@ impl Bus {
         let mut acc: u32 = 0;
         let mut acc_bits: u32 = 0;
         'outer: while remaining_bytes > 0 {
+            self.hle_service();
             let word = self.read32(bit_src, Access::S);
             bit_src = bit_src.wrapping_add(4);
             for bit in (0..32).rev() {
@@ -619,6 +642,7 @@ impl Bus {
         let mut latch: u16 = 0;
         let mut acc: u8 = 0;
         while remaining > 0 {
+            self.hle_service();
             acc = acc.wrapping_add(self.read8(src, Access::S));
             src = src.wrapping_add(1);
             if vram {
@@ -642,6 +666,7 @@ impl Bus {
         src = src.wrapping_add(4);
         let mut acc: u16 = 0;
         while remaining >= 2 {
+            self.hle_service();
             acc = acc.wrapping_add(self.read16(src, Access::S));
             src = src.wrapping_add(2);
             self.write16(dst, acc, Access::S);
@@ -759,6 +784,40 @@ mod tests {
         regs.r[15] = 0x0800_0004;
         assert!(bus.hle_swi(num, &mut regs));
         regs
+    }
+
+    /// A sound FIFO streamed by DMA1 on timer 0 keeps being refilled while a long CpuFastSet
+    /// runs: the HLE loop services due timer overflows and the resulting FIFO DMA, as hardware
+    /// does (the DMA halts the CPU mid-copy). Before the hook every overflow piled up until the
+    /// SWI returned and the FIFO drained (KH:CoM intro: ~55 underruns per frame).
+    #[test]
+    fn cpu_fast_set_services_fifo_dma_while_copying() {
+        let mut b = bus();
+        // 4 KB of PCM in EWRAM for the FIFO, 32 KB source block for the copy.
+        for i in 0..0x1000u32 {
+            b.write8(0x0200_0000 + i, (i & 0x7F) as u8, Access::N);
+        }
+        b.write16(0x0400_0084, 0x0080, Access::N); // SOUNDCNT_X master enable
+        b.write16(0x0400_0082, 0x0B04, Access::N); // FIFO A: both speakers, timer 0, reset
+        b.write32(0x0400_00BC, 0x0200_0000, Access::N); // DMA1 SAD
+        b.write32(0x0400_00C0, 0x0400_00A0, Access::N); // DMA1 DAD = FIFO_A
+        b.write32(0x0400_00C4, 0xB600_0000, Access::N); // enable, special timing, repeat, 32-bit, dst fixed
+        b.write16(0x0400_0100, 0xFB1A, Access::N); // reload: 13379 Hz
+        b.write16(0x0400_0102, 0x0080, Access::N); // timer 0 on
+        // Prime the FIFO as the driver does, then copy 32 KB (~50k cycles at EWRAM waitstates).
+        for _ in 0..4 {
+            b.write32(0x0400_00A0, 0x0101_0101, Access::N);
+        }
+        let t0 = b.sched.now;
+        swi(&mut b, swi::CPU_FAST_SET, [0x0200_0000, 0x0200_8000, 0x2000, 0]);
+        let elapsed = b.sched.now - t0;
+        assert!(elapsed > 40_000, "copy took {elapsed} cycles");
+        let pops = elapsed / 1254;
+        assert!(pops > 30, "{pops} pops");
+        assert_eq!(b.apu.fifo_a.underruns, 0, "FIFO drained during the copy");
+        assert!(b.apu.fifo_a.popped >= pops - 2, "popped {} of ~{pops}", b.apu.fifo_a.popped);
+        assert!(b.dma.ch[1].src > 0x0200_0010, "DMA1 refilled the FIFO: src={:08X}", b.dma.ch[1].src);
+        assert_eq!(b.peek32(0x0200_8FFC), b.peek32(0x0200_0FFC), "copy still complete");
     }
 
     #[test]

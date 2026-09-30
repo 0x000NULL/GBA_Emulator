@@ -2,7 +2,7 @@
 //!
 //! gba-test <rom|zip> --frames N [--golden HEX] [--check jsmolka|mgba-suite] [--reg r12]
 //!          [--input script.toml] [--trace [file]] [--trace-hash] [--break PC] [--watch LO..HI]
-//!          [--exit-on-swi N] [--dump-io] [--png out.png] [--png-every N] [--pcm out.wav] [--record]
+//!          [--watch-log] [--exit-on-swi N] [--dump-io] [--png out.png] [--png-every N] [--pcm out.wav] [--record]
 //!          [--bios file] [--hle] [--stats-from F] [--save-state f] [--load-state f]
 //! Exit code: 0 pass, 1 fail, 2 error.
 
@@ -54,6 +54,9 @@ struct Cli {
     /// Stop on a write inside LO..HI (hex, inclusive).
     #[arg(long, value_parser = parse_range)]
     watch: Vec<(u32, u32)>,
+    /// Log every --watch / --break hit (frame, cycle, PC, access) and keep running instead of stopping.
+    #[arg(long)]
+    watch_log: bool,
     /// Stop when this SWI number executes (hex).
     #[arg(long, value_parser = parse_hex)]
     exit_on_swi: Option<u32>,
@@ -194,11 +197,16 @@ fn run() -> Result<bool> {
             }
             gba.bus.ppu.take_frame_ready();
         } else {
-            match gba.run_frame() {
-                StopReason::Done => {}
-                StopReason::Breakpoint(h) => {
-                    stopped = Some(h);
-                    break 'frames;
+            loop {
+                match gba.run_frame() {
+                    StopReason::Done => break,
+                    StopReason::Breakpoint(h) if cli.watch_log => {
+                        println!("hit frame={} line={} cycle={} pc={:08X} {:?}", f, gba.bus.ppu.vcount, gba.bus.sched.now, gba.cpu.pc(), h);
+                    }
+                    StopReason::Breakpoint(h) => {
+                        stopped = Some(h);
+                        break 'frames;
+                    }
                 }
             }
         }

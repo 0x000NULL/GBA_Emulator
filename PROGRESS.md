@@ -21,8 +21,8 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   DMA 1244/1244, SIO R/W 90/90, SIO timing 0/4, Misc edge 4/12.
 - **Open**: frontend audio only unit-tested (no audio device here); reference-emulator audio
   comparison manual; game-pak prefetch buffer still missing (blocks the remaining Timing rows);
-  KH:CoM logs ~427k FIFO underruns during its intro cutscenes (title and gameplay windows are
-  clean, see "Known gaps").
+  KH:CoM's whole 27400-frame new-game run is FIFO-underrun-free apart from a handful at scene
+  changes (was ~427k before the HLE service hook, see the 2026-09-30 fix log).
 
 ## Milestone status
 
@@ -84,11 +84,22 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   differences possible); division by zero returns mGBA's values instead of hanging.
 - Cartridge: no GPIO/RTC (none of the target games use it); SRAM open-bus when the backend is EEPROM
   reads 0xFF.
-- Audio: KH:CoM reports ~427k FIFO underruns over the 27400-frame new-game run, all in frames
-  1800-12000 (the post-title intro: 230k in 1800-6000, 197k in 6000-12000, ~55 per frame); frames
-  1200-1800, 12000-18000 and 25000-27400 are clean. Not yet triaged: could be the game stopping
-  DMA while the FIFO timer keeps running (harmless) or a real starvation.
+- Audio: HLE SWIs still complete atomically with respect to IRQs (an IRQ raised during a BIOS
+  routine is taken when the SWI returns rather than mid-routine, as the real BIOS allows).
   ALttP shows 1910 over 18000 frames, Zelda II 43452 over 4200 (Classic NES sound driver).
+
+## Fix log (HLE BIOS vs. sound DMA, 2026-09-30)
+KH:CoM logged ~427k FIFO underruns over its new-game run, all in the post-title intro
+(frames 1800-12000, ~55 per frame). Traced with the new harness `--watch-log` flag: the game's
+driver restarts DMA1 (SAD = EWRAM PCM buffer, DAD = FIFO_A, CNT_H = B640) once per frame at line
+160 and timer 0 runs at 13379 Hz, all correct. The loss was in the HLE BIOS: LZ77UnCompVram /
+CpuFastSet calls decompressing the cutscene graphics ran as one atomic "instruction", so every
+timer overflow (FIFO pop) that fell inside the call was dispatched in a burst afterwards and the
+refill DMA could not run until the SWI returned; the FIFO drained on every long call. On hardware
+the DMA halts the CPU at whatever bus cycle the request arrives. Fix: `Bus::hle_service`, called
+once per unit inside every HLE copy/decompression loop, dispatches due events and runs pending
+DMA. Intro windows: 230154 -> 1 and 196520 -> 2 underruns. Pinned by
+`cpu_fast_set_services_fifo_dma_while_copying` (fails with the hook disabled).
 
 ## Fix log (timers and DMA, 2026-09-30)
 Two parallel agent branches, merged after each passed its unit tests and improved its suite rows
@@ -148,8 +159,6 @@ hardware except the timer-start offset, HLE BIOS calls and DMA-during-fetch (all
 1. Console check of frontend audio (see Environment facts).
 2. Game-pak prefetch buffer (WAITCNT bit 14): every remaining Timing row with prefetch on, plus
    the Timer count-up / Timer IRQ rows that depend on ROM fetch timing.
-3. Triage the KH intro FIFO underruns (see Known gaps): capture `--pcm` over frames 1800-6000
-   and listen / inspect for dropouts.
-4. Initial D into a race (affine road, H-Blank scroll writes); Classic NES Zelda 1 past the story
+3. Initial D into a race (affine road, H-Blank scroll writes); Classic NES Zelda 1 past the story
    scroll; pin goldens in `tests/compat.toml`.
-5. Investigate FF IV Advance's `swi 0xFF` (what the real BIOS does for out-of-range SWI numbers).
+4. Investigate FF IV Advance's `swi 0xFF` (what the real BIOS does for out-of-range SWI numbers).
