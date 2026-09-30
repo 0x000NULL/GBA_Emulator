@@ -19,8 +19,9 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   Scores after the 2026-09-30 merges: Memory 1552/1552, I/O read 130/130, Timing 1956/2020,
   Timer count-up 936/936, Timer IRQ 90/90, Shifter/Carry/Multiply-long/BIOS-math all full,
   DMA 1244/1244, SIO R/W 90/90, SIO timing 0/4, Misc edge 6/12.
-- **Open**: frontend audio only unit-tested (no audio device here); reference-emulator audio
-  comparison manual; Timing 1956/2020 (the rest: ROM-to-ROM DMA); KH:CoM's whole 27400-frame
+- **Frontend verified windowed (2026-09-30)**: KH:CoM, 300 frames, 60.10 fps average, 1 late
+  frame, 0 audio underruns on a 48 kHz WASAPI device (`--exit-after 300`).
+- **Open**: reference-emulator audio comparison manual; Timing 1956/2020 (the rest: ROM-to-ROM DMA); KH:CoM's whole 27400-frame
   new-game run is FIFO-underrun-free apart from a handful at scene changes (was ~427k before
   the HLE service hook, see the 2026-09-30 fix log).
 
@@ -62,10 +63,8 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
 - Test ROMs: `tools/tests/gba-tests` (jsmolka, prebuilt). `tools/tests/suite` is mgba's suite source
   plus `suite.gba` built with its `docker-build.sh` (devkitARM in Docker). Without that file the
   13 suite entries in `tests/golden.toml` fail; rebuild it with the script if `tools/` is wiped.
-- The development session was RDP without an audio endpoint: cpal's stream, audio-clocked pacing and
-  the underrun counter have unit tests only. Verify once at a console: `cargo run --release -p gba-frontend -- <rom>`,
-  title bar should show `59.7 fps` with underruns at 0. Hidden flag `--exit-after N` ends a windowed
-  run after N frames and prints timing stats.
+- Frontend audio/pacing verified on 2026-09-30 with a real 48 kHz device (see "Where things stand").
+  Hidden flag `--exit-after N` ends a windowed run after N frames and prints timing stats.
 
 ## Pass/fail conventions encoded in the harness (verified from suite sources)
 - **jsmolka**: ROM ends spinning on `b .` (ARM `EAFFFFFE` / Thumb `E7FE`) after `m_test_eval`,
@@ -299,8 +298,8 @@ hardware except the timer-start offset, HLE BIOS calls and DMA-during-fetch (all
 - `--pcm` WAV rate follows SOUNDBIAS (KH selects 65536 Hz).
 
 ## Next steps, in order of value
-1. Console check of frontend audio (see Environment facts).
-   (Timer count-up is now complete; its two fitted BIOS-path constants are in the 2026-09-30 fix log).
-   Timer count-up "2i" rows (see Known gaps).
-3. Initial D garage screens (phone, driving technique) render blank content areas: verify and fix
-   (see Known gaps). More of the `Games/` stretch list (Mario, Crash, NFS) into gameplay.
+1. Timing rows still open: ROM-to-ROM DMA (64 sub-tests); Misc edge H-blank bit / DMA prefetch;
+   SIO timing (in progress on an agent branch, 2026-09-30).
+2. Initial D garage screens (phone, driving technique) render blank content areas: verify and fix
+   (see Known gaps). Remaining `Games/` titles into gameplay (in progress, 2026-09-30).
+3. Reference-emulator audio comparison (needs an mGBA build with headless audio dump).
