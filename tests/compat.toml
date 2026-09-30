@@ -12,7 +12,7 @@ bios = "hle"
 
 [[rom]]
 path = "Games/Kingdom Hearts - Chain of Memories (USA).zip"
-golden = "d6f5ac977e710954"
+golden = "b897019406339fc2"
 note = "title screen with PRESS START; B8CE, 32 MB, SRAM_F_V103"
 
 [[rom]]
@@ -79,5 +79,5 @@ note = "title -> register name A -> file 1 -> overworld start screen with HUD; p
 path = "Games/Initial D - Another Stage (Japan).zip"
 frames = 27500
 input_file = "tests/inputs/initiald-race.toml"
-golden = "c2b3e7c8fdc7ca59"
+golden = "ff210aefde06663c"
 note = "Story: name entry -> AE86 -> gas-station dialogue -> garage EXIT -> Akina tutorial race with Ikeya; golden while the driving-line prompt is up (LIMIT countdown); player control verified (LEFT or RIGHT held 27500-27800 puts the car on that line, three distinct hashes)"

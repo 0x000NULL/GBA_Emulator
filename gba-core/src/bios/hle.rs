@@ -4,6 +4,7 @@
 //! Register contracts follow GBATEK exactly. Decompression/unpack functions read through the bus
 //! and write with the WRAM (8-bit) or VRAM (16-bit unit) variants as documented.
 
+use super::swi_timing as timing;
 use super::{swi, HLE_IRQ_RETURN_ADDR};
 use crate::bus::{Access, Bus, MemoryBus};
 use crate::cpu::regs::{Regs, MODE_IRQ, MODE_SVC, MODE_SYS};
@@ -73,8 +74,26 @@ impl Bus {
     pub(crate) fn hle_swi(&mut self, num: u8, regs: &mut Regs) -> bool {
         self.bios.swi_count += 1;
         self.bios.open_bus = super::BIOS_OPENBUS_AFTER_SWI;
-        // Approximate SWI dispatch overhead (BIOS entry/exit code).
-        self.idle(10);
+        // The routines modelled from the real BIOS listing (`swi_timing`) pay the itemised
+        // handler entry/exit plus their body, and the CPU refills the pipeline at the return
+        // address. The rest keep an approximate flat dispatch overhead.
+        let modelled = matches!(
+            num,
+            swi::DIV | swi::DIV_ARM | swi::SQRT | swi::ARCTAN | swi::ARCTAN2 | swi::CPU_SET | swi::CPU_FAST_SET
+        );
+        if modelled {
+            // Handler entry up to the `ldrb r12, [lr, #-2]` data cycle, which really reads the
+            // SWI comment byte from the caller's memory (its waitstates depend on the region),
+            // then the rest of the entry and the exit sequence.
+            // The vector fetches come from the BIOS, which drops the game pak prefetch buffer.
+            self.pf.invalidate();
+            self.idle(timing::SWI_BEFORE_LDRB);
+            let _ = self.read8(regs.r[15].wrapping_sub(2), Access::N);
+            self.idle(timing::SWI_FIXED - timing::SWI_BEFORE_LDRB - 1);
+            self.bios.swi_refill = true;
+        } else {
+            self.idle(10);
+        }
         match num {
             swi::SOFT_RESET => self.hle_soft_reset(regs),
             swi::REGISTER_RAM_RESET => self.hle_register_ram_reset(regs.r[0] as u8),
@@ -87,25 +106,32 @@ impl Bus {
                 self.hle_intr_wait(regs, true, 1);
             }
             swi::DIV => {
+                self.idle(timing::div_cycles(regs.r[0] as i32, regs.r[1] as i32));
                 let (q, r, a) = hle_div(regs.r[0] as i32, regs.r[1] as i32);
                 regs.r[0] = q as u32;
                 regs.r[1] = r as u32;
                 regs.r[3] = a;
             }
             swi::DIV_ARM => {
+                self.idle(timing::div_arm_cycles(regs.r[1] as i32, regs.r[0] as i32));
                 let (q, r, a) = hle_div(regs.r[1] as i32, regs.r[0] as i32);
                 regs.r[0] = q as u32;
                 regs.r[1] = r as u32;
                 regs.r[3] = a;
             }
-            swi::SQRT => regs.r[0] = isqrt(regs.r[0]),
+            swi::SQRT => {
+                self.idle(timing::sqrt_cycles(regs.r[0]));
+                regs.r[0] = isqrt(regs.r[0]);
+            }
             swi::ARCTAN => {
+                self.idle(timing::arctan_cycles(regs.r[0] as i32));
                 let (r0, r1, r3) = arctan(regs.r[0] as i32);
                 regs.r[0] = r0 as u32;
                 regs.r[1] = r1 as u32;
                 regs.r[3] = r3 as u32;
             }
             swi::ARCTAN2 => {
+                self.idle(timing::arctan2_cycles(regs.r[0] as i32, regs.r[1] as i32));
                 let (r0, r1) = arctan2(regs.r[0] as i32, regs.r[1] as i32);
                 regs.r[0] = r0 as u32;
                 regs.r[1] = r1 as u32;
@@ -240,25 +266,38 @@ impl Bus {
         let count = ctl & 0x1F_FFFF;
         let fill = ctl & (1 << 24) != 0;
         let word = ctl & (1 << 26) != 0;
-        if Self::cpu_set_source_rejected(src, count * if word { 4 } else { 2 }) {
+        let rejected = Self::cpu_set_source_rejected(src, count * if word { 4 } else { 2 });
+        self.idle(timing::cpu_set_setup_cycles(count, word, fill, rejected));
+        if rejected {
             return;
         }
+        let unit = timing::cpu_set_unit_cycles(word, fill);
+        // A fill loads its source once (first unit), each copy unit loads then stores; the
+        // BIOS data cycles are non-sequential (LDR/STR data access, never part of a burst).
+        // Fill mode loads the source once before the loop (LDM/LDRH), then only stores.
+        let mut latch = 0u32;
         if word {
-            for _ in 0..count {
+            for i in 0..count {
                 self.hle_service();
-                let v = self.read32(src, Access::S);
-                self.write32(dst, v, Access::S);
+                self.idle(unit);
+                if !fill || i == 0 {
+                    latch = self.read32(src, Access::N);
+                }
+                self.write32(dst, latch, Access::N);
                 if !fill {
                     src = src.wrapping_add(4);
                 }
                 dst = dst.wrapping_add(4);
             }
         } else {
-            for _ in 0..count {
+            for i in 0..count {
                 self.hle_service();
-                let v = self.read16(src, Access::S) as u32;
-                let v = if src & 1 != 0 { v.rotate_right(8) } else { v };
-                self.write16(dst, v as u16, Access::S);
+                self.idle(unit);
+                if !fill || i == 0 {
+                    let v = self.read16(src, Access::N) as u32;
+                    latch = if src & 1 != 0 { v.rotate_right(8) } else { v };
+                }
+                self.write16(dst, latch as u16, Access::N);
                 if !fill {
                     src = src.wrapping_add(2);
                 }
@@ -275,13 +314,24 @@ impl Bus {
         let ctl = regs.r[2];
         let count = ((ctl & 0x1F_FFFF) + 7) & !7;
         let fill = ctl & (1 << 24) != 0;
-        if Self::cpu_set_source_rejected(src, count * 4) {
+        let rejected = Self::cpu_set_source_rejected(src, count * 4);
+        self.idle(timing::cpu_fast_set_setup_cycles(count, fill, rejected));
+        if rejected {
             return;
         }
-        for _ in 0..count {
+        let block = timing::cpu_fast_set_block_cycles(fill);
+        let mut latch = 0u32;
+        for i in 0..count {
+            // LDM/STM of 8 words: the first word of each burst is non-sequential.
+            let a = if i & 7 == 0 { Access::N } else { Access::S };
+            if i & 7 == 0 {
+                self.idle(block);
+            }
             self.hle_service();
-            let v = self.read32(src, Access::S);
-            self.write32(dst, v, Access::S);
+            if !fill || i == 0 {
+                latch = self.read32(src, a);
+            }
+            self.write32(dst, latch, a);
             if !fill {
                 src = src.wrapping_add(4);
             }
@@ -792,6 +842,77 @@ mod tests {
         regs.r[15] = 0x0800_0004;
         assert!(bus.hle_swi(num, &mut regs));
         regs
+    }
+
+    /// Cycles `hle_swi` charges for `num` when called from IWRAM (the comment-byte read costs
+    /// 1 cycle there, so the result is pure BIOS cycles; the caller-side refill is not included).
+    fn swi_total(num: u8, r: [u32; 4]) -> u64 {
+        let mut b = bus();
+        let mut regs = Regs::new();
+        regs.set_cpsr(MODE_SYS);
+        regs.r[..4].copy_from_slice(&r);
+        regs.r[15] = 0x0300_0004;
+        let t0 = b.sched.now;
+        assert!(b.hle_swi(num, &mut regs));
+        b.sched.now - t0
+    }
+
+    /// Totals confirmed by the hardware-recorded mgba-suite "Timing tests" IWRAM columns: each is
+    /// the suite value minus the test wrapper's own cycles minus the 2 refill fetches.
+    #[test]
+    fn swi_cycle_costs_match_the_real_bios() {
+        // Div 12345678h / FFh: 21 alignment shifts, 22 subtract steps.
+        assert_eq!(swi_total(swi::DIV, [0x1234_5678, 0xFF, 0, 0]), 45 + 282);
+        // Div FFh / 12345678h: quotient 0, no shifts.
+        assert_eq!(swi_total(swi::DIV, [0xFF, 0x1234_5678, 0, 0]), 45 + 22);
+        // DivArm swaps the operands with three extra movs.
+        assert_eq!(swi_total(swi::DIV_ARM, [0x1234_5678, 0xFF, 0, 0]), 45 + 22 + 3);
+        assert_eq!(swi_total(swi::SQRT, [0, 0, 0, 0]), 96);
+        assert_eq!(swi_total(swi::SQRT, [0xFF, 0, 0, 0]), 211);
+        assert_eq!(swi_total(swi::SQRT, [0x1234_5678, 0, 0, 0]), 1127); // suite row 1137 includes an `ldr` literal (+2)
+        assert_eq!(swi_total(swi::ARCTAN, [0xFF, 0, 0, 0]), 96);
+    }
+
+    #[test]
+    fn div_cost_grows_with_the_quotient_bit_length() {
+        let small = swi_total(swi::DIV, [100, 10, 0, 0]);
+        let big = swi_total(swi::DIV, [100_000_000, 10, 0, 0]);
+        assert!(big > small + 200, "{small} vs {big}");
+        // Sign handling is part of the fixed path: -x / y costs the same as x / y.
+        assert_eq!(swi_total(swi::DIV, [(-100i32) as u32, 10, 0, 0]), small);
+    }
+
+    #[test]
+    fn arctan2_cost_includes_one_div_and_one_arctan() {
+        use super::super::swi_timing as t;
+        let c = swi_total(swi::ARCTAN2, [0x100, 0x100, 0, 0]);
+        assert_eq!(c, (t::SWI_FIXED + t::arctan2_cycles(0x100, 0x100)) as u64);
+        // Axis cases skip both calls.
+        assert!(swi_total(swi::ARCTAN2, [0x100, 0, 0, 0]) < c / 2);
+    }
+
+    /// Loop growth per unit, IWRAM to IWRAM (every data cycle is 1): BIOS cycles counted from the
+    /// listing (halfword copy loop 9, word copy 8, halfword fill 7, FastSet block 7 / fill 5)
+    /// plus one cycle per read and per write.
+    #[test]
+    fn cpu_set_and_fast_set_cost_loop_plus_memory() {
+        let total = |num: u8, r2: u32| {
+            let mut b = bus();
+            let mut regs = Regs::new();
+            regs.set_cpsr(MODE_SYS);
+            regs.r[0] = 0x0300_0000;
+            regs.r[1] = 0x0300_1000;
+            regs.r[2] = r2;
+            regs.r[15] = 0x0300_0004;
+            let t0 = b.sched.now;
+            b.hle_swi(num, &mut regs);
+            b.sched.now - t0
+        };
+        assert_eq!(total(swi::CPU_SET, 32) - total(swi::CPU_SET, 16), 16 * (9 + 2));
+        assert_eq!(total(swi::CPU_SET, 32 | 1 << 26) - total(swi::CPU_SET, 16 | 1 << 26), 16 * (8 + 2));
+        assert_eq!(total(swi::CPU_SET, 32 | 1 << 24) - total(swi::CPU_SET, 16 | 1 << 24), 16 * (7 + 1));
+        assert_eq!(total(swi::CPU_FAST_SET, 16) - total(swi::CPU_FAST_SET, 8), 7 + 16);
+        assert_eq!(total(swi::CPU_FAST_SET, 16 | 1 << 24) - total(swi::CPU_FAST_SET, 8 | 1 << 24), 5 + 8);
     }
 
     /// A sound FIFO streamed by DMA1 on timer 0 keeps being refilled while a long CpuFastSet

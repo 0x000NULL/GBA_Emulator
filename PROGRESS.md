@@ -20,8 +20,7 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   Timer count-up 582/936, Timer IRQ 90/90, Shifter/Carry/Multiply-long/BIOS-math all full,
   DMA 1244/1244, SIO R/W 90/90, SIO timing 0/4, Misc edge 4/12.
 - **Open**: frontend audio only unit-tested (no audio device here); reference-emulator audio
-  comparison manual; Timing 1816/2020 with the prefetch buffer (the rest: HLE BIOS call timing
-  and ROM-to-ROM DMA); KH:CoM's whole 27400-frame new-game run is FIFO-underrun-free apart from
+  comparison manual; Timing 1956/2020 (the rest: ROM-to-ROM DMA); KH:CoM's whole 27400-frame new-game run is FIFO-underrun-free apart from
   a handful at scene changes (was ~427k before the HLE service hook, see the 2026-09-30 fix log).
 
 ## Milestone status
@@ -87,8 +86,8 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   returns). Tight-loop results are 2 ticks high and loose-loop results 3 ticks low, so the
   question is which instruction, if any, executes between the exception return and taking the
   next pending IRQ, not a constant latency. Not investigated further.
-- CPU: MUL/MLA leave C unchanged (GBATEK says "destroyed"); HLE SWIs cost no cycles (BIOS
-  Div/Sqrt/ArcTan/CpuSet timing rows). Prefetch buffer: the data-access stall rule is empirical
+- CPU: MUL/MLA leave C unchanged (GBATEK says "destroyed"); only Div/DivArm/Sqrt/ArcTan/ArcTan2/
+  CpuSet/CpuFastSet have real BIOS cycle counts (other HLE SWIs still pay a flat 10). Prefetch buffer: the data-access stall rule is empirical
   (see the prefetch fix log) and ROM-to-ROM DMA timing rows still fail in every column.
 - BIOS HLE: BgAffineSet/ObjAffineSet use f64 trig instead of the BIOS sine table (tiny rounding
   differences possible); division by zero returns mGBA's values instead of hanging.
@@ -101,6 +100,38 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   IRQ (immediate DMA1 of 4 words, then re-arm as 16-bit special DMA), and during menu
   transitions they mask that IRQ (IE=2041 with the timer request pending in IF, DMA1 left
   disabled), so the FIFO starves on hardware as well. Traced with `--watch-log` on 2026-09-30.
+
+## HLE SWI timing attempt (2026-09-30): succeeded
+mgba-suite "Timing tests" 1816/2020 -> 1956/2020; every other suite row unchanged (Memory 1552/1552,
+I/O 130/130, Timer count-up 582/936, Timer IRQ 90/90, Shifter 140, Carry 93, Multiply long 72,
+BIOS math 615, DMA 1244/1244, SIO 90/90 and 0/4, Misc edge 4/12). All BIOS Division/Division 2/
+Sqrt/Sqrt 2/Sqrt 3/ArcTan/CpuSet rows pass in every column; the 64 left are the ROM-to-ROM DMA rows.
+Method: the public disassembly (camthesaxman/gba_bios `asm/bios.s`) gives the exact instruction
+sequences; `bios/swi_timing.rs` counts them with ARM7TDMI cycle rules (BIOS fetches 1 cycle, taken
+branch 3, LDM n+2, STM n+1, MUL 1+m with Rs early termination) and simulates the data-dependent
+loops (Div's shift/subtract loops, Sqrt's Newton iterations with the same divide loop, ArcTan's MUL
+operands). Nothing was fitted: e.g. Div 12345678h/FFh vs FFh/12345678h differ by exactly 260 cycles
+in the suite and in the simulated loops.
+- Fixed entry/exit of the SWI handler (0x08 vector -> 0x140 handler: push, `ldrb` comment, table
+  `ldr`, mode switch, `bx r12`, ... `movs pc, lr`) is 45 BIOS cycles (`SWI_FIXED`), replacing the
+  flat `idle(10)` for the modelled SWIs only. Everything else (Halt, IntrWait, LZ77, ...) keeps 10.
+- Return: the CPU now refills the pipeline at the return address after a modelled SWI (the
+  `movs pc, lr`), paying the caller region's fetch N+S.
+- The handler's `ldrb r12, [lr, #-2]` really reads the comment byte from the caller's memory through
+  the bus, so its cost follows the region (ROM S/N, EWRAM 3, IWRAM 1).
+- **Empirical bit (not derived)**: the first refill fetch after the return is sequential when the
+  game pak prefetch buffer is off (the ldrb at lr-2 is the preceding halfword) and non-sequential
+  when it is on. The P columns of the suite need exactly N-S extra cycles; `Bus::swi_took_refill`.
+  The BIOS fetches also drop the prefetch buffer (`pf.invalidate()` at SWI entry).
+- CpuSet/CpuFastSet: setup/loop/exit instruction counts from the listing (halfword copy loop 9
+  BIOS cycles per unit, word 8, fills 7/6, FastSet block 7 or 5) plus the real bus data cycles
+  (now N for the first word of a burst and S after, previously all S). Fill mode reads the source
+  once, as the BIOS does. ArcTan2 (Thumb, quadrant paths around one Div and one ArcTan) and
+  CpuFastSet have no suite row: their counts are the same method, unit-tested for loop growth only.
+- No residual fitted constants. Division by zero (real BIOS hangs) charges the shortest finite path.
+- Compat: KH title (frame 1800) and Initial D race prompt (frame 27500) shifted; PNGs reviewed
+  (PRESS START title; Akina tutorial with the LIMIT countdown and line prompt), re-pinned. All other
+  compat goldens unchanged.
 
 ## Fix log (IRQ entry cycles, 2026-09-30)
 mgba-suite Timer IRQ 69 -> 90/90, Timer count-up 483 -> 582/936. Every remaining Timer IRQ

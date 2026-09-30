@@ -2,6 +2,7 @@
 //! Source: GBATEK "GBA BIOS Functions", "BIOS RAM Usage", "Unpredictable Things" (BIOS reads).
 
 pub mod hle;
+pub mod swi_timing;
 
 use crate::CoreError;
 
@@ -30,11 +31,15 @@ pub struct Bios {
     pub swi_count: u64,
     /// Unimplemented SWI numbers seen (diagnostics), deduplicated.
     pub unimplemented: Vec<u8>,
+    /// Set by an HLE SWI that modelled the real handler's full cycle cost: the CPU then refetches
+    /// the pipeline at the return address (the `movs pc, lr` of the real handler).
+    #[cfg_attr(feature = "savestate", serde(skip))]
+    pub swi_refill: bool,
 }
 
 impl Bios {
     pub fn hle() -> Self {
-        Bios { image: None, open_bus: BIOS_OPENBUS_BOOT, intr_wait: None, swi_count: 0, unimplemented: Vec::new() }
+        Bios { image: None, open_bus: BIOS_OPENBUS_BOOT, intr_wait: None, swi_count: 0, unimplemented: Vec::new(), swi_refill: false }
     }
 
     pub fn lle(data: &[u8]) -> Result<Self, CoreError> {
@@ -43,7 +48,7 @@ impl Bios {
         }
         let mut img = Box::new([0u8; BIOS_SIZE]);
         img.copy_from_slice(data);
-        Ok(Bios { image: Some(img), open_bus: BIOS_OPENBUS_BOOT, intr_wait: None, swi_count: 0, unimplemented: Vec::new() })
+        Ok(Bios { image: Some(img), open_bus: BIOS_OPENBUS_BOOT, intr_wait: None, swi_count: 0, unimplemented: Vec::new(), swi_refill: false })
     }
 
     #[inline]
