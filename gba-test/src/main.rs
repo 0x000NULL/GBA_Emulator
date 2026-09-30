@@ -3,7 +3,7 @@
 //! gba-test <rom|zip> --frames N [--golden HEX] [--check jsmolka|mgba-suite] [--reg r12]
 //!          [--input script.toml] [--trace [file]] [--trace-hash] [--break PC] [--watch LO..HI]
 //!          [--watch-log] [--exit-on-swi N] [--dump-io] [--png out.png] [--png-every N] [--pcm out.wav] [--record]
-//!          [--bios file] [--hle] [--stats-from F] [--save-state f] [--load-state f]
+//!          [--bios file] [--hle] [--stats-from F] [--fifo-stats F] [--save-state f] [--load-state f]
 //! Exit code: 0 pass, 1 fail, 2 error.
 
 use anyhow::{anyhow, Result};
@@ -78,6 +78,9 @@ struct Cli {
     /// Report FIFO underruns and audio samples counted from this frame onward (skips boot silence).
     #[arg(long)]
     stats_from: Option<u32>,
+    /// From this frame on, print per-frame FIFO A/B pushed bytes, popped samples and underruns.
+    #[arg(long)]
+    fifo_stats: Option<u32>,
     /// BIOS image (default: GBA_BIOS env, else HLE).
     #[arg(long)]
     bios: Option<PathBuf>,
@@ -165,6 +168,7 @@ fn run() -> Result<bool> {
     let mut audio = Vec::new();
     let mut stopped: Option<Hit> = None;
     let mut stats_base: Option<(u64, u64)> = None;
+    let mut fifo_prev: Option<[u64; 6]> = None;
     let tracing = trace_out.is_some() || cli.exit_on_swi.is_some();
 
     'frames: for f in 0..cli.frames {
@@ -226,6 +230,16 @@ fn run() -> Result<bool> {
         }
         if cli.stats_from == Some(f) {
             stats_base = Some((gba.bus.apu.fifo_a.underruns + gba.bus.apu.fifo_b.underruns, gba.bus.apu.sample_count));
+        }
+        if cli.fifo_stats.is_some_and(|from| f >= from) {
+            let (a, b) = (&gba.bus.apu.fifo_a, &gba.bus.apu.fifo_b);
+            let d = |cur: u64, prev: &mut u64| { let v = cur - *prev; *prev = cur; v };
+            let st = fifo_prev.get_or_insert([0; 6]);
+            println!(
+                "fifo frame={f} A: pushed={} popped={} underruns={} len={} | B: pushed={} popped={} underruns={} len={}",
+                d(a.pushed, &mut st[0]), d(a.popped, &mut st[1]), d(a.underruns, &mut st[2]), a.len(),
+                d(b.pushed, &mut st[3]), d(b.popped, &mut st[4]), d(b.underruns, &mut st[5]), b.len()
+            );
         }
     }
     if let (Some(from), Some((u0, s0))) = (cli.stats_from, stats_base) {

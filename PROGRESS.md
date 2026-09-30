@@ -108,6 +108,15 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   IRQ (immediate DMA1 of 4 words, then re-arm as 16-bit special DMA), and during menu
   transitions they mask that IRQ (IE=2041 with the timer request pending in IF, DMA1 left
   disabled), so the FIFO starves on hardware as well. Traced with `--watch-log` on 2026-09-30.
+  Backyard Baseball 2006 is the same pattern (28k underruns in frames 1832-1900 after START on
+  the title: the game writes DMA1/2CNT_H = 0400 and polls VCOUNT while loading, timer 0 still
+  running; `--fifo-stats` shows pushed=0 for both FIFOs in that window). FF Tactics Advance and
+  Crash Purple log theirs only inside their intros.
+- Harness frame index vs `frames=`: `gba-test` runs N `run_frame` calls, each ending at the next
+  V-Blank *event*; an HLE decompression call that spans two V-Blanks (large LZ77 into VRAM) sets
+  frame-ready twice inside one instruction, so `frames=` prints N+k for such games (FFTA, FF I
+  in the overworld: N+2). Both frames are rendered; only the input-script frame numbers drift by
+  k. Harmless for goldens (deterministic), noted so nobody chases it.
 
 ## HLE SWI timing attempt (2026-09-30): succeeded
 mgba-suite "Timing tests" 1816/2020 -> 1956/2020; every other suite row unchanged (Memory 1552/1552,
