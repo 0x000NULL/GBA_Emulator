@@ -8,6 +8,7 @@
 pub const REFILL_THRESHOLD: usize = 16;
 
 /// 32-byte DirectSound FIFO.
+#[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, Default)]
 pub struct Fifo {
     buf: [u8; 32],

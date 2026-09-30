@@ -14,6 +14,7 @@ pub use header::Header;
 pub const ROM_MAX: usize = 32 * 1024 * 1024;
 pub const SRAM_SIZE: usize = 0x8000;
 
+#[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SaveType {
     None,
@@ -24,14 +25,17 @@ pub enum SaveType {
     Eeprom,
 }
 
+#[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 pub enum SaveBackend {
     None,
-    Sram(Box<[u8; SRAM_SIZE]>),
+    Sram(#[cfg_attr(feature = "savestate", serde(with = "crate::state::bytes_box"))] Box<[u8; SRAM_SIZE]>),
     Flash(Flash),
     Eeprom(Eeprom),
 }
 
+#[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 pub struct Cartridge {
+    #[cfg_attr(feature = "savestate", serde(skip))]
     rom: Vec<u8>,
     /// `addr & rom_mask` indexes the ROM when `mirror` is set; otherwise out-of-range reads are open bus.
     rom_mask: u32,
@@ -68,6 +72,15 @@ impl Cartridge {
 
     pub fn rom(&self) -> &[u8] {
         &self.rom
+    }
+
+    /// Detach the ROM (savestate reattachment).
+    pub fn take_rom(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.rom)
+    }
+
+    pub fn set_rom(&mut self, rom: Vec<u8>) {
+        self.rom = rom;
     }
 
     /// Scan for the SDK backup ID string. First match wins; game code F*** forces EEPROM.

@@ -7,6 +7,10 @@ authors.workspace = true
 description = "Game Boy Advance emulator core: ARM7TDMI, bus, PPU, APU, DMA, timers, cartridge, HLE BIOS. No I/O dependencies."
 
 [dependencies]
+serde = { version = "1", features = ["derive"], optional = true }
+bincode = { version = "1.3", optional = true }
 
 [features]
 default = []
+# Savestates via serde + bincode. Off by default so the core stays dependency-free.
+savestate = ["serde", "bincode"]

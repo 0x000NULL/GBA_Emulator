@@ -1,5 +1,6 @@
 //! Cartridge header (0x000-0x0BF). Source: GBATEK "GBA Cartridge Header".
 
+#[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Header {
     /// 0xA0: 12 bytes, space padded.

@@ -6,6 +6,7 @@
 //! Read data: 4 dummy bits then 64 data bits, MSB first, via 16-bit reads.
 //! Size is inferred from the first request's length (9 bits => 512 B, 17 bits => 8 KB).
 
+#[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Mode {
     Idle,
@@ -15,6 +16,7 @@ enum Mode {
     ReadOut,
 }
 
+#[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 pub struct Eeprom {
     data: Vec<u8>,
     /// None until the first request fixes the size.

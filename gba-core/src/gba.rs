@@ -38,6 +38,7 @@ pub enum StopReason {
     Breakpoint(Hit),
 }
 
+#[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 pub struct Gba {
     pub cpu: Cpu,
     pub bus: Bus,

@@ -3,6 +3,7 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
+#[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Event {
     /// Cycle `HDRAW_CYCLES` of every line: render the scanline, set H-Blank flag, H-Blank IRQ/DMA.
@@ -23,6 +24,7 @@ pub enum Event {
     IrqLatch,
 }
 
+#[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Default)]
 pub struct Scheduler {
     pub now: u64,

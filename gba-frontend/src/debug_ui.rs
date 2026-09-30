@@ -1,4 +1,4 @@
-//! Hotkeys and the debug actions behind them (IO dump, screenshot, title bar text).
+//! Hotkeys and the debug actions behind them (IO dump, screenshot, savestates, title bar text).
 
 use anyhow::Result;
 use gba_core::Gba;
@@ -19,6 +19,10 @@ pub enum Hotkey {
     Screenshot,
     /// F5
     SaveNow,
+    /// F1: write `<rom>.state`
+    SaveState,
+    /// F3: load `<rom>.state`
+    LoadState,
 }
 
 pub const HOTKEYS: &[(Key, Hotkey)] = &[
@@ -28,6 +32,8 @@ pub const HOTKEYS: &[(Key, Hotkey)] = &[
     (Key::F10, Hotkey::DumpIo),
     (Key::F11, Hotkey::Screenshot),
     (Key::F5, Hotkey::SaveNow),
+    (Key::F1, Hotkey::SaveState),
+    (Key::F3, Hotkey::LoadState),
 ];
 
 /// Hotkeys pressed since the last window update (edge-triggered, no auto-repeat).
@@ -115,4 +121,24 @@ mod tests {
         let t = TitleInfo { game: "X", code: "AAAA", fps: 0.0, paused: true, fast_forward: true, audio: None };
         assert_eq!(format_title(&t), "X [AAAA] - 0.0 fps [PAUSED] [FF] - no audio");
     }
+}
+
+/// `<rom>.state` beside the ROM.
+pub fn state_path(rom: &Path) -> PathBuf {
+    rom.with_extension("state")
+}
+
+/// F1: write the machine state beside the ROM.
+pub fn save_state(gba: &Gba, rom: &Path) -> Result<PathBuf> {
+    let p = state_path(rom);
+    crate::saves::write_atomic(&p, &gba.save_state())?;
+    Ok(p)
+}
+
+/// F3: restore the machine state written by F1.
+pub fn load_state(gba: &mut Gba, rom: &Path) -> Result<PathBuf> {
+    let p = state_path(rom);
+    let bytes = std::fs::read(&p).map_err(|e| anyhow::anyhow!("reading {}: {e}", p.display()))?;
+    gba.load_state(&bytes).map_err(|e| anyhow::anyhow!("{e}"))?;
+    Ok(p)
 }

@@ -11,7 +11,7 @@ name = "gba"
 path = "src/main.rs"
 
 [dependencies]
-gba-core = { path = "../gba-core" }
+gba-core = { path = "../gba-core", features = ["savestate"] }
 gba-test = { path = "../gba-test" }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }

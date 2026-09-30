@@ -32,6 +32,7 @@ pub fn bank_index(mode: u32) -> usize {
     }
 }
 
+#[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug)]
 pub struct Regs {
     /// Registers visible in the current mode. `r[15]` is the PC.

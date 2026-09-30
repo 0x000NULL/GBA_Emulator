@@ -15,6 +15,8 @@ pub mod irq;
 pub mod keypad;
 pub mod ppu;
 pub mod sched;
+#[cfg(feature = "savestate")]
+pub mod state;
 pub mod timers;
 pub mod timing;
 

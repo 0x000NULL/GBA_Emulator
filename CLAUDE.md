@@ -40,8 +40,15 @@ cargo test --workspace                       # unit tests + every [[rom]] in tes
 cargo run -p gba-test -- <rom|zip> --frames 32 --check jsmolka        # one test ROM
 cargo run -p gba-test -- <rom|zip> --frames 600 --png out.png --dump-io
 cargo run -p gba-test -- <rom> --frames 5 --trace trace.txt          # mGBA-format register trace
+cargo run -p gba-test -- <rom> --frames 1800 --pcm out.wav --stats-from 1200   # audio capture + underruns
+cargo run -p gba-test -- <rom> --frames 27400 --input tests/inputs/khcom-newgame.toml --save-state kh.state
+cargo run -p gba-test -- <rom> --frames 300 --load-state kh.state    # resume a savestate headless
 cargo run --release -p gba-frontend -- <rom|zip>                      # play
 ```
+Frontend keys: Z=A X=B A=L S=R Enter=Start RShift=Select arrows=D-pad; Tab fast-forward;
+P pause; N frame-step; F1/F3 save/load state (`<rom>.state`); F5 write `.sav`; F10 IO dump;
+F11 screenshot; Esc quit. Savestates need the `savestate` feature on gba-core (enabled by
+gba-frontend and gba-test; the core itself stays dependency-free by default).
 Harness exit codes: 0 pass, 1 fail, 2 error. `GBA_TESTS_REQUIRED=1` turns the
 "GBA_TESTS_DIR unset" skip into a failure.
 

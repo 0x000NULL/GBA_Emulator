@@ -16,6 +16,7 @@ pub enum DmaTrigger {
     VideoCapture,
 }
 
+#[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DmaChannel {
     /// Register values as written.
@@ -69,6 +70,7 @@ impl DmaChannel {
     }
 }
 
+#[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, Default)]
 pub struct DmaController {
     pub ch: [DmaChannel; 4],

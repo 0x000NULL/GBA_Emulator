@@ -12,6 +12,7 @@ pub const PSG_TICK_CYCLES: u32 = 64;
 // ------------------------------------------------------------------ length counter
 
 /// Sound length counter, clocked at 256 Hz by the frame sequencer.
+#[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug)]
 pub struct Length {
     pub counter: u16,
@@ -53,6 +54,7 @@ impl Length {
 // ------------------------------------------------------------------ envelope
 
 /// Volume envelope (NRx2), clocked at 64 Hz.
+#[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, Default)]
 pub struct Envelope {
     /// Bits 12-15: initial volume.
@@ -113,6 +115,7 @@ impl Envelope {
 // ------------------------------------------------------------------ sweep
 
 /// Frequency sweep (NR10), clocked at 128 Hz. `X(t) = X(t-1) +/- X(t-1)/2^n`.
+#[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, Default)]
 pub struct Sweep {
     pub shift: u8,
@@ -191,6 +194,7 @@ impl Sweep {
 /// Bit `i` set = output high during duty step `i`.
 pub const DUTY_TABLE: [u8; 4] = [0b0000_0001, 0b0000_0011, 0b0000_1111, 0b0011_1111];
 
+#[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug)]
 pub struct Square {
     pub enabled: bool,
@@ -295,6 +299,7 @@ impl Square {
 
 // ------------------------------------------------------------------ wave (channel 3)
 
+#[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug)]
 pub struct Wave {
     pub enabled: bool,
@@ -452,6 +457,7 @@ impl Default for Wave {
 /// Frequency = 524288 / r / 2^(s+1) Hz  =>  period = r * 2^(s+6) cycles = (DIVISOR[r] << s) * 4.
 pub const NOISE_DIVISOR: [u32; 8] = [8, 16, 32, 48, 64, 80, 96, 112];
 
+#[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug)]
 pub struct Noise {
     pub enabled: bool,

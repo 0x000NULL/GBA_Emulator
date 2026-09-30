@@ -77,6 +77,12 @@ struct Cli {
     /// Force HLE BIOS even if GBA_BIOS is set.
     #[arg(long)]
     hle: bool,
+    /// Load a savestate (written by --save-state or the frontend's F1) before running.
+    #[arg(long)]
+    load_state: Option<PathBuf>,
+    /// Write a savestate after the run.
+    #[arg(long)]
+    save_state: Option<PathBuf>,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug)]
@@ -132,6 +138,11 @@ fn run() -> Result<bool> {
         Some(p) => InputScript::load(p)?,
         None => InputScript::default(),
     };
+    if let Some(p) = &cli.load_state {
+        let bytes = std::fs::read(p)?;
+        gba.load_state(&bytes).map_err(|e| anyhow!("{e}"))?;
+        println!("state loaded: {} (frame {})", p.display(), gba.bus.ppu.frame_count);
+    }
 
     gba.bus.debug.pc_breaks = cli.break_pc.clone();
     gba.bus.debug.write_watch = cli.watch.clone();
@@ -205,6 +216,10 @@ fn run() -> Result<bool> {
         out.flush()?;
     }
 
+    if let Some(p) = &cli.save_state {
+        std::fs::write(p, gba.save_state())?;
+        println!("state saved: {}", p.display());
+    }
     let hash = fb_hash(&gba.bus.ppu.fb[..]);
     println!("fb_hash={hash:016x}");
     println!("{}", cpu_state_line(&gba));

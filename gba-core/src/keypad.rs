@@ -39,6 +39,7 @@ impl Keys {
     }
 }
 
+#[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Default, Clone)]
 pub struct Keypad {
     /// Active-high pressed mask.

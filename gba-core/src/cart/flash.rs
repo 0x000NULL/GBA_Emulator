@@ -3,6 +3,7 @@
 //! after command B0. IDs: 64K Panasonic 0x1B32 (we use Panasonic/SST 0xD4BF), 128K Sanyo 0x1362.
 //! M0: full command state machine; verified by jsmolka flash64/flash128 in M5.
 
+#[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum State {
     Ready,
@@ -17,6 +18,7 @@ enum State {
     BankSelect,
 }
 
+#[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 pub struct Flash {
     data: Vec<u8>,
     is_128k: bool,

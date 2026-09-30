@@ -22,8 +22,10 @@ use mixer::MixInput;
 use psg::{Noise, Square, Wave, PSG_TICK_CYCLES};
 use regs::*;
 
+#[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 pub struct Apu {
     /// Raw mirror of 0x60..0x8F as written (masked on read). Wave RAM and FIFOs live elsewhere.
+    #[cfg_attr(feature = "savestate", serde(with = "crate::state::bytes_arr"))]
     raw: [u8; 0x30],
     pub sq1: Square,
     pub sq2: Square,
@@ -34,6 +36,7 @@ pub struct Apu {
     pub fifo_a: Fifo,
     pub fifo_b: Fifo,
     /// Stereo output samples at `cycles_per_sample()`; drained by the frontend/harness.
+    #[cfg_attr(feature = "savestate", serde(skip))]
     pub samples: Vec<[i16; 2]>,
     pub sample_count: u64,
 }

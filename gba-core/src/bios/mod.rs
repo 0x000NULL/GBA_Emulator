@@ -18,7 +18,9 @@ pub const BIOS_OPENBUS_AFTER_IRQ: u32 = 0xE55E_C002;
 /// address; executing "from" it triggers the return sequence.
 pub const HLE_IRQ_RETURN_ADDR: u32 = 0x0000_0138;
 
+#[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 pub struct Bios {
+    #[cfg_attr(feature = "savestate", serde(skip))]
     image: Option<Box<[u8; BIOS_SIZE]>>,
     /// Value returned for BIOS-region reads while PC is outside the BIOS.
     pub open_bus: u32,
@@ -59,6 +61,14 @@ impl Bios {
             }
             _ => self.open_bus,
         }
+    }
+
+    pub fn take_image(&mut self) -> Option<Box<[u8; BIOS_SIZE]>> {
+        self.image.take()
+    }
+
+    pub fn set_image(&mut self, image: Option<Box<[u8; BIOS_SIZE]>>) {
+        self.image = image;
     }
 
     pub fn image(&self) -> Option<&[u8]> {

@@ -68,6 +68,7 @@ pub struct SysCtx<'a> {
 pub const EWRAM_SIZE: usize = 0x4_0000;
 pub const IWRAM_SIZE: usize = 0x8000;
 
+#[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 pub struct Bus {
     pub sched: Scheduler,
     pub irq: IrqController,
@@ -78,13 +79,16 @@ pub struct Bus {
     pub keypad: Keypad,
     pub cart: Cartridge,
     pub bios: Bios,
+    #[cfg_attr(feature = "savestate", serde(with = "crate::state::bytes_box"))]
     pub ewram: Box<[u8; EWRAM_SIZE]>,
+    #[cfg_attr(feature = "savestate", serde(with = "crate::state::bytes_box"))]
     pub iwram: Box<[u8; IWRAM_SIZE]>,
     /// 4000204h WAITCNT
     pub waitcnt: u16,
     /// 4000300h POSTFLG
     pub postflg: u8,
     /// Serial/RCNT/JOY registers (0x120..0x15F), stored raw. No link cable emulation.
+    #[cfg_attr(feature = "savestate", serde(with = "crate::state::bytes_arr"))]
     pub sio: [u8; 0x40],
     /// Undocumented 4000800h internal memory control.
     pub imc: u32,
@@ -92,6 +96,7 @@ pub struct Bus {
     pub open_bus: u32,
     /// Address of the most recent opcode fetch (BIOS reads are only allowed while executing in BIOS).
     pub last_fetch: u32,
+    #[cfg_attr(feature = "savestate", serde(skip))]
     pub debug: DebugHooks,
     /// Waitstates for a non-sequential 16-bit ROM access, per ROM region 0/1/2.
     rom_n: [u32; 3],

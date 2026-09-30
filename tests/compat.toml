@@ -27,6 +27,13 @@ golden = "f987ce1115458598"
 note = "title screen; BZME, EEPROM 8K"
 
 [[rom]]
+path = "Games/Legend of Zelda, The - The Minish Cap (USA).zip"
+frames = 12000
+input_file = "tests/inputs/minish-newgame.toml"
+golden = "2c40f2e9fb049a0d"
+note = "new game -> name entry -> intro -> Link's house with HUD; player control verified (LEFT/RIGHT diverge)"
+
+[[rom]]
 path = "Games/Legend of Zelda, The - A Link to the Past & Four Swords (USA).zip"
 golden = "64039080c5b1d75c"
 note = "CHOOSE A FILE screen; AZLE, EEPROM 512"

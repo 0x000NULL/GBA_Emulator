@@ -38,6 +38,7 @@ impl Irq {
     }
 }
 
+#[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Default, Clone)]
 pub struct IrqController {
     /// 4000200h IE

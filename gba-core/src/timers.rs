@@ -7,6 +7,7 @@
 use crate::irq::{Irq, IrqController};
 use crate::sched::{Event, Scheduler};
 
+#[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Timer {
     /// TMxCNT_L write value.
@@ -44,6 +45,7 @@ impl Timer {
     }
 }
 
+#[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, Default)]
 pub struct Timers {
     pub t: [Timer; 4],

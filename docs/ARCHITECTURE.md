@@ -64,6 +64,12 @@ EEPROM is reached through 0x0D (whole region for carts <= 16 MB, 0x0DFFFF00+ for
 `golden::GoldenFile` (`tests/golden.toml`), `input_script::InputScript` (`{frame, press/release}`).
 `tests/roms.rs` runs every entry under `cargo test`.
 
+## Savestates (feature `savestate`)
+Every state struct carries `#[cfg_attr(feature = "savestate", derive(Serialize, Deserialize))]`;
+`state.rs` provides byte-array helpers for the big buffers and `Gba::save_state/load_state`
+(magic `GBAS`, version, bincode body). Not stored: ROM, BIOS image (reattached from the live
+machine), framebuffer and PPU scratch (regenerated), audio sample queue, debug hooks.
+
 ## Debug tooling
 `--trace` writes mGBA's register layout (sixteen `%08X`, then `cpsr: %08X`, r15 = PC+8/PC+4) per
 instruction; `--trace-hash` writes `cycle pc hash`. `--break PC`, `--watch LO..HI`, `--exit-on-swi N`,

@@ -42,12 +42,26 @@ struct Scratch {
     win: [u8; SCREEN_W],
 }
 
+fn new_fb() -> Box<FrameBuffer> {
+    vec![0u16; SCREEN_W * SCREEN_H].into_boxed_slice().try_into().unwrap()
+}
+
+fn new_scratch() -> Box<Scratch> {
+    Box::new(Scratch { bg: [[TRANSPARENT; SCREEN_W]; 4], obj: obj::ObjLine::new(), win: [0x3F; SCREEN_W] })
+}
+
+#[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 pub struct Ppu {
+    #[cfg_attr(feature = "savestate", serde(with = "crate::state::bytes_box"))]
     pub pal: Box<[u8; PAL_SIZE]>,
+    #[cfg_attr(feature = "savestate", serde(with = "crate::state::bytes_box"))]
     pub vram: Box<[u8; VRAM_SIZE]>,
+    #[cfg_attr(feature = "savestate", serde(with = "crate::state::bytes_box"))]
     pub oam: Box<[u8; OAM_SIZE]>,
+    #[cfg_attr(feature = "savestate", serde(skip, default = "new_fb"))]
     pub fb: Box<FrameBuffer>,
     /// Raw LCD registers 0x000-0x05F as written (DISPSTAT read-only bits and VCOUNT kept separately).
+    #[cfg_attr(feature = "savestate", serde(with = "crate::state::bytes_arr"))]
     pub io: [u8; 0x60],
     /// DISPSTAT bits 3-5 and 8-15 (writable part); bits 0-2 are derived from `vcount`/`hblank`.
     pub dispstat: u16,
@@ -59,6 +73,7 @@ pub struct Ppu {
     /// Internal affine reference points (BG2X/Y, BG3X/Y), latched at line 0 and after writes,
     /// advanced by PB/PD after every rendered line.
     pub bg_ref: [i32; 4],
+    #[cfg_attr(feature = "savestate", serde(skip, default = "new_scratch"))]
     scratch: Box<Scratch>,
 }
 

@@ -46,6 +46,7 @@ pub const VEC_DATA_ABORT: u32 = 0x10;
 pub const VEC_IRQ: u32 = 0x18;
 pub const VEC_FIQ: u32 = 0x1C;
 
+#[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug)]
 pub struct Cpu {
     pub regs: Regs,

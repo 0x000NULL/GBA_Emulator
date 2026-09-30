@@ -5,7 +5,7 @@
 //! `debug_ui` (hotkeys, IO dump, screenshots, title bar).
 //!
 //! Controls: Z=A X=B A=L S=R Enter=Start RShift=Select arrows=D-pad; Tab (held) fast-forward;
-//! Esc quit; P pause; N frame-step; F5 write save; F10 dump IO; F11 screenshot.
+//! Esc quit; P pause; N frame-step; F5 write save; F1/F3 save/load state; F10 dump IO; F11 screenshot.
 
 mod audio;
 mod config;
@@ -123,6 +123,20 @@ fn run(cli: &Cli, mut gba: Gba) -> Result<()> {
                     Ok(true) => println!("save written: {}", saves.path().display()),
                     Ok(false) => println!("this cartridge has no save memory"),
                     Err(e) => eprintln!("save failed: {e:#}"),
+                },
+                Hotkey::SaveState => match debug_ui::save_state(&gba, &cli.rom) {
+                    Ok(p) => println!("state saved: {}", p.display()),
+                    Err(e) => eprintln!("state save failed: {e:#}"),
+                },
+                Hotkey::LoadState => match debug_ui::load_state(&mut gba, &cli.rom) {
+                    Ok(p) => {
+                        println!("state loaded: {}", p.display());
+                        if let Some(a) = &mut audio {
+                            a.flush();
+                        }
+                        pacer.reset();
+                    }
+                    Err(e) => eprintln!("state load failed: {e:#}"),
                 },
             }
         }
