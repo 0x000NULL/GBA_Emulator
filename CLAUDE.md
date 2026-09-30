@@ -18,7 +18,8 @@ user-facing overview.
 - **Interpreter only.** Correctness first.
 - **Commits:** no attribution trailers of any kind (no Co-Authored-By, no
   Claude-Session, no "Generated with"). Author is Ethan Aldrich. Commit after every
-  green milestone gate.
+  green milestone gate and push to `origin` (private GitHub repo
+  `0x000NULL/GBA_Emulator`, created 2026-09-30).
 
 ## Layout
 ```

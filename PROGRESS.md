@@ -76,11 +76,11 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   Harness: `--check mgba-suite --input <script> --expect p/t`. Debug regs implemented in `bus/debug.rs`.
 
 ## Known gaps / judgement calls
-- Savestates: Mario Kart's save/load chain diverges from a from-zero run at the character select
-  (after a loaded state an A press skips the "OK?" confirm; the whole path then runs 600 frames
-  earlier). Crash's chain matches exactly. Something is not captured, most likely Flash chip
-  command state (Mario Kart is the only Flash 64K title in the compat list) or keypad edge
-  state. Not investigated.
+- Savestates: a reported Mario Kart save/load divergence at the character select did not
+  reproduce: a state saved at 3900 and resumed with the script shifted by 3900 frames matches
+  the from-zero run's hash at 4200, 4500, 4800, 4810 and 4900 (the reported divergence point).
+  The original chain most likely mis-offset its inputs. Note the harness restarts the input
+  script's frame numbers at 0 after `--load-state`.
 - Mario Kart Peach Circuit at frame 8400 with the kart off the track: the grass shows a shaded
   blue/yellow/red diagonal ribbon scrolling with the Mode 7 ground. Possibly the course's flower
   strip; unverified against hardware.
