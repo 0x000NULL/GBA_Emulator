@@ -4,10 +4,12 @@ A from-scratch Game Boy Advance emulator: ARM7TDMI interpreter, PPU, APU, DMA, t
 cartridge backup memory and a high-level-emulated BIOS, with a pure-Rust desktop frontend and
 a headless test harness. Built against the GBATEK hardware documentation.
 
-Kingdom Hearts: Chain of Memories, The Legend of Zelda: The Minish Cap, A Link to the Past &
-Four Swords, both Classic NES Series Zeldas and Initial D: Another Stage all reach controllable
-gameplay under scripted headless runs (`tests/compat.toml`). See `PROGRESS.md` for the exact
-state of every subsystem and the mgba-suite scores.
+Kingdom Hearts: Chain of Memories, the Zelda titles (Minish Cap, A Link to the Past & Four
+Swords, both Classic NES Series games), Initial D: Another Stage and twenty further commercial
+titles (Final Fantasy, Mario, Crash, Need for Speed, Max Payne, ...) reach controllable gameplay
+under scripted headless runs pinned in `tests/compat.toml`. The mgba test suite scores Timing
+2020/2020, Memory 1552/1552, DMA 1244/1244 and Timer count-up 936/936. See `PROGRESS.md` for the
+exact state of every subsystem.
 
 ## Build and run
 

@@ -10,10 +10,11 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   Oblivion and the battle tutorial with player control. Headless proof: `tests/inputs/khcom-newgame.toml`
   plus the two KH goldens in `tests/compat.toml` (title at frame 1800, gameplay at frame 27400).
 - **All jsmolka ROMs pass** (arm, thumb, memory, bios, nes, save/none, sram, flash64, flash128;
-  ppu hello/shades/stripes by golden hash). `cargo test --workspace` is green: 231 core unit
-  tests, 25 frontend tests, 2 ROM-driver tests (~60-80 s with the commercial ROMs present).
-- **Compat**: see the table below. Every priority title renders its title screen; KH and Minish
-  Cap are verified controllable (LEFT/RIGHT/no-input runs diverge).
+  ppu hello/shades/stripes by golden hash). `cargo test --workspace` is green: 304 core unit
+  tests, 25 frontend tests, 2 ROM-driver tests (~11 min with all 59 commercial goldens present).
+- **Compat**: all 26 titles in `Games/` boot and 25 reach controllable gameplay under scripted
+  headless runs pinned in `tests/compat.toml` (Mario Tennis: controllable overworld, its first
+  match is behind a story cutscene). See the table below.
 - **mgba-suite is built and gated** (`suite.gba` via its `docker-build.sh`; 13 sub-suites in
   `tests/golden.toml`, each pinned at its current score so any regression fails `cargo test`).
   Scores after the 2026-09-30 merges: Memory 1552/1552, I/O read 130/130, Timing 2020/2020,
