@@ -298,17 +298,20 @@ impl Cpu {
 
     // ------------------------------------------------------------------ data access helpers
 
-    /// LDR: word read with the ARM7 rotation for mis-aligned addresses.
+    /// LDR: word read with the ARM7 rotation for mis-aligned addresses. The unaligned address
+    /// goes out on the bus as is: 16/32-bit memories ignore the low bits, but the 8-bit SRAM bus
+    /// serves the byte those bits select, replicated on every lane (mgba-suite "SRAM load").
     #[inline]
     pub(crate) fn load_word<B: MemoryBus>(&mut self, bus: &mut B, addr: u32, a: Access) -> u32 {
-        let v = bus.read32(addr & !3, a);
+        let v = bus.read32(addr, a);
         v.rotate_right((addr & 3) * 8)
     }
 
-    /// LDRH: halfword read; an odd address yields the aligned halfword rotated right by 8.
+    /// LDRH: halfword read; an odd address yields the aligned halfword rotated right by 8
+    /// (or, on the SRAM bus, the odd byte replicated then rotated).
     #[inline]
     pub(crate) fn load_half<B: MemoryBus>(&mut self, bus: &mut B, addr: u32, a: Access) -> u32 {
-        let v = bus.read16(addr & !1, a) as u32;
+        let v = bus.read16(addr, a) as u32;
         if addr & 1 != 0 {
             v.rotate_right(8)
         } else {

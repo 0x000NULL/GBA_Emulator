@@ -82,8 +82,8 @@ path = "suite/suite.gba"
 check = "mgba-suite"
 frames = 1800
 input_file = "tests/inputs/suite/suite-00-memory.toml"
-expect = "1544/1552"
-note = "Memory tests (8 left: CPU LDR/LDRH align the address before the bus sees it, so unaligned SRAM loads pick byte 0)"
+expect = "1552/1552"
+note = "Memory tests"
 
 [[rom]]
 path = "suite/suite.gba"

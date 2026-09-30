@@ -16,7 +16,7 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   Cap are verified controllable (LEFT/RIGHT/no-input runs diverge).
 - **mgba-suite is built and gated** (`suite.gba` via its `docker-build.sh`; 13 sub-suites in
   `tests/golden.toml`, each pinned at its current score so any regression fails `cargo test`).
-  Scores after the 2026-09-30 merges: Memory 1544/1552, I/O read 130/130, Timing 1212/2020,
+  Scores after the 2026-09-30 merges: Memory 1552/1552, I/O read 130/130, Timing 1212/2020,
   Timer count-up 471/936, Timer IRQ 69/90, Shifter/Carry/Multiply-long/BIOS-math all full,
   DMA 1244/1244, SIO R/W 90/90, SIO timing 0/4, Misc edge 4/12.
 - **Open**: frontend audio only unit-tested (no audio device here); reference-emulator audio
@@ -87,6 +87,13 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
 - Audio: HLE SWIs still complete atomically with respect to IRQs (an IRQ raised during a BIOS
   routine is taken when the SWI returns rather than mid-routine, as the real BIOS allows).
   ALttP shows 1910 over 18000 frames, Zelda II 43452 over 4200 (Classic NES sound driver).
+
+## Fix log (unaligned loads on the SRAM bus, 2026-09-30)
+mgba-suite Memory 1544 -> 1552/1552. `Cpu::load_word`/`load_half` masked the address before
+handing it to the bus, so `LDR [sram+1]` fetched byte 0. The ARM7 puts the unaligned address on
+the bus; 16/32-bit memories ignore the low bits, the 8-bit SRAM bus serves the selected byte on
+every lane, and the CPU's rotation then acts on that. The bus already aligned for every other
+region, so only the two CPU helpers changed.
 
 ## Fix log (HLE BIOS vs. sound DMA, 2026-09-30)
 KH:CoM logged ~427k FIFO underruns over its new-game run, all in the post-title intro
