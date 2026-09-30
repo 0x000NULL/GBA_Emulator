@@ -1,0 +1,12 @@
+[package]
+name = "gba-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Game Boy Advance emulator core: ARM7TDMI, bus, PPU, APU, DMA, timers, cartridge, HLE BIOS. No I/O dependencies."
+
+[dependencies]
+
+[features]
+default = []

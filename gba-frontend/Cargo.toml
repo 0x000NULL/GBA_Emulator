@@ -1,0 +1,20 @@
+[package]
+name = "gba-frontend"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Desktop frontend for gba-core: window, audio, input, debug views (pure Rust: minifb + cpal + gilrs)."
+
+[[bin]]
+name = "gba"
+path = "src/main.rs"
+
+[dependencies]
+gba-core = { path = "../gba-core" }
+gba-test = { path = "../gba-test" }
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+minifb = "0.28"
+cpal = "0.15"
+gilrs = "0.11"

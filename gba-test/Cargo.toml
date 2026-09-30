@@ -1,0 +1,24 @@
+[package]
+name = "gba-test"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Headless harness for gba-core: run a ROM N frames, hash the framebuffer, check test-suite results."
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "gba-test"
+path = "src/main.rs"
+
+[dependencies]
+gba-core = { path = "../gba-core" }
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+png = "0.17"

@@ -1,0 +1,78 @@
+# Golden test manifest. Paths resolve against GBA_TESTS_DIR (populated by scripts/fetch-tests.ps1),
+# then the repo root. `golden` hashes are xxh3-64 of the 240x160 BGR555 framebuffer after `frames`.
+# Record a hash with: cargo run -p gba-test -- <rom> --frames N --record   (review the --png first).
+
+[defaults]
+hash = "xxh3-64"
+frames = 16
+bios = "hle"
+
+# ---------------------------------------------------------------- jsmolka/gba-tests: M1 CPU gate
+[[rom]]
+path = "gba-tests/arm/arm.gba"
+check = "jsmolka"
+frames = 32
+
+[[rom]]
+path = "gba-tests/thumb/thumb.gba"
+check = "jsmolka"
+frames = 32
+
+# ---------------------------------------------------------------- jsmolka: M2 system gate
+[[rom]]
+path = "gba-tests/memory/memory.gba"
+check = "jsmolka"
+frames = 32
+
+[[rom]]
+path = "gba-tests/bios/bios.gba"
+check = "jsmolka"
+frames = 32
+
+[[rom]]
+path = "gba-tests/nes/nes.gba"
+check = "jsmolka"
+frames = 32
+
+# ---------------------------------------------------------------- jsmolka: M3 PPU gate (visual only)
+[[rom]]
+path = "gba-tests/ppu/hello.gba"
+frames = 8
+
+[[rom]]
+path = "gba-tests/ppu/shades.gba"
+frames = 8
+
+[[rom]]
+path = "gba-tests/ppu/stripes.gba"
+frames = 8
+
+# ---------------------------------------------------------------- jsmolka: M5 save gate
+[[rom]]
+path = "gba-tests/save/none.gba"
+check = "jsmolka"
+frames = 32
+
+[[rom]]
+path = "gba-tests/save/sram.gba"
+check = "jsmolka"
+frames = 32
+
+[[rom]]
+path = "gba-tests/save/flash64.gba"
+check = "jsmolka"
+frames = 64
+
+[[rom]]
+path = "gba-tests/save/flash128.gba"
+check = "jsmolka"
+frames = 64
+
+# ---------------------------------------------------------------- mgba-emu/suite (needs a built suite.gba)
+[[rom]]
+path = "suite/suite.gba"
+check = "mgba-suite"
+frames = 600
+input = [{ frame = 4, press = "A" }, { frame = 6, release = "A" }]
+skip = "needs built suite.gba (devkitARM not installed; no prebuilt release exists)"
+note = "first menu entry = Memory tests"

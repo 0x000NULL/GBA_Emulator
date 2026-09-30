@@ -1,0 +1,13 @@
+/Games/
+/tools/
+/target/
+/traces/
+*.gba
+*.zip
+*.sav
+*.bin
+*.wav
+*.log
+*.png
+!docs/**/*.png
+.env
