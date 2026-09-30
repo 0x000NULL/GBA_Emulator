@@ -16,6 +16,7 @@ use crate::irq::IrqController;
 use crate::keypad::Keypad;
 use crate::ppu::Ppu;
 use crate::sched::{Event, Scheduler};
+use crate::sio::Sio;
 use crate::timers::Timers;
 use debug::DebugHooks;
 
@@ -87,9 +88,8 @@ pub struct Bus {
     pub waitcnt: u16,
     /// 4000300h POSTFLG
     pub postflg: u8,
-    /// Serial/RCNT/JOY registers (0x120..0x15F), stored raw. No link cable emulation.
-    #[cfg_attr(feature = "savestate", serde(with = "crate::state::bytes_arr"))]
-    pub sio: [u8; 0x40],
+    /// Serial/RCNT/JOY registers (0x120..0x15F). No link partner is emulated.
+    pub sio: Sio,
     /// Undocumented 4000800h internal memory control.
     pub imc: u32,
     /// Last value seen on the bus (returned for unmapped reads).
@@ -124,7 +124,7 @@ impl Bus {
             iwram: vec![0u8; IWRAM_SIZE].into_boxed_slice().try_into().unwrap(),
             waitcnt: 0,
             postflg: 0,
-            sio: [0; 0x40],
+            sio: Sio::new(),
             imc: 0x0D00_0020,
             open_bus: 0,
             last_fetch: 0,
@@ -414,6 +414,7 @@ impl Bus {
                 }
                 Event::KeypadPoll => self.keypad.check_irq(&mut self.irq),
                 Event::IrqLatch => {}
+                Event::SioComplete => self.sio.on_complete(&mut self.irq),
             }
         }
     }

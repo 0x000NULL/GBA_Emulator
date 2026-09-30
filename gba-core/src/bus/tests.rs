@@ -240,3 +240,72 @@ fn bios_region_reads_open_bus_from_outside() {
     b.bios.open_bus = crate::bios::BIOS_OPENBUS_AFTER_SWI;
     assert_eq!(b.read16(0x0000_0002, Access::N), (crate::bios::BIOS_OPENBUS_AFTER_SWI >> 16) as u16);
 }
+
+/// GBATEK "Unpredictable Things", unused/write-only I/O: open bus when the whole 32-bit word has no
+/// readable half, zero otherwise. The io-read suite arranges 0xDEADDEAD as the prefetched opcode.
+#[test]
+fn io_write_only_and_unused_reads() {
+    let mut b = bus();
+    b.open_bus = 0xDEAD_BEEF;
+    // Whole word write-only: BGxHOFS/VOFS, affine, WINxH/V, MOSAIC+4E, BLDY+56, 58-5E, FIFO, DMA SAD/DAD.
+    for off in [0x10u32, 0x14, 0x20, 0x28, 0x3C, 0x40, 0x44, 0x4C, 0x54, 0x58, 0x5C, 0x8C, 0xA0, 0xA4, 0xA8, 0xAC, 0xB0, 0xB4, 0xD4, 0xD8, 0xE0, 0xFC, 0x110, 0x12C, 0x138, 0x144, 0x15C, 0x20C, 0x304] {
+        b.write16(0x0400_0000 + off, 0xFFFF, Access::N);
+        b.write16(0x0400_0000 + off + 2, 0xFFFF, Access::N);
+        assert_eq!(b.read16(0x0400_0000 + off, Access::N), 0xBEEF, "{off:03X}: low half of the open-bus word");
+        assert_eq!(b.read16(0x0400_0000 + off + 2, Access::N), 0xDEAD, "{off:03X}: high half of the open-bus word");
+        assert_eq!(b.read32(0x0400_0000 + off, Access::N), 0xDEAD_BEEF);
+        assert_eq!(b.read8(0x0400_0000 + off + 1, Access::N), 0xBE, "{off:03X}: byte lane");
+        assert_eq!(b.read8(0x0400_0000 + off + 3, Access::N), 0xDE);
+    }
+    // Word with a readable half: the unreadable half is zero (66h, 6Ah, 86h, 8Ah, DMAxCNT_L, 136h,
+    // 142h, 15Ah, 206h, 20Ah, 302h).
+    for off in [0x66u32, 0x6A, 0x6E, 0x76, 0x7A, 0x7E, 0x86, 0x8A, 0xB8, 0xC4, 0xD0, 0xDC, 0x136, 0x142, 0x15A, 0x206, 0x20A, 0x302] {
+        b.write16(0x0400_0000 + off, 0xFFFF, Access::N);
+        assert_eq!(b.read16(0x0400_0000 + off, Access::N), 0, "{off:03X}");
+        assert_eq!(b.read8(0x0400_0000 + off, Access::N), 0, "{off:03X}");
+    }
+    // Beyond the register block nothing answers, except the 4000800h port.
+    assert_eq!(b.read16(0x0400_100C, Access::N), 0xBEEF);
+    assert_eq!(b.read32(0x0400_0800, Access::N), b.imc);
+    // Readable registers still read.
+    b.write16(0x0400_0008, 0x1234, Access::N);
+    assert_eq!(b.read16(0x0400_0008, Access::N), 0x1234);
+}
+
+/// Unused bits of readable LCD registers have no storage (io-read suite masks).
+#[test]
+fn io_lcd_register_masks() {
+    let mut b = bus();
+    for (off, mask) in [(0x08u32, 0xDFFFu16), (0x0A, 0xDFFF), (0x0C, 0xFFFF), (0x0E, 0xFFFF), (0x48, 0x3F3F), (0x4A, 0x3F3F), (0x50, 0x3FFF), (0x52, 0x1F1F)] {
+        b.write16(0x0400_0000 + off, 0xFFFF, Access::N);
+        assert_eq!(b.read16(0x0400_0000 + off, Access::N), mask, "{off:02X}");
+    }
+}
+
+/// A normal-mode serial transfer through the bus: scheduled from the SIOCNT write, completes via
+/// `process_events`, raises the serial IRQ.
+#[test]
+fn sio_normal_transfer_through_bus() {
+    let mut b = bus();
+    b.sio.reset();
+    b.write16(0x0400_0134, 0, Access::N);
+    b.write32(0x0400_0128, 0xAA55_5003, Access::N);
+    assert_eq!(b.read16(0x0400_012A, Access::N), 0xAA55);
+    assert!(!b.sio.busy);
+    b.write16(0x0400_0128, 0x5083, Access::N);
+    let t0 = b.sched.now;
+    assert!(b.sio.busy, "16-bit write starts the transfer with the 32-bit length in view");
+    assert_eq!(b.sched.time_of(Event::SioComplete), Some(t0 + 32 * 8));
+    b.sched.now = t0 + 32 * 8 - 1;
+    b.process_events();
+    assert_eq!(b.read16(0x0400_0128, Access::N) & 0x80, 0x80);
+    b.sched.now = t0 + 32 * 8;
+    b.process_events();
+    assert_eq!(b.read16(0x0400_0128, Access::N), 0x5007);
+    assert_eq!(b.read32(0x0400_0120, Access::N), 0xFFFF_FFFF);
+    assert_eq!(b.irq.if_ & Irq::Serial as u16, Irq::Serial as u16);
+    // Byte writes reach the same model.
+    b.write8(0x0400_0128, 0x81, Access::N);
+    assert!(b.sio.busy);
+    assert_eq!(b.sched.time_of(Event::SioComplete), Some(b.sched.now + 32 * 64));
+}

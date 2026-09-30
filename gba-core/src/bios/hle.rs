@@ -274,8 +274,7 @@ impl Bus {
             self.ppu.oam.fill(0);
         }
         if flags & 32 != 0 {
-            self.sio.fill(0);
-            self.sio[(0x134 - 0x120)..(0x136 - 0x120)].copy_from_slice(&0x8000u16.to_le_bytes());
+            self.sio.reset();
         }
         if flags & 64 != 0 {
             for off in (0x60..0xA8).step_by(2) {

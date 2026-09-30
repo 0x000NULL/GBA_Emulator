@@ -57,7 +57,7 @@ impl Gba {
             cpu.reset_hle();
             bus.postflg = 1;
             // RCNT = 0x8000 after the BIOS runs.
-            bus.sio[(0x134 - 0x120)..(0x136 - 0x120)].copy_from_slice(&0x8000u16.to_le_bytes());
+            bus.sio.reset();
         } else {
             cpu.reset_lle();
         }
