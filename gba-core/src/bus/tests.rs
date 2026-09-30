@@ -308,4 +308,133 @@ fn sio_normal_transfer_through_bus() {
     b.write8(0x0400_0128, 0x81, Access::N);
     assert!(b.sio.busy);
     assert_eq!(b.sched.time_of(Event::SioComplete), Some(b.sched.now + 32 * 64));
+/// Program `ch` for an immediate transfer of `count` units and enable it (the start is due 2
+/// cycles later).
+fn start_dma(b: &mut Bus, ch: u32, src: u32, dst: u32, count: u16, cnt_h: u16) {
+    let base = 0x0400_00B0 + ch * 12;
+    b.write32(base, src, Access::N);
+    b.write32(base + 4, dst, Access::N);
+    b.write16(base + 8, count, Access::N);
+    b.write16(base + 10, 0x8000 | cnt_h, Access::N);
+}
+
+/// Run every scheduled immediate start and the resulting transfers.
+fn finish_dma(b: &mut Bus) {
+    b.sched.now += 2;
+    b.process_events();
+    b.dma_run();
+}
+
+#[test]
+fn due_immediate_dma_takes_the_bus_before_a_cpu_data_access() {
+    let mut b = bus();
+    b.write32(0x0200_0000, 0xA5B6_C7D8, Access::N);
+    b.write32(0x0300_0000, 0xAA55_BB66, Access::N);
+    start_dma(&mut b, 3, 0x0200_0000, 0x0300_0000, 1, 0x0400);
+    let t = b.sched.now;
+    // One cycle later the start latency has not elapsed: the CPU still sees the old word.
+    assert_eq!(b.read32(0x0300_0000, Access::N), 0xAA55_BB66);
+    assert_eq!(b.sched.now, t + 1);
+    // An access on the cycle the latency ends (t+2) still belongs to the CPU.
+    assert_eq!(b.read32(0x0300_0000, Access::N), 0xAA55_BB66);
+    assert_eq!(b.dma.pending, 0);
+    // From t+3 on the DMA owns the bus first and the read returns the copied word.
+    assert_eq!(b.read32(0x0300_0000, Access::N), 0xA5B6_C7D8);
+    assert_eq!(b.dma.pending, 0);
+    assert_eq!(b.dma.next_start, u64::MAX, "start bookkeeping cleared");
+    assert_eq!(b.sched.time_of(crate::sched::Event::DmaStart(3)), None, "scheduled start cancelled");
+    // The normal event path still works when no CPU access intervenes.
+    b.write32(0x0200_0000, 0x1234_5678, Access::N);
+    start_dma(&mut b, 3, 0x0200_0000, 0x0300_0004, 1, 0x0400);
+    finish_dma(&mut b);
+    assert_eq!(b.peek32(0x0300_0004), 0x1234_5678);
+    assert_eq!(b.dma.next_start, u64::MAX);
+}
+
+#[test]
+fn dma_reads_of_bios_and_unused_areas_return_the_channel_latch() {
+    let mut b = bus();
+    b.write32(0x0200_0000, 0xFEED_FACE, Access::N);
+    b.write16(0x0200_0010, 0xBABE, Access::N);
+    // A 32-bit copy from EWRAM loads the latch of DMA3.
+    start_dma(&mut b, 3, 0x0200_0000, 0x0300_0000, 1, 0x0400);
+    finish_dma(&mut b);
+    assert_eq!(b.dma.ch[3].latch, 0xFEED_FACE);
+    // Reading the BIOS region (not the CPU's BIOS open-bus value) and the unused area re-use it.
+    start_dma(&mut b, 3, 0x0000_0010, 0x0300_0010, 1, 0x0400);
+    finish_dma(&mut b);
+    assert_eq!(b.peek32(0x0300_0010), 0xFEED_FACE);
+    start_dma(&mut b, 3, 0x0100_0000, 0x0300_0014, 1, 0);
+    finish_dma(&mut b);
+    assert_eq!(b.peek16(0x0300_0014), 0xFACE, "16-bit reads take the low half");
+    assert_eq!(b.dma.ch[3].latch, 0xFEED_FACE, "unmapped reads leave the latch alone");
+    // A 16-bit read stores the halfword replicated, so a later 32-bit unused read yields it twice.
+    start_dma(&mut b, 3, 0x0200_0010, 0x0300_0020, 1, 0);
+    finish_dma(&mut b);
+    assert_eq!(b.dma.ch[3].latch, 0xBABE_BABE);
+    start_dma(&mut b, 3, 0x0000_0000, 0x0300_0024, 1, 0x0400);
+    finish_dma(&mut b);
+    assert_eq!(b.peek32(0x0300_0024), 0xBABE_BABE);
+    // The latch is per channel: DMA0 has not transferred anything yet.
+    start_dma(&mut b, 0, 0x0000_0000, 0x0300_0028, 1, 0x0400);
+    finish_dma(&mut b);
+    assert_eq!(b.peek32(0x0300_0028), 0);
+}
+
+#[test]
+fn dma0_source_is_27_bits_so_rom_reads_hit_the_unused_area() {
+    let mut rom = vec![0u8; 0x200];
+    rom[0x100..0x104].copy_from_slice(&0xDEAD_BEEFu32.to_le_bytes());
+    let mut b = bus_with_rom(rom);
+    b.write32(0x0200_0000, 0xFEED_FACE, Access::N);
+    start_dma(&mut b, 0, 0x0200_0000, 0x0300_0000, 1, 0x0400);
+    finish_dma(&mut b);
+    start_dma(&mut b, 0, 0x0800_0100, 0x0300_0004, 1, 0x0400);
+    finish_dma(&mut b);
+    assert_eq!(b.peek32(0x0300_0004), 0xFEED_FACE, "DMA0 cannot read the game pak");
+    start_dma(&mut b, 1, 0x0800_0100, 0x0300_0008, 1, 0x0400);
+    finish_dma(&mut b);
+    assert_eq!(b.peek32(0x0300_0008), 0xDEAD_BEEF, "DMA1 can");
+}
+
+#[test]
+fn dma_rom_source_always_advances_whatever_the_source_control() {
+    let mut rom = vec![0u8; 0x200];
+    for i in 0..8u32 {
+        rom[0x100 + i as usize * 2..0x102 + i as usize * 2].copy_from_slice(&(0xB000 + i as u16).to_le_bytes());
+    }
+    let mut b = bus_with_rom(rom);
+    // Fixed source (src ctrl 2), fixed destination: the last unit written is the 4th halfword.
+    start_dma(&mut b, 3, 0x0800_0100, 0x0300_0000, 4, (2 << 7) | (2 << 5));
+    finish_dma(&mut b);
+    assert_eq!(b.peek16(0x0300_0000), 0xB003);
+    // Decrementing source: same, the cart bus only counts up.
+    start_dma(&mut b, 3, 0x0800_0100, 0x0300_0002, 4, (1 << 7) | (2 << 5));
+    finish_dma(&mut b);
+    assert_eq!(b.peek16(0x0300_0002), 0xB003);
+    // RAM sources honour the control: fixed re-reads the same halfword.
+    b.write16(0x0200_0000, 0xCAFE, Access::N);
+    b.write16(0x0200_0002, 0x1111, Access::N);
+    start_dma(&mut b, 3, 0x0200_0000, 0x0300_0004, 4, (2 << 7) | (2 << 5));
+    finish_dma(&mut b);
+    assert_eq!(b.peek16(0x0300_0004), 0xCAFE);
+}
+
+#[test]
+fn sram_reads_use_the_address_to_pick_the_byte_and_replicate_it() {
+    let rom = vec![0u8; 0x100];
+    let mut b = Bus::new(Cartridge::new(rom, Some(crate::cart::SaveType::Sram32K)).unwrap(), Bios::hle());
+    for (i, &c) in b"Game".iter().enumerate() {
+        b.write8(0x0E00_0000 + i as u32, c, Access::N);
+    }
+    assert_eq!(b.read16(0x0E00_0000, Access::N), 0x4747);
+    assert_eq!(b.read16(0x0E00_0001, Access::N), 0x6161, "odd address selects byte 1 ('a')");
+    assert_eq!(b.read32(0x0E00_0000, Access::N), 0x4747_4747);
+    assert_eq!(b.read32(0x0E00_0002, Access::N), 0x6D6D_6D6D, "address+2 selects 'm'");
+    assert_eq!(b.read32(0x0E00_0003, Access::N), 0x6565_6565);
+    assert_eq!(b.read32(0x0F00_0003, Access::N), 0x6565_6565, "0x0F mirror");
+    // Wider writes store the lane the address selects.
+    b.write32(0x0E00_0001, 0xA5B6_C7D8, Access::N);
+    assert_eq!(b.read8(0x0E00_0000, Access::N), b'G');
+    assert_eq!(b.read8(0x0E00_0001, Access::N), 0xC7);
 }

@@ -6,6 +6,12 @@
 //! Transfers are resumable: after every unit the scheduler is checked, due events fire (so
 //! timers keep clocking the sound FIFOs and the PPU keeps rendering during a long copy), and if a
 //! higher-priority channel became pending this one saves its progress and yields.
+//!
+//! Data-path quirks pinned by the mgba-suite memory/DMA tests: a read from the BIOS/unused area
+//! (which is where DMA0's 27-bit source address puts the game pak) returns the channel's own
+//! latch rather than the CPU open bus, and a game-pak source advances after every unit whatever
+//! the source control says. Immediate starts may also pre-empt a CPU data access
+//! (`Bus::arbitrate`).
 
 use super::{Access, Bus, MemoryBus};
 use crate::irq::Irq;
@@ -52,19 +58,34 @@ impl Bus {
         let mut src = c.src;
         let mut dst = c.dst;
         let mut remaining = c.remaining;
+        let mut latch = c.latch;
         let higher = (1u8 << ch) - 1;
+        // Game-pak reads are sequential bus cycles: the cartridge's address counter advances
+        // after every unit no matter what the source control says, so a fixed or decrementing
+        // ROM source still delivers consecutive units (mgba-suite "=ROM"/"-ROM" rows expect the
+        // same result as "+ROM"). Mirrors mGBA's handling of cart sources.
+        let src_ctrl = if (0x08..=0x0D).contains(&(src >> 24)) { 0 } else { src_ctrl };
 
         self.in_dma = true;
         let mut access = Access::N;
         while remaining > 0 {
+            // Reads from the BIOS/unused area return the channel's own latch (low half for a
+            // 16-bit unit) and leave it unchanged; only mapped reads reload it.
+            let unmapped = src < 0x0200_0000;
             if word32 {
-                let v = self.read32(src, access);
-                self.write32(dst, v, access);
-                self.open_bus = v;
+                let bus_v = self.read32(src, access);
+                if !unmapped {
+                    latch = bus_v;
+                }
+                self.write32(dst, latch, access);
+                self.open_bus = latch;
             } else {
-                let v = self.read16(src, access);
-                self.write16(dst, v, access);
-                self.open_bus = v as u32 | (v as u32) << 16;
+                let bus_v = self.read16(src, access);
+                if !unmapped {
+                    latch = bus_v as u32 | (bus_v as u32) << 16;
+                }
+                self.write16(dst, latch as u16, access);
+                self.open_bus = latch;
             }
             access = Access::S;
             src = match src_ctrl {
@@ -87,6 +108,7 @@ impl Bus {
                     c.src = src;
                     c.dst = dst;
                     c.remaining = remaining;
+                    c.latch = latch;
                     self.dma.pending |= 1 << ch;
                     self.in_dma = false;
                     return;
@@ -100,6 +122,7 @@ impl Bus {
             c.src = src;
             c.dst = dst;
             c.remaining = 0;
+            c.latch = latch;
             c.in_progress = false;
             (c.irq_on_end(), c.repeat() && c.timing() != 0)
         };

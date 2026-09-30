@@ -31,6 +31,11 @@ pub struct DmaChannel {
     pub remaining: u32,
     /// A transfer has started and may have been paused by a higher-priority channel.
     pub in_progress: bool,
+    /// Last value this channel read from a mapped source. A DMA read from the BIOS/unused area
+    /// (00000000-01FFFFFF; DMA0's 27-bit source lands ROM addresses there) does not see the CPU's
+    /// open bus: the channel re-uses this value (mgba-suite memory/DMA tests, hardware-verified).
+    /// 16-bit reads store the halfword replicated into both halves.
+    pub latch: u32,
 }
 
 impl DmaChannel {
@@ -71,16 +76,48 @@ impl DmaChannel {
 }
 
 #[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct DmaController {
     pub ch: [DmaChannel; 4],
     /// Bitmask of channels with a transfer requested and not yet executed.
     pub pending: u8,
+    /// Absolute cycle at which each channel's immediate start latency elapses (`u64::MAX` when
+    /// none is scheduled). Mirrors the `Event::DmaStart` entries so the bus can let a due DMA
+    /// take the bus ahead of a CPU data access without searching the scheduler.
+    pub start_at: [u64; 4],
+    /// `min(start_at)`, so the bus hot path pays a single compare.
+    pub next_start: u64,
+}
+
+impl Default for DmaController {
+    fn default() -> Self {
+        DmaController { ch: Default::default(), pending: 0, start_at: [u64::MAX; 4], next_start: u64::MAX }
+    }
 }
 
 impl DmaController {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    fn recompute_next_start(&mut self) {
+        self.next_start = *self.start_at.iter().min().unwrap();
+    }
+
+    /// Bus arbitration: fire every immediate start whose latency elapsed *before* the current
+    /// cycle (a CPU access on the very cycle the latency ends still wins the bus), cancelling its
+    /// scheduled `Event::DmaStart` so it does not fire twice. Returns true if any did.
+    pub fn fire_due_starts(&mut self, sched: &mut Scheduler) -> bool {
+        let now = sched.now;
+        let mut any = false;
+        for ch in 0..4 {
+            if self.start_at[ch] < now {
+                sched.cancel(Event::DmaStart(ch as u8));
+                self.on_start_event(ch as u8);
+                any = true;
+            }
+        }
+        any
     }
 
     fn count_max(ch: usize) -> u32 {
@@ -152,12 +189,17 @@ impl DmaController {
                 if !was_enabled && now_enabled {
                     self.latch(ch);
                     if self.ch[ch].timing() == 0 {
-                        sched.schedule_in(Event::DmaStart(ch as u8), 2);
+                        let at = sched.now + 2;
+                        sched.schedule(Event::DmaStart(ch as u8), at);
+                        self.start_at[ch] = at;
+                        self.recompute_next_start();
                     }
                 } else if was_enabled && !now_enabled {
                     self.pending &= !(1 << ch);
                     self.ch[ch].in_progress = false;
                     sched.cancel(Event::DmaStart(ch as u8));
+                    self.start_at[ch] = u64::MAX;
+                    self.recompute_next_start();
                 }
             }
         }
@@ -166,6 +208,8 @@ impl DmaController {
     /// Immediate-mode start latency elapsed.
     pub fn on_start_event(&mut self, ch: u8) {
         let ch = ch as usize;
+        self.start_at[ch] = u64::MAX;
+        self.recompute_next_start();
         if self.ch[ch].enabled() && self.ch[ch].timing() == 0 {
             self.pending |= 1 << ch;
         }
