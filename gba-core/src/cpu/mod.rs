@@ -150,8 +150,11 @@ impl Cpu {
         let start = bus.now();
         if bus.irq_pending() && !self.regs.irq_disabled() {
             self.enter_exception(bus, VEC_IRQ, regs::MODE_IRQ);
-            // Exception entry: the vector fetch pair is paid by the refill; the ARM7 spends two
-            // more cycles saving state.
+            // Exception entry is 2S + 1N on the ARM7TDMI: the vector fetch pair (paid by the
+            // refill at 0x18, or by the HLE vector emulation) plus one cycle saving state, and
+            // one more cycle to sample the IRQ input before the vector fetch (hardware-recorded
+            // mgba-suite "Timer IRQ tests": the value latched in the handler is one cycle later
+            // than the BIOS instruction sequence alone accounts for).
             bus.idle(2);
             return (bus.now() - start) as u32;
         }

@@ -17,7 +17,7 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
 - **mgba-suite is built and gated** (`suite.gba` via its `docker-build.sh`; 13 sub-suites in
   `tests/golden.toml`, each pinned at its current score so any regression fails `cargo test`).
   Scores after the 2026-09-30 merges: Memory 1552/1552, I/O read 130/130, Timing 1212/2020,
-  Timer count-up 471/936, Timer IRQ 69/90, Shifter/Carry/Multiply-long/BIOS-math all full,
+  Timer count-up 582/936, Timer IRQ 90/90, Shifter/Carry/Multiply-long/BIOS-math all full,
   DMA 1244/1244, SIO R/W 90/90, SIO timing 0/4, Misc edge 4/12.
 - **Open**: frontend audio only unit-tested (no audio device here); reference-emulator audio
   comparison manual; game-pak prefetch buffer still missing (blocks the remaining Timing rows);
@@ -77,6 +77,11 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   advance affine references (mGBA-like); window `x1 > 240 && x1 > x2` covers the whole line (mGBA).
 - APU: PSG mix scale derived from GBATEK maxima, not measured against hardware; wave RAM
   shift-register read-back quirk not modelled; duty position not reset on restart.
+- CPU/timers: the 354 remaining mgba-suite Timer count-up rows are all the "2i" variants (the
+  handler stops the timer on the second IRQ, which is pending the moment the first handler
+  returns). Tight-loop results are 2 ticks high and loose-loop results 3 ticks low, so the
+  question is which instruction, if any, executes between the exception return and taking the
+  next pending IRQ, not a constant latency. Not investigated further.
 - CPU: MUL/MLA leave C unchanged (GBATEK says "destroyed"); no game-pak prefetch buffer (WAITCNT
   bit 14 ignored), so every mgba-suite timing variant with prefetch on ("P..", "PN.", "P.S",
   "PNS") still fails; HLE SWIs cost no cycles (BIOS Div/Sqrt/ArcTan/CpuSet timing rows).
@@ -87,6 +92,15 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
 - Audio: HLE SWIs still complete atomically with respect to IRQs (an IRQ raised during a BIOS
   routine is taken when the SWI returns rather than mid-routine, as the real BIOS allows).
   ALttP shows 1910 over 18000 frames, Zelda II 43452 over 4200 (Classic NES sound driver).
+
+## Fix log (IRQ entry cycles, 2026-09-30)
+mgba-suite Timer IRQ 69 -> 90/90, Timer count-up 483 -> 582/936. Every remaining Timer IRQ
+failure was the pre-empted case (timer value latched inside the handler 4 cycles low). The HLE
+IRQ vector charged a flat 6 idle cycles; it now itemises the real BIOS path (vector fetch pair,
+`b 128h`, stmfd, mov, add, `ldr r15,[r0,-4]`, less what the writes/read/refill already pay) and
+the return stub likewise (ldmfd, `subs r15,r14,4`). That left exactly one cycle, charged at
+exception entry as an IRQ sampling cycle on top of the ARM7TDMI's 2S+1N; the suite's
+hardware-recorded values pin it.
 
 ## Fix log (unaligned loads on the SRAM bus, 2026-09-30)
 mgba-suite Memory 1544 -> 1552/1552. `Cpu::load_word`/`load_half` masked the address before

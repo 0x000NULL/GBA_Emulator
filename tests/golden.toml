@@ -106,7 +106,7 @@ path = "suite/suite.gba"
 check = "mgba-suite"
 frames = 1800
 input_file = "tests/inputs/suite/suite-03-timers.toml"
-expect = "471/936"
+expect = "582/936"
 note = "Timer count-up tests"
 
 [[rom]]
@@ -114,7 +114,7 @@ path = "suite/suite.gba"
 check = "mgba-suite"
 frames = 1200
 input_file = "tests/inputs/suite/suite-04-timer-irq.toml"
-expect = "69/90"
+expect = "90/90"
 note = "Timer IRQ tests"
 
 [[rom]]

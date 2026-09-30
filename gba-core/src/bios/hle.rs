@@ -34,7 +34,13 @@ impl Bus {
                 regs.r[14] = HLE_IRQ_RETURN_ADDR;
                 regs.r[15] = self.read32(IRQ_HANDLER_PTR, Access::N) & !3;
                 self.bios.open_bus = super::BIOS_OPENBUS_DURING_IRQ;
-                self.idle(6);
+                // Cycles of the real BIOS path (32-bit BIOS bus, IWRAM stack, 1 cycle each), less
+                // what is charged elsewhere: vector fetch pair at 0x18 (2, no refill happens
+                // here), `b 128h` (2S+1N = 3), stmfd of 6 registers (5S+2N = 7, 6 paid by the
+                // writes above), mov (1), add (1), `ldr r15,[r0,-4]` (2S+2N+1I = 5: 1 paid by the
+                // read above, 2 by the CPU's refill at the handler). mgba-suite "Timer IRQ tests"
+                // pin the total (value latched in the handler = 0x51/0x52).
+                self.idle(2 + 3 + 1 + 1 + 1 + 2);
                 true
             }
             // Return stub: ldmfd r13!, {r0-r3,r12,r14}; subs r15, r14, #4
@@ -53,7 +59,9 @@ impl Bus {
                 regs.set_cpsr(spsr);
                 regs.r[15] = if regs.thumb() { target & !1 } else { target & !3 };
                 self.bios.open_bus = super::BIOS_OPENBUS_AFTER_IRQ;
-                self.idle(6);
+                // ldmfd of 6 registers (6S+1N+1I = 8, 6 paid by the reads above) and
+                // `subs r15,r14,4` (2S+1N = 3, 2 paid by the CPU's refill).
+                self.idle(2 + 1);
                 true
             }
             _ => false,
