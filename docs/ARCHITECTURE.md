@@ -37,6 +37,11 @@ through: RAM regions align them, the 8-bit SRAM/Flash bus uses the low bits to p
 - Pipeline: two fetched words; the executing instruction came from an earlier fetch, so a store
   over PC+8 does not change what runs (Classic NES Series depends on it). PC writes flush; the next
   step refills with an N then an S fetch.
+- Fetch `Access`: the CPU passes `S` only when the bus cycle before the fetch was the fetch of the
+  preceding opcode. After a data access (STR/STM: the datasheet's "2N") or an internal cycle
+  (LDR/LDM/MUL/shift-by-register: GBATEK's "prefetch disable bug") it passes `N`, and the first
+  halfword of every 128K game pak block is `N` for fetches and LDM/STM words alike. With the
+  prefetch buffer enabled the bus decides ROM opcode-fetch cost by address and may ignore the flag.
 
 ## Scheduler and main loop
 `Scheduler { now, heap }` with `Event { HBlank, LineEnd, TimerOverflow(n), DmaStart(n), ApuSample,

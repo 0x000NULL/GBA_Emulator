@@ -70,12 +70,26 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   advance affine references (mGBA-like); window `x1 > 240 && x1 > x2` covers the whole line (mGBA).
 - APU: PSG mix scale derived from GBATEK maxima, not measured against hardware; wave RAM
   shift-register read-back quirk not modelled; duty position not reset on restart.
-- CPU: MUL/MLA leave C unchanged (GBATEK says "destroyed"); cycle counts are GBATEK-approximate;
-  no game-pak prefetch buffer.
+- CPU: MUL/MLA leave C unchanged (GBATEK says "destroyed"); no game-pak prefetch buffer (WAITCNT
+  bit 14 ignored), so every mgba-suite timing variant with prefetch on ("P..", "PN.", "P.S",
+  "PNS") still fails; HLE SWIs cost no cycles (BIOS Div/Sqrt/ArcTan/CpuSet timing rows).
 - BIOS HLE: BgAffineSet/ObjAffineSet use f64 trig instead of the BIOS sine table (tiny rounding
   differences possible); division by zero returns mGBA's values instead of hanging.
 - Cartridge: no GPIO/RTC (none of the target games use it); SRAM open-bus when the backend is EEPROM
   reads 0xFF.
+
+## Fix log (CPU timing, 2026-09-30)
+mgba-suite "Timing tests" 408/2020 -> 1082/2020. Every variant without prefetch now matches
+hardware except the timer-start offset, HLE BIOS calls and DMA-during-fetch (all outside `cpu/`).
+- Opcode fetches after a data access or an internal cycle were passed as `S`. The ARM7TDMI drives
+  SEQ low after a data cycle (STR/STM = "2N"), and the GBA charges N for the fetch after an I
+  cycle when prefetch is off (GBATEK "prefetch disable bug"). `Cpu::next_fetch_n` now records
+  "execute advanced the clock" and the next pipeline fetch is `N`. The unrolled C loop in ROM
+  (17 str + 16 ldr, 2 cycles each) was exactly the 66-cycle shortfall.
+- LDM/STM running off the end of OAM into 08000000h charged the first ROM word as `S`; the GBA
+  times the first halfword of every 128K game pak block as non-sequential (GBATEK WAITCNT notes).
+  Block transfers and pipeline fetches restart at `N` there.
+- Savestate version bumped to 2 (new `Cpu` field).
 
 ## Fix log (integration, 2026-09-29)
 - `Gba::run_until` computed the event deadline once per outer loop, so an event scheduled by an

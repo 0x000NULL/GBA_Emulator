@@ -13,12 +13,24 @@
 //!
 //! Pipeline model: `regs.r[15]` is the address of the instruction being executed for the whole of
 //! `step`. `pipeline[0]` holds the (already fetched) word at PC and `pipeline[1]` the word at PC+4
-//! (PC+2 in THUMB). Each step first prefetches PC+8 (PC+4) with a sequential access, shifts the
-//! pipeline, then executes the word that was fetched two steps earlier, so a store that overwrites
-//! an already-fetched instruction has no effect on it (Classic NES Series relies on this). Any
-//! write to PC invalidates the pipeline; the next `step` refills it with a non-sequential fetch at
-//! the target followed by a sequential one, which together with the branch's own prefetch gives
-//! GBATEK's 2S+1N.
+//! (PC+2 in THUMB). Each step first prefetches PC+8 (PC+4), shifts the pipeline, then executes the
+//! word that was fetched two steps earlier, so a store that overwrites an already-fetched
+//! instruction has no effect on it (Classic NES Series relies on this). Any write to PC
+//! invalidates the pipeline; the next `step` refills it with a non-sequential fetch at the target
+//! followed by a sequential one, which together with the branch's own prefetch gives GBATEK's
+//! 2S+1N.
+//!
+//! Opcode fetch sequentiality (the `Access` passed to `fetch16/32`) follows the ARM7TDMI SEQ
+//! signal as the GBA memory controller sees it: a fetch is sequential only when the bus cycle
+//! right before it was the fetch of the preceding opcode. After a data access (STR/STM/SWP: the
+//! datasheet's "2N") or after an internal cycle (LDR/LDM/MUL/shift-by-register: GBATEK's
+//! "prefetch disable bug", which turns the 1S opcode fetch into 1N when the game pak prefetch
+//! buffer is off) the next fetch is non-sequential. Since the pipeline fetch is the first bus
+//! cycle of every step, "the instruction advanced the clock during execute" is exactly "it did a
+//! data access or an internal cycle", which is how `next_fetch_n` is derived. The first halfword
+//! of each 128K game pak block is also non-sequential (GBATEK "GBA System Control", WAITCNT
+//! notes). With the prefetch buffer enabled the bus decides hits by address and may ignore the
+//! flag for ROM fetches.
 //!
 //! Sources: GBATEK "ARM CPU Reference" (register set, flags, exceptions, memory alignments, every
 //! ARM and THUMB opcode chapter, instruction cycle times).
@@ -53,9 +65,12 @@ pub struct Cpu {
     /// Two-slot fetched pipeline: `[word at PC, word at PC+4]` (PC+2 in THUMB) while
     /// `next_fetch_seq` is true. The instruction at `regs.r[15]` is the one being executed.
     pub pipeline: [u32; 2],
-    /// True while the pipeline contents are valid and the next opcode fetch is sequential.
-    /// Cleared by every PC write; the next `step` refills with an N fetch then an S fetch.
+    /// True while the pipeline contents are valid. Cleared by every PC write; the next `step`
+    /// refills with an N fetch then an S fetch.
     pub next_fetch_seq: bool,
+    /// True when the last bus cycle of the previous instruction was a data access or an internal
+    /// cycle, which makes the next opcode fetch non-sequential (see the module docs).
+    pub next_fetch_n: bool,
     /// Instructions executed since reset (exception entries are not counted).
     pub instr_count: u64,
     /// Opcode of the instruction most recently executed (for tracing).
@@ -74,6 +89,7 @@ impl Cpu {
             regs: Regs::new(),
             pipeline: [0; 2],
             next_fetch_seq: false,
+            next_fetch_n: false,
             instr_count: 0,
             last_opcode: 0,
         }
@@ -93,6 +109,7 @@ impl Cpu {
         self.regs.r[15] = 0x0800_0000;
         self.pipeline = [0; 2];
         self.next_fetch_seq = false;
+        self.next_fetch_n = false;
     }
 
     /// Real reset: SVC mode, IRQ/FIQ disabled, PC=0 (LLE BIOS).
@@ -101,6 +118,7 @@ impl Cpu {
         self.regs.r[15] = 0;
         self.pipeline = [0; 2];
         self.next_fetch_seq = false;
+        self.next_fetch_n = false;
     }
 
     /// Address of the instruction about to execute.
@@ -150,19 +168,46 @@ impl Cpu {
         (bus.now() - start) as u32
     }
 
+    /// Access type of the pipeline fetch at `addr` when the pipeline is already valid: sequential
+    /// unless the previous instruction ended with a data access or an internal cycle, or `addr`
+    /// starts a 128K game pak block.
+    #[inline]
+    fn fetch_access(&self, addr: u32) -> Access {
+        if self.next_fetch_n {
+            Access::N
+        } else {
+            Self::seq_unless_block_start(addr)
+        }
+    }
+
+    /// Sequential access unless `addr` is the first halfword of a 128K game pak block, which the
+    /// GBA always times as non-sequential (GBATEK "GBA System Control", WAITCNT notes).
+    #[inline]
+    pub(crate) fn seq_unless_block_start(addr: u32) -> Access {
+        if addr & 0x1_FFFF == 0 {
+            Access::N
+        } else {
+            Access::S
+        }
+    }
+
     fn step_arm<B: MemoryBus>(&mut self, bus: &mut B) {
         let pc = self.regs.r[15] & !3;
         self.regs.r[15] = pc;
         if !self.next_fetch_seq {
             self.pipeline[0] = bus.fetch32(pc, Access::N);
-            self.pipeline[1] = bus.fetch32(pc.wrapping_add(4), Access::S);
+            let next = pc.wrapping_add(4);
+            self.pipeline[1] = bus.fetch32(next, Self::seq_unless_block_start(next));
             self.next_fetch_seq = true;
         }
         let op = self.pipeline[0];
         self.pipeline[0] = self.pipeline[1];
-        self.pipeline[1] = bus.fetch32(pc.wrapping_add(8), Access::S);
+        let next = pc.wrapping_add(8);
+        self.pipeline[1] = bus.fetch32(next, self.fetch_access(next));
         self.last_opcode = op;
+        let before = bus.now();
         arm::execute(self, bus, op);
+        self.next_fetch_n = bus.now() != before;
         if self.next_fetch_seq {
             self.regs.r[15] = pc.wrapping_add(4);
         }
@@ -173,14 +218,18 @@ impl Cpu {
         self.regs.r[15] = pc;
         if !self.next_fetch_seq {
             self.pipeline[0] = bus.fetch16(pc, Access::N) as u32;
-            self.pipeline[1] = bus.fetch16(pc.wrapping_add(2), Access::S) as u32;
+            let next = pc.wrapping_add(2);
+            self.pipeline[1] = bus.fetch16(next, Self::seq_unless_block_start(next)) as u32;
             self.next_fetch_seq = true;
         }
         let op = self.pipeline[0] as u16;
         self.pipeline[0] = self.pipeline[1];
-        self.pipeline[1] = bus.fetch16(pc.wrapping_add(4), Access::S) as u32;
+        let next = pc.wrapping_add(4);
+        self.pipeline[1] = bus.fetch16(next, self.fetch_access(next)) as u32;
         self.last_opcode = op as u32;
+        let before = bus.now();
         thumb::execute(self, bus, op);
+        self.next_fetch_n = bus.now() != before;
         if self.next_fetch_seq {
             self.regs.r[15] = pc.wrapping_add(2);
         }
@@ -324,6 +373,9 @@ impl Cpu {
         };
         let thumb = self.regs.thumb();
         let pc_store = self.regs.r[15].wrapping_add(if thumb { 6 } else { 12 });
+        // The first word is non-sequential; so is any word that starts a 128K game pak block,
+        // which is also where a transfer running off the end of OAM enters the ROM (GBATEK WAITCNT
+        // notes: "LDMIA [801fff8h],r0-r7 will have non-sequential timing at 8020000h").
         let mut access = Access::N;
         if load {
             if writeback {
@@ -335,8 +387,8 @@ impl Cpu {
                     continue;
                 }
                 let v = bus.read32(addr & !3, access);
-                access = Access::S;
                 addr = addr.wrapping_add(4);
+                access = Self::seq_unless_block_start(addr);
                 if i == 15 {
                     loaded_pc = Some(v);
                 } else if user_bank {
@@ -366,8 +418,8 @@ impl Cpu {
                     self.regs.r[i]
                 };
                 bus.write32(addr & !3, v, access);
-                access = Access::S;
                 addr = addr.wrapping_add(4);
+                access = Self::seq_unless_block_start(addr);
                 if first && writeback {
                     // Writeback happens after the first store, so a base that is not the first
                     // register in the list is stored with its new value.

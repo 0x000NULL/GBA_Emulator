@@ -10,6 +10,7 @@ mod arm_tests;
 mod exceptions;
 mod flags;
 mod thumb_tests;
+mod timing;
 
 use super::regs::*;
 use super::Cpu;
