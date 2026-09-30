@@ -71,11 +71,112 @@ path = "gba-tests/save/flash128.gba"
 check = "jsmolka"
 frames = 400
 
-# ---------------------------------------------------------------- mgba-emu/suite (needs a built suite.gba)
+# ---------------------------------------------------------------- mgba-emu/suite
+# suite.gba is built from tools/tests/suite by scripts/fetch-tests.ps1 (devkitpro/devkitarm Docker image).
+# One entry per menu item; the input script navigates DOWN x N then A. `expect` is the hardware-verified
+# pass count we currently reach: a full pass where the suite is deterministic (shifter, carry, multiply
+# long, BIOS math), otherwise a regression floor that is raised as fixes land (see PROGRESS.md).
+
+[[rom]]
+path = "suite/suite.gba"
+check = "mgba-suite"
+frames = 1800
+input_file = "tests/inputs/suite/suite-00-memory.toml"
+expect = "1205/1552"
+note = "Memory tests"
+
 [[rom]]
 path = "suite/suite.gba"
 check = "mgba-suite"
 frames = 600
-input = [{ frame = 4, press = "A" }, { frame = 6, release = "A" }]
-skip = "needs built suite.gba (devkitARM not installed; no prebuilt release exists)"
-note = "first menu entry = Memory tests"
+input_file = "tests/inputs/suite/suite-01-io-read.toml"
+expect = "42/130"
+note = "I/O read tests"
+
+[[rom]]
+path = "suite/suite.gba"
+check = "mgba-suite"
+frames = 1800
+input_file = "tests/inputs/suite/suite-02-timing.toml"
+expect = "408/2020"
+note = "Timing tests"
+
+[[rom]]
+path = "suite/suite.gba"
+check = "mgba-suite"
+frames = 1800
+input_file = "tests/inputs/suite/suite-03-timers.toml"
+expect = "370/936"
+note = "Timer count-up tests"
+
+[[rom]]
+path = "suite/suite.gba"
+check = "mgba-suite"
+frames = 1200
+input_file = "tests/inputs/suite/suite-04-timer-irq.toml"
+expect = "0/90"
+note = "Timer IRQ tests"
+
+[[rom]]
+path = "suite/suite.gba"
+check = "mgba-suite"
+frames = 600
+input_file = "tests/inputs/suite/suite-05-shifter.toml"
+expect = "140/140"
+note = "Shifter tests"
+
+[[rom]]
+path = "suite/suite.gba"
+check = "mgba-suite"
+frames = 600
+input_file = "tests/inputs/suite/suite-06-carry.toml"
+expect = "93/93"
+note = "Carry tests"
+
+[[rom]]
+path = "suite/suite.gba"
+check = "mgba-suite"
+frames = 600
+input_file = "tests/inputs/suite/suite-07-multiply-long.toml"
+expect = "72/72"
+note = "Multiply long tests"
+
+[[rom]]
+path = "suite/suite.gba"
+check = "mgba-suite"
+frames = 600
+input_file = "tests/inputs/suite/suite-08-bios-math.toml"
+expect = "615/615"
+note = "BIOS math tests"
+
+[[rom]]
+path = "suite/suite.gba"
+check = "mgba-suite"
+frames = 1800
+input_file = "tests/inputs/suite/suite-09-dma.toml"
+expect = "1056/1244"
+note = "DMA tests"
+
+[[rom]]
+path = "suite/suite.gba"
+check = "mgba-suite"
+frames = 600
+input_file = "tests/inputs/suite/suite-10-sio-read.toml"
+expect = "7/90"
+note = "SIO register R/W tests"
+
+[[rom]]
+path = "suite/suite.gba"
+check = "mgba-suite"
+frames = 1200
+input_file = "tests/inputs/suite/suite-11-sio-timing.toml"
+expect = "0/4"
+note = "SIO timing tests"
+
+[[rom]]
+path = "suite/suite.gba"
+check = "mgba-suite"
+frames = 1200
+input_file = "tests/inputs/suite/suite-12-misc-edge.toml"
+expect = "4/12"
+note = "Misc. edge case tests"

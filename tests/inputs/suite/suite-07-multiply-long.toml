@@ -1,0 +1,20 @@
+# mgba suite: menu item 7 "Multiply long tests". DOWN x7 then A; first press at frame 30 (main() clears 64 KB
+# of SRAM before its first scanKeys), taps held 3 frames, 10 frames apart (setRepeat(20,6)).
+steps = [
+  { frame = 30, press = "DOWN" },
+  { frame = 33, release = "DOWN" },
+  { frame = 40, press = "DOWN" },
+  { frame = 43, release = "DOWN" },
+  { frame = 50, press = "DOWN" },
+  { frame = 53, release = "DOWN" },
+  { frame = 60, press = "DOWN" },
+  { frame = 63, release = "DOWN" },
+  { frame = 70, press = "DOWN" },
+  { frame = 73, release = "DOWN" },
+  { frame = 80, press = "DOWN" },
+  { frame = 83, release = "DOWN" },
+  { frame = 90, press = "DOWN" },
+  { frame = 93, release = "DOWN" },
+  { frame = 100, press = "A" },
+  { frame = 103, release = "A" },
+]

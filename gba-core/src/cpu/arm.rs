@@ -242,8 +242,11 @@ fn multiply<B: MemoryBus>(cpu: &mut Cpu, bus: &mut B, op: u32) {
         cpu.regs.r[rd] = result;
     }
     if op & (1 << 20) != 0 {
-        // N, Z from the result; C is "destroyed" on ARMv4 (left unchanged here), V unaffected.
+        // N, Z from the result; C follows the multiplier array (alu::multiply_carry); V unaffected.
         cpu.regs.set_nz(result);
+        let acc = if accumulate { cpu.regs.r[rn] as u64 } else { 0 };
+        let c = alu::multiply_carry(alu::MulKind::Short, rm, rs, acc);
+        cpu.regs.set_flag(regs::FLAG_C, c);
     }
 }
 
@@ -260,8 +263,9 @@ fn multiply_long<B: MemoryBus>(cpu: &mut Cpu, bus: &mut B, op: u32) {
     } else {
         rm as u64 * rs as u64
     };
+    let mut acc = 0u64;
     if accumulate {
-        let acc = (cpu.regs.r[rd_hi] as u64) << 32 | cpu.regs.r[rd_lo] as u64;
+        acc = (cpu.regs.r[rd_hi] as u64) << 32 | cpu.regs.r[rd_lo] as u64;
         result = result.wrapping_add(acc);
         cycles += 1;
     }
@@ -276,6 +280,9 @@ fn multiply_long<B: MemoryBus>(cpu: &mut Cpu, bus: &mut B, op: u32) {
         let n = result >> 63 != 0;
         cpu.regs.set_flag(regs::FLAG_N, n);
         cpu.regs.set_flag(regs::FLAG_Z, result == 0);
+        let kind = if signed { alu::MulKind::LongSigned } else { alu::MulKind::LongUnsigned };
+        let c = alu::multiply_carry(kind, rm, rs, acc);
+        cpu.regs.set_flag(regs::FLAG_C, c);
     }
 }
 

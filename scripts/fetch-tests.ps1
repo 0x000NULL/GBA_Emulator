@@ -3,7 +3,7 @@
   Fetch test ROMs and the reference emulator into tools/ (gitignored).
 
   - jsmolka/gba-tests  -> $GBA_TESTS_DIR/gba-tests   (prebuilt .gba files are committed upstream)
-  - mgba-emu/suite     -> $GBA_TESTS_DIR/suite       (source only; needs devkitARM to build suite.gba)
+  - mgba-emu/suite     -> $GBA_TESTS_DIR/suite       (source; suite.gba is built via the devkitpro/devkitarm Docker image)
   - mGBA portable      -> tools/mgba/mGBA-<ver>-win64 (reference emulator for trace/PCM diffing)
   - GBATEK             -> tools/gbatek.htm, split into docs/gbatek/*.md by scripts/gbatek-split.py
 
@@ -15,7 +15,8 @@ param(
     [string]$TestsDir = $(if ($env:GBA_TESTS_DIR) { $env:GBA_TESTS_DIR } else { Join-Path $PSScriptRoot '..\tools\tests' }),
     [string]$MgbaVersion = '0.10.5',
     [switch]$SkipMgba,
-    [switch]$SkipGbatek
+    [switch]$SkipGbatek,
+    [switch]$SkipSuiteBuild
 )
 $ErrorActionPreference = 'Stop'
 $repo = Resolve-Path (Join-Path $PSScriptRoot '..')
@@ -35,9 +36,21 @@ function Clone-OrPull($url, $dest) {
 Clone-OrPull 'https://github.com/jsmolka/gba-tests.git' (Join-Path $TestsDir 'gba-tests')
 Clone-OrPull 'https://github.com/mgba-emu/suite.git'    (Join-Path $TestsDir 'suite')
 
-$suiteRom = Join-Path $TestsDir 'suite\suite.gba'
-if (-not (Test-Path $suiteRom)) {
-    Write-Host "note: mgba suite ships source only; build suite.gba with devkitARM (docker-build.sh) and place it at $suiteRom"
+$suiteDir = Join-Path $TestsDir 'suite'
+$suiteRom = Join-Path $suiteDir 'suite.gba'
+if (-not (Test-Path $suiteRom) -and -not $SkipSuiteBuild) {
+    # The suite ships as source and needs devkitARM. Build it with the devkitPro Docker image when
+    # Docker is available; otherwise say how.
+    $docker = Get-Command docker -ErrorAction SilentlyContinue
+    if ($docker) {
+        Write-Host "building suite.gba with devkitpro/devkitarm (docker)"
+        & docker run --rm -v "${suiteDir}:/root/suite" -w /root/suite devkitpro/devkitarm make
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $suiteRom)) { throw "suite.gba build failed (see docker output above)" }
+    } else {
+        Write-Host "note: mgba suite ships source only. Build it with:"
+        Write-Host "  docker run --rm -v `"${suiteDir}:/root/suite`" -w /root/suite devkitpro/devkitarm make"
+        Write-Host "and place suite.gba at $suiteRom (the mgba-suite entries in tests/golden.toml need it)"
+    }
 }
 
 if (-not $SkipMgba) {

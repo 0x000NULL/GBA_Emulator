@@ -224,3 +224,197 @@ pub fn multiply_cycles(rs: u32, signed: bool) -> u32 {
         4
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Multiply carry flag.
+//
+// GBATEK says the C flag is "destroyed" by MUL/MLA/xMULL/xMLAL with S set. The ARM7TDMI
+// multiplier is a Booth-recoded carry-save array that consumes 8 multiplier bits per cycle with
+// early termination, and the carry flag is whatever falls out of the final shifter. The model
+// below is the reconstruction published by zaydlang ("ARM7TDMI multiplication algorithm",
+// https://bmchtech.github.io/post/multiply/, reference code github.com/zaydlang/multiplication-algorithm),
+// verified against hardware by the mgba test suite ("Multiply long tests"). Only the carry is
+// taken from it; the product itself comes from ordinary wrapping arithmetic.
+// ---------------------------------------------------------------------------------------------
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum MulKind {
+    /// MUL / MLA (32-bit result, signed operands).
+    Short,
+    /// SMULL / SMLAL.
+    LongSigned,
+    /// UMULL / UMLAL.
+    LongUnsigned,
+}
+
+#[inline]
+fn bit(x: u64, n: u32) -> u64 {
+    (x >> n) & 1
+}
+
+#[inline]
+fn mask(lo: u32, hi: u32) -> u64 {
+    let size = hi - lo;
+    if size >= 64 {
+        !0u64 << lo
+    } else {
+        ((1u64 << size) - 1) << lo
+    }
+}
+
+#[inline]
+fn sign_extend(value: u64, from: u32, to: u32) -> u64 {
+    if bit(value, from - 1) != 0 {
+        value | mask(from, to)
+    } else {
+        value
+    }
+}
+
+#[inline]
+fn asr(value: u64, shift: u32, size: u32) -> u64 {
+    let s = sign_extend(value, size, 64) as i64 >> shift;
+    s as u64 & mask(0, size)
+}
+
+/// Booth recoding of one 3-bit multiplier chunk: (addend, carry-in caused by the negation).
+#[inline]
+fn booth_recode(input: u64, chunk: u64) -> (u64, u64) {
+    let (o, c) = match chunk {
+        1 | 2 => (input, 0),
+        3 => (input.wrapping_mul(2), 0),
+        4 => (!(input.wrapping_mul(2)), 1),
+        5 | 6 => (!input, 1),
+        _ => (0, 0),
+    };
+    (o & 0x3_FFFF_FFFF, c)
+}
+
+#[inline]
+fn csa(a: u64, b: u64, c: u64) -> (u64, u64) {
+    (a ^ b ^ c, (a & b) | (b & c) | (c & a))
+}
+
+/// One multiplier cycle: four CSA stages over the next 8 multiplier bits.
+fn csa_array(partial_sum: u64, partial_carry: u64, multiplicand: u64, multiplier: u64, acc_shift: &mut u64) -> (u64, u64) {
+    let mut out = partial_sum;
+    let mut carry = partial_carry;
+    let mut final_out = 0u64;
+    let mut final_carry = 0u64;
+    for i in 0..4 {
+        let (addend, addend_carry) = booth_recode(multiplicand, (multiplier >> (2 * i)) & 7);
+        out &= 0x1_FFFF_FFFF;
+        carry &= 0x1_FFFF_FFFF;
+        let (mut ro, mut rc) = csa(out, addend & 0x1_FFFF_FFFF, carry);
+        // Inject the carry caused by the Booth negation.
+        rc = (rc << 1) | addend_carry;
+        // The bottom two bits are final: later addends are at least 4x larger.
+        final_out |= (ro & 3) << (2 * i);
+        final_carry |= (rc & 3) << (2 * i);
+        ro >>= 2;
+        rc >>= 2;
+        // Sign-extension handling of the partial sum / carry (the "TransH"/"High" tables).
+        let magic = bit(*acc_shift, 0) + (bit(carry, 32) ^ 1) + (bit(addend, 33) ^ 1);
+        ro |= magic << 31;
+        rc |= (bit(*acc_shift, 1) ^ 1) << 32;
+        *acc_shift >>= 2;
+        out = ro;
+        carry = rc;
+    }
+    final_out |= out << 8;
+    final_carry |= carry << 8;
+    (final_out, final_carry)
+}
+
+#[inline]
+fn ror128(lo: u64, hi: u64, shift: u32) -> (u64, u64) {
+    ((lo >> shift) | (hi << (64 - shift)), (hi >> shift) | (lo << (64 - shift)))
+}
+
+#[inline]
+fn adder(a: u32, b: u32, carry: bool) -> (u32, bool) {
+    let real = a as u64 + b as u64 + carry as u64;
+    (real as u32, real > u32::MAX as u64)
+}
+
+/// Carry flag left by an S-suffixed multiply of `multiplicand` (Rm) by `multiplier` (Rs) with
+/// `accumulator` folded in (0 when not accumulating; RdHi:RdLo for xMLAL, Rn for MLA).
+pub fn multiply_carry(kind: MulKind, multiplicand: u32, multiplier: u32, accumulator: u64) -> bool {
+    let signed = kind != MulKind::LongUnsigned;
+    let long = kind != MulKind::Short;
+    let alu_carry_in = multiplier & 1 != 0;
+    let mut multiplier = if signed { sign_extend(multiplier as u64, 32, 34) } else { multiplier as u64 & 0x1_FFFF_FFFF };
+    let multiplicand = if signed { sign_extend(multiplicand as u64, 32, 34) } else { multiplicand as u64 & 0x1_FFFF_FFFF };
+
+    let mut csa_out = accumulator;
+    let mut csa_carry = if multiplier & 1 != 0 { !multiplicand } else { 0 };
+    let mut acc_shift = accumulator >> 34;
+
+    let (mut ps_lo, mut ps_hi) = (csa_out & 1, 0u64);
+    let (mut pc_lo, mut pc_hi) = (csa_carry & 1, 0u64);
+    csa_out >>= 1;
+    csa_carry >>= 1;
+    (ps_lo, ps_hi) = ror128(ps_lo, ps_hi, 1);
+    (pc_lo, pc_hi) = ror128(pc_lo, pc_hi, 1);
+
+    let mut iterations = 0u32;
+    loop {
+        (csa_out, csa_carry) = csa_array(csa_out, csa_carry, multiplicand, multiplier, &mut acc_shift);
+        ps_lo |= csa_out & 0xFF;
+        pc_lo |= csa_carry & 0xFF;
+        csa_out >>= 8;
+        csa_carry >>= 8;
+        (ps_lo, ps_hi) = ror128(ps_lo, ps_hi, 8);
+        (pc_lo, pc_hi) = ror128(pc_lo, pc_hi, 8);
+        multiplier = asr(multiplier, 8, 33);
+        iterations += 1;
+        let terminate = if signed { multiplier == 0x1_FFFF_FFFF || multiplier == 0 } else { multiplier == 0 };
+        if terminate {
+            break;
+        }
+    }
+    ps_lo |= csa_out;
+    pc_lo |= csa_carry;
+
+    let correction = match iterations {
+        1 => 23,
+        2 => 15,
+        3 => 7,
+        _ => 31,
+    };
+    (ps_lo, ps_hi) = ror128(ps_lo, ps_hi, correction);
+    (pc_lo, pc_hi) = ror128(pc_lo, pc_hi, correction);
+    let _ = (ps_lo, ps_hi, pc_lo, alu_carry_in, adder);
+
+    if long || iterations != 4 {
+        bit(pc_hi, 63) != 0
+    } else {
+        bit(pc_hi, 31) != 0
+    }
+}
+
+#[cfg(test)]
+mod multiply_carry_tests {
+    use super::*;
+
+    // Expected CPSR values from the mgba test suite's multiply-long table (hardware-measured).
+    #[test]
+    fn umull_carry_matches_hardware_table() {
+        let c = |rm: u32, rs: u32| multiply_carry(MulKind::LongUnsigned, rm, rs, 0);
+        assert!(!c(1, 1));
+        assert!(!c(0xFFFF_FFFF, 0));
+        assert!(c(0xFFFF_FFFF, 0xFFFF_FFFF)); // -1 * -1: CPSR A
+        assert!(c(0x7FFF_FFFF, 0xFFFF_FFFF)); // $7F * -1: CPSR 2
+        assert!(c(0xFFFF_FFFF, 0x7FFF_FFFF)); // -1 * $7F: CPSR 2
+        assert!(!c(0x8000_0000, 0xFFFF_FFFF)); // $80 * -1 passed with C clear
+    }
+
+    #[test]
+    fn smull_carry_matches_hardware_table() {
+        let c = |rm: u32, rs: u32| multiply_carry(MulKind::LongSigned, rm, rs, 0);
+        assert!(!c(0xFFFF_FFFF, 0xFFFF_FFFF)); // -1 * -1 = 1: CPSR 0
+        assert!(c(0xFFFF_FFFF, 0x7FFF_FFFF)); // -1 * $7F: CPSR A
+        assert!(c(0x8000_0000, 0x7FFF_FFFF)); // $80 * $7F: CPSR A
+        assert!(!c(1, 1));
+    }
+}

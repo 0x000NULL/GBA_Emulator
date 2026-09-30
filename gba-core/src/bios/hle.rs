@@ -92,13 +92,13 @@ impl Bus {
             }
             swi::SQRT => regs.r[0] = isqrt(regs.r[0]),
             swi::ARCTAN => {
-                let (r0, r1, r3) = arctan(regs.r[0] as i16 as i32);
+                let (r0, r1, r3) = arctan(regs.r[0] as i32);
                 regs.r[0] = r0 as u32;
                 regs.r[1] = r1 as u32;
                 regs.r[3] = r3 as u32;
             }
             swi::ARCTAN2 => {
-                let (r0, r1) = arctan2(regs.r[0] as i16 as i32, regs.r[1] as i16 as i32);
+                let (r0, r1) = arctan2(regs.r[0] as i32, regs.r[1] as i32);
                 regs.r[0] = r0 as u32;
                 regs.r[1] = r1 as u32;
                 regs.r[3] = 0x170;
@@ -673,14 +673,15 @@ pub fn isqrt(v: u32) -> u32 {
 /// ArcTan as the BIOS computes it (polynomial in 1.14 fixed point). Returns (r0, r1, r3) with the
 /// intermediate values the BIOS leaves in r1/r3.
 pub fn arctan(i: i32) -> (i32, i32, i32) {
-    let a = -(i.wrapping_mul(i) >> 14);
-    let mut b = ((0xA9 * a) >> 14) + 0x390;
-    b = ((b * a) >> 14) + 0x91C;
-    b = ((b * a) >> 14) + 0xFB6;
-    b = ((b * a) >> 14) + 0x16AA;
-    b = ((b * a) >> 14) + 0x2081;
-    b = ((b * a) >> 14) + 0x3651;
-    b = ((b * a) >> 14) + 0xA2F9;
+    // 32-bit ARM arithmetic throughout: the BIOS uses plain MUL/ADD, so every step wraps.
+    let a = (i.wrapping_mul(i) >> 14).wrapping_neg();
+    let mut b = (0xA9i32.wrapping_mul(a) >> 14).wrapping_add(0x390);
+    b = (b.wrapping_mul(a) >> 14).wrapping_add(0x91C);
+    b = (b.wrapping_mul(a) >> 14).wrapping_add(0xFB6);
+    b = (b.wrapping_mul(a) >> 14).wrapping_add(0x16AA);
+    b = (b.wrapping_mul(a) >> 14).wrapping_add(0x2081);
+    b = (b.wrapping_mul(a) >> 14).wrapping_add(0x3651);
+    b = (b.wrapping_mul(a) >> 14).wrapping_add(0xA2F9);
     ((i.wrapping_mul(b)) >> 16, a, b)
 }
 
@@ -694,7 +695,8 @@ pub fn arctan2(x: i32, y: i32) -> (i32, i32) {
         return (if x >= 0 { 0 } else { 0x8000 }, 0);
     }
     if x == 0 {
-        return (if y >= 0 { 0x4000 } else { 0xC000 }, 0);
+        // The BIOS leaves y in r1 on this path (mgba suite "ArcTan2 00000000,y").
+        return (if y >= 0 { 0x4000 } else { 0xC000 }, y);
     }
     if y >= 0 {
         if x >= 0 {

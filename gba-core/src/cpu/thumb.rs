@@ -3,7 +3,7 @@
 
 use super::alu;
 use super::decode::{decode_thumb, ThumbOp};
-use super::regs::FLAG_T;
+use super::regs::{FLAG_C, FLAG_T};
 use super::Cpu;
 use crate::bus::{Access, MemoryBus};
 
@@ -248,6 +248,9 @@ fn alu_op<B: MemoryBus>(cpu: &mut Cpu, bus: &mut B, op: u32) {
             let v = d.wrapping_mul(rs);
             cpu.regs.r[rd] = v;
             cpu.regs.set_nz(v);
+            // Thumb MUL is MULS Rd, Rs, Rd: Rd is the multiplier, Rs the multiplicand.
+            let c = alu::multiply_carry(alu::MulKind::Short, rs, d, 0);
+            cpu.regs.set_flag(FLAG_C, c);
         }
         0xE => logical(cpu, rd, d & !rs),
         _ => logical(cpu, rd, !rs),
