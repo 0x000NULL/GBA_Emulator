@@ -59,9 +59,15 @@ fn compat_roms() {
         match run_entry(&file, e) {
             Ok(out) => {
                 let status = if out.passed() { "PASS" } else { "FAIL" };
-                eprintln!("{status} {} frames={} hash={:016x} golden_ok={:?}", e.path, out.frames, out.hash, out.golden_ok);
+                eprintln!(
+                    "{status} {} frames={} hash={:016x} golden_ok={:?} audio_frames={} audio_ok={:?}",
+                    e.path, out.frames, out.hash, out.golden_ok, out.audio_frames, out.audio_ok
+                );
                 if !out.passed() {
-                    failures.push(format!("{}: hash={:016x} golden_ok={:?}", e.path, out.hash, out.golden_ok));
+                    failures.push(format!(
+                        "{}: hash={:016x} golden_ok={:?} audio_frames={} audio_ok={:?}",
+                        e.path, out.hash, out.golden_ok, out.audio_frames, out.audio_ok
+                    ));
                 }
             }
             Err(err) => failures.push(format!("{}: error {err:#}", e.path)),

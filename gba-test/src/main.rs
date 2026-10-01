@@ -291,7 +291,7 @@ fn run() -> Result<bool> {
             if [600, 1200, 1800, 2400, 3000].contains(&(f + 1)) {
                 triage.checkpoints.push((f + 1, h));
             }
-            if gba.bus.apu.samples.iter().any(|[l, r]| l.unsigned_abs() > 64 || r.unsigned_abs() > 64) {
+            if gba_test::audio_active(&gba.bus.apu.samples) {
                 triage.audio_frames += 1;
             }
         }

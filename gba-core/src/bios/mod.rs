@@ -1,10 +1,15 @@
 //! BIOS: LLE from a 16 KiB image when supplied, otherwise HLE of the SWI functions.
 //! Source: GBATEK "GBA BIOS Functions", "BIOS RAM Usage", "Unpredictable Things" (BIOS reads).
 
+pub mod call;
 pub mod hle;
+pub mod sound;
 pub mod swi_timing;
+#[cfg(test)]
+pub mod test_util;
 
 use crate::CoreError;
+pub use call::{Continuation, Pending, SavedFrame, SoundMainStage};
 
 pub const BIOS_SIZE: usize = 0x4000;
 
@@ -19,9 +24,19 @@ pub const BIOS_OPENBUS_AFTER_IRQ: u32 = 0xE55E_C002;
 /// address; executing "from" it triggers the return sequence.
 pub const HLE_IRQ_RETURN_ADDR: u32 = 0x0000_0138;
 
-/// Address every SoundGetJumpList slot points at under HLE; executing "from" it returns to the
-/// caller (`bx lr`).
+/// Return trampoline for guest functions called *by* an HLE routine (the sound driver's
+/// `SoundInfo.func` callback, `CgbSound`, a jump-list handler delegating to a library routine):
+/// `lr` is set to this address before the jump, and executing "from" it resumes the pending
+/// routine (`call.rs`).
+pub const HLE_CALL_RETURN_ADDR: u32 = 0x0000_0140;
+
+/// Address of a plain `bx lr` stub in the BIOS region (jump-list slots with no HLE behaviour).
 pub const HLE_SOUND_STUB_ADDR: u32 = 0x0000_0150;
+
+/// SoundGetJumpList slot `i` is reported as `HLE_JUMPLIST_BASE + 4*i`; executing "from" one of
+/// these addresses runs the HLE handler for that slot (`sound/jumplist.rs`).
+pub const HLE_JUMPLIST_BASE: u32 = 0x0000_0200;
+pub const HLE_JUMPLIST_SLOTS: u32 = 36;
 
 #[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 pub struct Bios {
@@ -49,11 +64,15 @@ pub struct Bios {
     /// handler runs. See `hle::HALT_EXIT_CYCLES`.
     #[cfg_attr(feature = "savestate", serde(skip))]
     pub halt_exit: bool,
+    /// HLE routines that called into guest code and are waiting for it to return to
+    /// `HLE_CALL_RETURN_ADDR` (innermost last). Serialised: a state saved mid-callback resumes
+    /// the routine when the guest returns.
+    pub calls: Vec<Continuation>,
 }
 
 impl Bios {
     pub fn hle() -> Self {
-        Bios { image: None, open_bus: BIOS_OPENBUS_BOOT, intr_wait: None, intr_wait_r12: None, swi_count: 0, unimplemented: Vec::new(), swi_refill: false, halt_exit: false }
+        Bios { image: None, open_bus: BIOS_OPENBUS_BOOT, intr_wait: None, intr_wait_r12: None, swi_count: 0, unimplemented: Vec::new(), swi_refill: false, halt_exit: false, calls: Vec::new() }
     }
 
     pub fn lle(data: &[u8]) -> Result<Self, CoreError> {
@@ -62,7 +81,7 @@ impl Bios {
         }
         let mut img = Box::new([0u8; BIOS_SIZE]);
         img.copy_from_slice(data);
-        Ok(Bios { image: Some(img), open_bus: BIOS_OPENBUS_BOOT, intr_wait: None, intr_wait_r12: None, swi_count: 0, unimplemented: Vec::new(), swi_refill: false, halt_exit: false })
+        Ok(Bios { image: Some(img), open_bus: BIOS_OPENBUS_BOOT, intr_wait: None, intr_wait_r12: None, swi_count: 0, unimplemented: Vec::new(), swi_refill: false, halt_exit: false, calls: Vec::new() })
     }
 
     #[inline]
@@ -129,6 +148,9 @@ pub mod swi {
     pub const SOUND_DRIVER_VSYNC: u8 = 0x1D;
     pub const SOUND_CHANNEL_CLEAR: u8 = 0x1E;
     pub const MIDI_KEY2FREQ: u8 = 0x1F;
+    /// 20h-24h: undocumented music-player entry points (GBATEK "SoundWhatever0..4").
+    pub const SOUND_WHATEVER0: u8 = 0x20;
+    pub const SOUND_WHATEVER4: u8 = 0x24;
     pub const SOUND_DRIVER_VSYNC_OFF: u8 = 0x28;
     pub const SOUND_DRIVER_VSYNC_ON: u8 = 0x29;
     pub const SOUND_GET_JUMP_LIST: u8 = 0x2A;
@@ -167,6 +189,14 @@ pub mod swi {
             0x1D => "SoundDriverVSync",
             0x1E => "SoundChannelClear",
             0x1F => "MidiKey2Freq",
+            0x20 => "SoundWhatever0",
+            0x21 => "SoundWhatever1",
+            0x22 => "SoundWhatever2",
+            0x23 => "SoundWhatever3",
+            0x24 => "SoundWhatever4",
+            0x25 => "MultiBoot",
+            0x26 => "HardReset",
+            0x27 => "CustomHalt",
             0x28 => "SoundDriverVSyncOff",
             0x29 => "SoundDriverVSyncOn",
             0x2A => "SoundGetJumpList",

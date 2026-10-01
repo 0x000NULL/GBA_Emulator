@@ -404,3 +404,63 @@ frames = 30600
 input_file = "tests/inputs/tennis-match.toml"
 golden = "255fd3d58bfeed73"
 note = "story mode: Clay standing under the closed tunnel at the top of the Junior Class Court (no match reached: the story's first playable match sits behind the center-court cutscene, whose area was not found; six areas explored, all fenced dead ends); player control verified (LEFT 30600-30900 walks Clay to the west fence, DOWN 100 frames puts him on the court; 300 frames of DOWN exits the gate into a black map transition); BTME, 16 MB, SRAM 32K"
+
+# ---- BIOS sound driver HLE (2026-10-01): these titles' music goes through SWI 1A-1E / the
+# SoundGetJumpList routines. `audio_frames_min` pins that it plays (about half of the frames
+# measured with sound at the time of pinning); the pictures are the sweep's 1500-frame screens.
+
+[[rom]]
+path = "Games/Atari Anniversary Advance (USA).zip"
+frames = 1500
+input_file = "tests/inputs/triage.toml"
+golden = "ce71284f5173b8f3"
+audio_frames_min = 220
+note = "Pong-style game in progress on black (the triage Start presses enter a game from the menu); SoundDriverInit/Mode (2 ch, 21024 Hz)/Main/VSync, ChannelClear; 455 audio frames when pinned; AAVE, no save"
+
+[[rom]]
+path = "Games/Lizzie McGuire - On the Go! (USA).zip"
+frames = 1500
+input_file = "tests/inputs/triage.toml"
+golden = "8f4a31330a8e36fd"
+audio_frames_min = 490
+note = "When Cheerleaders Attack menu (Timed Game / Practice Game / Instructions); Init twice, Mode 000C0100 then 00840400 (the zero fields keep their values), channel 0 written at area+0x50 (the m4a layout); 993 audio frames when pinned; BLME, EEPROM"
+
+[[rom]]
+path = "Games/Pocket Professor - Kwik Notes - Volume One (USA).zip"
+frames = 1500
+input_file = "tests/inputs/triage.toml"
+golden = "c9306ccf80d0ab0d"
+audio_frames_min = 30
+note = "Pocket Professor Help page; the only sound is a fixed-rate (type 8) 22 kHz clip at frame ~800 with no `fr` written, played unresampled at the 21024 Hz mode rate (76 audio frames when pinned); VSyncOff/On used; BPJE, EEPROM"
+
+[[rom]]
+path = "Games/Rampage - Puzzle Attack (USA, Europe).zip"
+frames = 1500
+input_file = "tests/inputs/triage.toml"
+golden = "5bcd785ea6fef89e"
+audio_frames_min = 400
+note = "mode select (Clear / Puzzle / Rescue / Marathon); fixed-rate voices whose `fr` (946921) is not a rate, music from frame 678 (825 audio frames when pinned); 10512 Hz mode; ARXE, no save"
+
+[[rom]]
+path = "Games/X-Men - Reign of Apocalypse (USA, Europe).zip"
+frames = 1500
+input_file = "tests/inputs/triage.toml"
+golden = "ebfb20951b3561f0"
+audio_frames_min = 700
+note = "Select Game Slot screen; the game drives the documented channel API directly (MidiKey2Freq for every note); 1495 audio frames when pinned; AXME, EEPROM"
+
+[[rom]]
+path = "Games/Saibara Rieko no Dendou Mahjong (Japan).zip"
+frames = 1500
+input_file = "tests/inputs/triage.toml"
+golden = "5518f27cff126cd9"
+audio_frames_min = 600
+note = "story mode: 'from the beginning / continue' box; the game's own m4a player runs from SoundDriverMain's callback and uses the BIOS jump-list handlers (patt/pend/tempo/keysh/voice/vol/pan/bend/bendr/fine, RealClearChain, Clear64); 1270 audio frames when pinned; ASMJ, SRAM 32K"
+
+[[rom]]
+path = "Games/Cyberdrive Zoids - Kijuu no Senshi Hyuu (Japan).zip"
+frames = 1500
+input_file = "tests/inputs/triage.toml"
+golden = "9ab84c63912c2340"
+audio_frames_min = 500
+note = "Zoid select (Diablo Tiger alpha); the other jump-list title: SoundDriverMain called mid-frame (lines 8-107); 1094 audio frames when pinned; AZ3J, SRAM 32K"

@@ -23,11 +23,15 @@ pub struct RunOutcome {
     pub debug_log: Vec<String>,
     pub check: CheckResult,
     pub golden_ok: Option<bool>,
+    /// Frames whose audio output had a sample above +-64 (`gba_test::audio_active`).
+    pub audio_frames: u32,
+    /// `audio_frames >= audio_frames_min` when the entry sets a minimum.
+    pub audio_ok: Option<bool>,
 }
 
 impl RunOutcome {
     pub fn passed(&self) -> bool {
-        self.check.passed() && self.golden_ok != Some(false)
+        self.check.passed() && self.golden_ok != Some(false) && self.audio_ok != Some(false)
     }
 }
 
@@ -66,6 +70,7 @@ pub fn resolve_rom_path(p: &str) -> Result<PathBuf> {
 /// Run `gba` for `frames` frames applying `script`, then evaluate the requested check.
 pub fn run_and_check(gba: &mut Gba, frames: u32, script: &InputScript, check: &Check, reg: Option<&str>, expect: Option<&str>) -> Result<RunOutcome> {
     let mut log = Vec::new();
+    let mut audio_frames = 0;
     for f in 0..frames {
         if !script.is_empty() {
             gba.set_keys(script.keys_at(f)?);
@@ -74,6 +79,10 @@ pub fn run_and_check(gba: &mut Gba, frames: u32, script: &InputScript, check: &C
             StopReason::Done => {}
             StopReason::Breakpoint(h) => return Err(anyhow!("unexpected breakpoint {h:?} at frame {f}")),
         }
+        if crate::audio_active(&gba.bus.apu.samples) {
+            audio_frames += 1;
+        }
+        gba.bus.apu.samples.clear();
         log.append(&mut gba.take_debug_log());
     }
     let check = match check {
@@ -88,6 +97,8 @@ pub fn run_and_check(gba: &mut Gba, frames: u32, script: &InputScript, check: &C
         debug_log: log,
         check,
         golden_ok: None,
+        audio_frames,
+        audio_ok: None,
     })
 }
 
@@ -161,6 +172,9 @@ pub fn run_entry(file: &GoldenFile, e: &RomEntry) -> Result<RunOutcome> {
     if let Some(g) = &e.golden {
         let want = u64::from_str_radix(g.trim(), 16).map_err(|_| anyhow!("bad golden hash {g:?}"))?;
         out.golden_ok = Some(want == out.hash);
+    }
+    if let Some(min) = e.audio_frames_min {
+        out.audio_ok = Some(out.audio_frames >= min);
     }
     Ok(out)
 }

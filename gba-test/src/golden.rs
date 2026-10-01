@@ -14,6 +14,7 @@
 //! frames = 16
 //! input = [{ frame = 4, press = "A" }, { frame = 6, release = "A" }]
 //! expect = "1552/1552"                # mgba-suite END: p/t
+//! audio_frames_min = 200              # optional: frames with |sample| > 64 required over the run
 //! skip = "needs built suite.gba"      # skip with reason
 //! ```
 
@@ -87,6 +88,10 @@ pub struct RomEntry {
     pub input_file: Option<String>,
     #[serde(default)]
     pub expect: Option<String>,
+    /// Minimum number of frames whose audio output has a sample above +-64 (the sweep's
+    /// `audio_frames` measure); pins that a title's music actually plays.
+    #[serde(default)]
+    pub audio_frames_min: Option<u32>,
     #[serde(default)]
     pub skip: Option<String>,
     #[serde(default)]

@@ -7,10 +7,10 @@ and title/menu check, not a play-through; the scripted gameplay goldens live in 
 
 | Category | Titles | Meaning |
 |---|---|---|
-| ok | 1522 | moving picture with colour and audio |
+| ok | 1528 | moving picture with colour and audio |
 | waiting | 10 | reached a menu or entry screen that waits for a key the sweep does not press (verified by eye) |
 | silent | 0 | moving picture, no audio in the first 40 s (see the per-title note) |
-| needs-bios-sound-driver | 6 | runs, but its music needs the BIOS sound driver (SWI 1A-1E/2A), which the HLE BIOS does not provide |
+| needs-bios-sound-driver | 0 | runs, but its music needs a BIOS sound function the HLE BIOS does not provide (SWI 20h-24h) |
 | static | 0 | a picture that stopped changing before the last 20 s |
 | frozen | 0 | picture stopped and the CPU is idle or spinning |
 | black | 3 | no picture at all |
@@ -92,7 +92,7 @@ and title/menu check, not a play-through; the scripted gameplay goldens live in 
 | Asterix & Obelix - Bash Them All! (Europe) (En,Fr,De,Es,It,Nl) | AOBP | None | ok |  |
 | Asterix & Obelix XXL (Europe) (En,Fr,De,Es,It,Nl) | BLXP | Eeprom | ok |  |
 | Astro Boy - Omega Factor (USA) (En,Ja,Fr,De,Es,It) | BTAE | Eeprom | ok |  |
-| Atari Anniversary Advance (USA) | AAVE | None | needs-bios-sound-driver | runs; music needs the BIOS sound driver |
+| Atari Anniversary Advance (USA) | AAVE | None | ok | music through the HLE BIOS sound driver (2026-10-01); pinned in tests/compat.toml |
 | Atlantis - The Lost Empire (USA, Europe) | ATLE | None | ok |  |
 | Atomic Betty (USA, Europe) | BETE | None | ok |  |
 | ATV - Quad Power Racing (USA, Europe) | AQRE | None | ok |  |
@@ -787,7 +787,7 @@ and title/menu check, not a play-through; the scripted gameplay goldens live in 
 | Little League Baseball 2002 (USA) (En,Es) | ALCE | None | ok |  |
 | Little Mermaid, The - Magic in Two Kingdoms (USA, Europe) (En,Fr,De,Es,It) | BN9E | Eeprom | ok |  |
 | Little Patissier - Cake no Oshiro (Japan) | BLIJ | Eeprom | ok |  |
-| Lizzie McGuire - On the Go! (USA) | BLME | Eeprom | needs-bios-sound-driver | runs; music needs the BIOS sound driver |
+| Lizzie McGuire - On the Go! (USA) | BLME | Eeprom | ok | music through the HLE BIOS sound driver (2026-10-01); pinned in tests/compat.toml |
 | Lizzie McGuire 3 - Homecoming Havoc (USA) | BL3E | Eeprom | ok |  |
 | Lode Runner (Japan) | A39J | Eeprom | ok |  |
 | Looney Tunes - Back in Action (USA, Europe) (En,Fr,De,Es,It) | BLTE | Eeprom | ok |  |
@@ -1059,7 +1059,7 @@ and title/menu check, not a play-through; the scripted gameplay goldens live in 
 | Play Novel - Silent Hill (Japan) | ASHJ | Sram32K | ok |  |
 | Pocket Dogs (USA) | BTDE | Eeprom | ok |  |
 | Pocket Music (Europe) (En,Fr,De,Es,It) | AP9P | Sram32K | ok |  |
-| Pocket Professor - Kwik Notes - Volume One (USA) | BPJE | Eeprom | needs-bios-sound-driver | runs; music needs the BIOS sound driver |
+| Pocket Professor - Kwik Notes - Volume One (USA) | BPJE | Eeprom | ok | speech clip through the HLE BIOS sound driver (2026-10-01; fixed-rate voice); pinned in tests/compat.toml |
 | Pocky & Rocky with Becky (USA) | APKE | None | ok |  |
 | Pokemon - Emerald Version (USA, Europe) | BPEE | Flash128K | ok |  |
 | Pokemon - FireRed Version (USA, Europe) (Rev 1) | BPRE | Flash128K | ok |  |
@@ -1110,7 +1110,7 @@ and title/menu check, not a play-through; the scripted gameplay goldens live in 
 | R-Type III - The Third Lightning (USA) | BR3E | None | ok |  |
 | Racing Fever (Europe) (En,De,Es,It) | BRWP | None | ok |  |
 | Racing Gears Advance (USA) | BRAE | Eeprom | ok |  |
-| Rampage - Puzzle Attack (USA, Europe) | ARXE | None | needs-bios-sound-driver | runs; music needs the BIOS sound driver |
+| Rampage - Puzzle Attack (USA, Europe) | ARXE | None | ok | music through the HLE BIOS sound driver (2026-10-01; fixed-rate voices); pinned in tests/compat.toml |
 | Rapala Pro Fishing (USA, Europe) | BRFE | Eeprom | ok |  |
 | Ratatouille (USA) | BNLE | None | ok |  |
 | Rave Master - Special Attack Force! (USA) | BRME | Sram32K | ok |  |
@@ -1152,7 +1152,7 @@ and title/menu check, not a play-through; the scripted gameplay goldens live in 
 | Rugrats - I Gotta Go Party (USA, Europe) | AR5E | None | ok |  |
 | Sabre Wulf (USA) | AWUE | Eeprom | ok |  |
 | Sabrina the Teenage Witch - Potion Commotion (USA) (En,Fr,Es) | A3BE | None | ok |  |
-| Saibara Rieko no Dendou Mahjong (Japan) | ASMJ | Sram32K | needs-bios-sound-driver | runs; music needs the BIOS sound driver (SoundGetJumpList routines) |
+| Saibara Rieko no Dendou Mahjong (Japan) | ASMJ | Sram32K | ok | music through the HLE BIOS sound driver and its SoundGetJumpList routines (2026-10-01); pinned in tests/compat.toml |
 | Sakura Momoko no UkiUki Carnival (Japan) | ACLJ | Sram32K | ok |  |
 | Salt Lake 2002 (USA) (En,Fr,De,Es,It,Nl) | AS5E | Eeprom | ok |  |
 | Samsara Naga 1x2 (Japan) (Rev 2) | ASNJ | Eeprom | ok |  |
@@ -1519,7 +1519,7 @@ and title/menu check, not a play-through; the scripted gameplay goldens live in 
 | WWE - Survivor Series (USA, Europe) | BWWE | Eeprom | ok |  |
 | WWF - Road to WrestleMania (USA, Europe) | AWFE | None | ok |  |
 | X-Bladez - Inline Skater (USA) | AXIE | None | ok |  |
-| X-Men - Reign of Apocalypse (USA, Europe) | AXME | Eeprom | needs-bios-sound-driver | runs; music needs the BIOS sound driver |
+| X-Men - Reign of Apocalypse (USA, Europe) | AXME | Eeprom | ok | music through the HLE BIOS sound driver (2026-10-01); pinned in tests/compat.toml |
 | X-Men - The Official Game (USA) | B3XE | Eeprom | ok |  |
 | X2 - Wolverine's Revenge (USA, Europe) | AWVE | Eeprom | ok |  |
 | XS Moto (USA) | BXME | None | ok |  |

@@ -5,7 +5,8 @@
 //! and write with the WRAM (8-bit) or VRAM (16-bit unit) variants as documented.
 
 use super::swi_timing as timing;
-use super::{swi, HLE_IRQ_RETURN_ADDR, HLE_SOUND_STUB_ADDR};
+use super::sound::jumplist::ret_to_lr;
+use super::{swi, HLE_CALL_RETURN_ADDR, HLE_IRQ_RETURN_ADDR, HLE_JUMPLIST_BASE, HLE_JUMPLIST_SLOTS, HLE_SOUND_STUB_ADDR};
 use crate::bus::{Access, Bus, MemoryBus};
 use crate::cpu::regs::{Regs, MODE_IRQ, MODE_SVC, MODE_SYS};
 
@@ -87,19 +88,16 @@ impl Bus {
                 }
                 true
             }
-            // SoundGetJumpList entries: the real BIOS routines (the m4a "ply_*" track commands) are
-            // not emulated; calling one returns at once (`bx lr`), leaving the track pointer where
-            // the library's own dispatcher left it.
+            // A guest function called by an HLE routine returned (`call.rs`).
+            HLE_CALL_RETURN_ADDR => self.hle_call_return(regs),
+            // Plain `bx lr` stub.
             HLE_SOUND_STUB_ADDR => {
-                let lr = regs.r[14];
-                if lr & 1 != 0 {
-                    regs.set_cpsr(regs.cpsr | crate::cpu::regs::FLAG_T);
-                    regs.r[15] = lr & !1;
-                } else {
-                    regs.set_cpsr(regs.cpsr & !crate::cpu::regs::FLAG_T);
-                    regs.r[15] = lr & !3;
-                }
+                ret_to_lr(regs);
                 true
+            }
+            // SoundGetJumpList entries: the music player's track-command handlers.
+            a if a & 3 == 0 && (HLE_JUMPLIST_BASE..HLE_JUMPLIST_BASE + 4 * HLE_JUMPLIST_SLOTS).contains(&a) => {
+                self.jumplist_call(((a - HLE_JUMPLIST_BASE) / 4) as u8, regs)
             }
             _ => false,
         }
@@ -202,15 +200,7 @@ impl Bus {
                 let cur = self.io_read16(0x0400_0088);
                 self.io_write16(0x0400_0088, (cur & !0x3FE) | level);
             }
-            // SoundGetJumpList: 120h bytes of function pointers into the BIOS. Without a BIOS image
-            // every slot points at the HLE return stub, so a game that copies the table (the m4a
-            // library does, then overrides a few slots) no longer jumps to address 0.
-            swi::SOUND_GET_JUMP_LIST => {
-                let dst = regs.r[0] & !3;
-                for i in 0..0x120 / 4 {
-                    self.write32(dst.wrapping_add(i * 4), HLE_SOUND_STUB_ADDR, Access::S);
-                }
-            }
+            swi::SOUND_GET_JUMP_LIST => self.sound_get_jump_list(regs.r[0]),
             swi::MIDI_KEY2FREQ => {
                 let wave = regs.r[0];
                 let freq = self.read32(wave.wrapping_add(4), Access::N) as f64;
@@ -219,14 +209,15 @@ impl Bus {
                 regs.r[0] = (freq / 2f64.powf((180.0 - key - fine / 256.0) / 12.0)) as u32;
             }
             0x27 => self.irq.write_haltcnt(regs.r[2] as u8), // CustomHalt
-            // The BIOS sound driver (m4a) is not emulated: commercial games link their own copy.
-            swi::SOUND_DRIVER_INIT
-            | swi::SOUND_DRIVER_MODE
-            | swi::SOUND_DRIVER_MAIN
-            | swi::SOUND_DRIVER_VSYNC
-            | swi::SOUND_CHANNEL_CLEAR
-            | swi::SOUND_DRIVER_VSYNC_OFF
-            | swi::SOUND_DRIVER_VSYNC_ON => self.note_unimplemented(num),
+            // The BIOS sound driver (`sound/`).
+            swi::SOUND_DRIVER_INIT => self.sound_driver_init(regs.r[0]),
+            swi::SOUND_DRIVER_MODE => self.sound_driver_mode(regs.r[0]),
+            swi::SOUND_DRIVER_MAIN => self.sound_driver_main(regs),
+            swi::SOUND_DRIVER_VSYNC => self.sound_driver_vsync(),
+            swi::SOUND_CHANNEL_CLEAR => self.sound_channel_clear(),
+            swi::SOUND_DRIVER_VSYNC_OFF => self.sound_vsync_off(),
+            swi::SOUND_DRIVER_VSYNC_ON => self.sound_vsync_on(),
+            // 20h-24h (the undocumented music-player entries) and anything else.
             _ => self.note_unimplemented(num),
         }
         true
@@ -263,6 +254,7 @@ impl Bus {
         regs.r[15] = target;
         self.bios.intr_wait = None;
         self.bios.intr_wait_r12 = None;
+        self.bios.calls.clear();
     }
 
     /// IntrWait core. `discard`: clear the requested flags first and wait for a fresh one.
@@ -304,7 +296,7 @@ impl Bus {
     /// intro decompresses graphics while the m4a driver streams music: without this the FIFO
     /// drained during every LZ77/CpuFastSet call and logged ~55 underruns per frame).
     #[inline]
-    fn hle_service(&mut self) {
+    pub(crate) fn hle_service(&mut self) {
         if self.sched.now >= self.sched.next_deadline() {
             self.process_events();
             if self.dma.pending != 0 {
@@ -884,32 +876,9 @@ pub fn arctan2(x: i32, y: i32) -> (i32, i32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bios::test_util::{bus, peek, poke, swi};
     use crate::bios::Bios;
     use crate::cart::Cartridge;
-
-    fn bus() -> Bus {
-        let rom = vec![0u8; 0x100];
-        Bus::new(Cartridge::new(rom, None).unwrap(), Bios::hle())
-    }
-
-    fn poke(bus: &mut Bus, addr: u32, data: &[u8]) {
-        for (i, &b) in data.iter().enumerate() {
-            bus.write8(addr + i as u32, b, Access::N);
-        }
-    }
-
-    fn peek(bus: &Bus, addr: u32, n: usize) -> Vec<u8> {
-        (0..n).map(|i| bus.peek8(addr + i as u32)).collect()
-    }
-
-    fn swi(bus: &mut Bus, num: u8, r: [u32; 4]) -> Regs {
-        let mut regs = Regs::new();
-        regs.set_cpsr(MODE_SYS);
-        regs.r[..4].copy_from_slice(&r);
-        regs.r[15] = 0x0800_0004;
-        assert!(bus.hle_swi(num, &mut regs));
-        regs
-    }
 
     /// Cycles `hle_swi` charges for `num` when called from IWRAM (the comment-byte read costs
     /// 1 cycle there, so the result is pure BIOS cycles; the caller-side refill is not included).
@@ -956,22 +925,11 @@ mod tests {
         assert_eq!(with_halt - (b.sched.now - t0), u64::from(HALT_EXIT_CYCLES));
     }
 
-    /// SoundGetJumpList (SWI 2Ah) fills 120h bytes with function pointers; HLE points every slot
-    /// at a stub that returns to the caller in either instruction set, so the m4a library's
-    /// `MPlayJumpTableCopy` no longer leaves null entries (the game used to `bx` to address 0).
+    /// The plain `bx lr` stub at 0x150 returns to the caller in either instruction set; the
+    /// SoundGetJumpList slots themselves trap at 0x200+4i (`sound/jumplist.rs`).
     #[test]
-    fn sound_get_jump_list_fills_the_table_with_a_returning_stub() {
+    fn sound_stub_returns_to_the_caller_in_either_state() {
         let mut b = bus();
-        let mut regs = Regs::new();
-        regs.set_cpsr(MODE_SYS);
-        regs.r[0] = 0x0300_6C40;
-        regs.r[15] = 0x0300_0004;
-        assert!(b.hle_swi(0x2A, &mut regs));
-        assert!(b.bios.unimplemented.is_empty());
-        for i in 0..0x120 / 4 {
-            assert_eq!(b.peek32(0x0300_6C40 + i * 4), HLE_SOUND_STUB_ADDR, "slot {i}");
-        }
-        assert_eq!(b.peek32(0x0300_6C40 + 0x120), 0, "nothing past the 120h-byte buffer");
         // Thumb caller: `bl` to the slot value, the stub returns with bx lr into Thumb state.
         let mut r = Regs::new();
         r.set_cpsr(MODE_SYS);

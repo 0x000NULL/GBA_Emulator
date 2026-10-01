@@ -31,7 +31,14 @@ through: RAM regions align them, the 8-bit SRAM/Flash bus uses the low bits to p
   re-executes after the interrupt; a flag in `Bios` suppresses the "discard old flags" step on re-entry.
 - PC < 0x4000 under HLE: `bus.bios_hle_vector(regs)` emulates the BIOS IRQ dispatcher (vector 0x18:
   push r0-r3,r12,lr; r0=0x04000000; lr=0x138; pc=[0x03007FFC]) and the return stub at 0x138
-  (pop; `subs pc, lr, #4`).
+  (pop; `subs pc, lr, #4`); 0x150 is a plain `bx lr`; 0x200+4i (i < 36) are the SoundGetJumpList
+  routines (`bios/sound/jumplist.rs`, r0 = player, r1 = track, return via lr).
+- HLE routines call guest code (SoundDriverMain runs the game's music player and CGB routine) by
+  pushing a `Continuation` on `Bios::calls`, setting lr = 0x140 and jumping (`bios/call.rs`); the
+  trap at 0x140 pops it and runs the routine's next stage, and the final stage restores the
+  caller's r0-r3, r12, lr, CPSR and PC. Callbacks from an SWI run in System mode (the real
+  handler's mode), IRQs stay live during them, calls nest LIFO, and the stack is savestated.
+  The driver keeps all of its state in the game's work area (pointer at 0x03007FF0).
 - BIOS-region reads from outside the BIOS return the GBATEK open-bus values (E129F000 after boot,
   E3A02004 after SWI, E25EF004 during IRQ, E55EC002 after IRQ return).
 - Pipeline: two fetched words; the executing instruction came from an earlier fetch, so a store

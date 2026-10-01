@@ -74,7 +74,7 @@ pub mod bytes_arr {
 
 /// Magic + version prefix so stale states are rejected instead of misparsed.
 pub const STATE_MAGIC: &[u8; 4] = b"GBAS";
-pub const STATE_VERSION: u32 = 3;
+pub const STATE_VERSION: u32 = 4;
 
 #[derive(Debug)]
 pub enum StateError {
@@ -169,6 +169,46 @@ mod tests {
         assert_eq!(b.bus.read32(0x0200_0000, Access::N), mem_a);
         assert_eq!(b.bus.sched.now, a.bus.sched.now);
         assert_eq!(b.bus.ppu.vcount, a.bus.ppu.vcount);
+    }
+
+    /// A state saved while an HLE routine waits for guest code it called (SoundDriverMain inside
+    /// the game's music player) resumes the routine when the callback returns.
+    #[test]
+    fn savestate_mid_callback_resumes() {
+        use crate::bios::sound::area::info;
+        use crate::bios::sound::{ID_NUMBER, SOUND_INFO_PTR};
+        // swi SoundDriverMain; b .   and at 0x100 the callback: add r3, r0, #1; bx lr
+        let mut rom = test_rom();
+        for (i, w) in [0xEF1C_0000u32, 0xEAFF_FFFE].iter().enumerate() {
+            rom[i * 4..i * 4 + 4].copy_from_slice(&w.to_le_bytes());
+        }
+        for (i, w) in [0xE280_3001u32, 0xE12F_FF1E].iter().enumerate() {
+            rom[0x100 + i * 4..0x100 + i * 4 + 4].copy_from_slice(&w.to_le_bytes());
+        }
+        let new = || Gba::new(rom.clone(), Options { bios: BiosMode::Hle, save_type: None }).unwrap();
+        let mut a = new();
+        const AREA: u32 = 0x0300_2810;
+        a.bus.sound_driver_init(AREA);
+        a.bus.write32(AREA + info::FUNC, 0x0800_0100, Access::N);
+        a.bus.write32(AREA + info::INTP, 0x1234, Access::N);
+        assert!(a.run_until_pc(0x0800_0100, 1_000_000), "inside the callback");
+        assert_eq!(a.cpu.regs.r[0], 0x1234);
+        assert_eq!(a.cpu.regs.r[14], crate::bios::HLE_CALL_RETURN_ADDR);
+        assert_eq!(a.bus.bios.calls.len(), 1);
+        assert_eq!(a.bus.read32(SOUND_INFO_PTR, Access::N), AREA);
+        assert_eq!(a.bus.read32(AREA, Access::N), ID_NUMBER + 1, "locked");
+        let state = a.save_state();
+
+        let mut b = new();
+        b.load_state(&state).unwrap();
+        assert_eq!(b.bus.bios.calls.len(), 1, "the pending routine is in the state");
+        for g in [&mut a, &mut b] {
+            assert!(g.run_until_pc(0x0800_0004, 100_000), "back in the caller after the SWI");
+            assert!(g.bus.bios.calls.is_empty());
+            assert_eq!(g.bus.read32(AREA, Access::N), ID_NUMBER, "unlocked by the resumed routine");
+            assert_eq!(g.cpu.regs.r[0], 0, "the caller's r0 (the boot value) is back");
+        }
+        assert_eq!(a.cpu.state_hash(), b.cpu.state_hash());
     }
 
     #[test]

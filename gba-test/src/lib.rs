@@ -47,6 +47,11 @@ pub fn build_gba(rom_path: &Path, bios: Option<BiosMode>, save_type: Option<Save
 }
 
 /// xxh3-64 of the framebuffer as little-endian u16s.
+/// The sweep's "this frame made a sound" test: any sample above +-64 on either side.
+pub fn audio_active(samples: &[[i16; 2]]) -> bool {
+    samples.iter().any(|[l, r]| l.unsigned_abs() > 64 || r.unsigned_abs() > 64)
+}
+
 pub fn fb_hash(fb: &[u16]) -> u64 {
     let mut bytes = Vec::with_capacity(fb.len() * 2);
     for &p in fb {

@@ -90,9 +90,11 @@ def classify(r: dict, frames: int) -> str:
 
 
 def needs_bios_driver(r: dict) -> bool:
-    """Titles whose only audio path is the BIOS sound driver (SWIs 1A-1E, 28-2A): a known HLE gap."""
+    """Titles whose only audio path is a BIOS sound function the HLE does not provide. SWIs 1A-1E,
+    28-2A and the SoundGetJumpList routines are emulated since 2026-10-01; the undocumented
+    SoundWhatever0-4 (20h-24h) are not."""
     swi = r.get("unimplemented_swi", "") or ""
-    return r.get("category") == "silent" and any(k in swi for k in ("1A:", "1B:", "1C:", "1D:", "1E:", "2A:"))
+    return r.get("category") == "silent" and any(k in swi for k in ("20:", "21:", "22:", "23:", "24:"))
 
 
 def write_doc(rows, path: Path, when: str):
@@ -117,7 +119,7 @@ def write_doc(rows, path: Path, when: str):
         "needs-hardware": "needs cartridge hardware the emulator does not provide",
         "not-a-game": "not a GBA program (expansion data)",
         "silent": "moving picture, no audio in the first 40 s (see the per-title note)",
-        "needs-bios-sound-driver": "runs, but its music needs the BIOS sound driver (SWI 1A-1E/2A), which the HLE BIOS does not provide",
+        "needs-bios-sound-driver": "runs, but its music needs a BIOS sound function the HLE BIOS does not provide (SWI 20h-24h)",
         "static": "a picture that stopped changing before the last 20 s",
         "frozen": "picture stopped and the CPU is idle or spinning",
         "black": "no picture at all",

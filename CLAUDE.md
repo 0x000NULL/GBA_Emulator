@@ -26,8 +26,10 @@ deviations are logged in PROGRESS.md). `README.md` is the user-facing overview.
 ```
 gba-core/      no deps by default (feature `savestate` adds serde + bincode). cpu/ (ARM7TDMI), ppu/,
                apu/, bus/ (memory map, IO dispatch, resumable DMA exec, debug hooks), dma.rs, timers.rs,
-               irq.rs, keypad.rs, cart/ (ROM, SRAM/Flash/EEPROM), bios/ (LLE image + HLE SWIs),
-               sched.rs, timing.rs, gba.rs (main loop), state.rs (savestates)
+               irq.rs, keypad.rs, cart/ (ROM, SRAM/Flash/EEPROM), bios/ (LLE image + HLE SWIs; call.rs
+               guest callbacks from HLE routines; sound/ the BIOS sound driver: work area, mixer,
+               SoundGetJumpList track-command handlers), sched.rs, timing.rs, gba.rs (main loop),
+               state.rs (savestates)
 gba-test/      lib: load_rom (.gba/.zip), fb_hash (xxh3-64), checks (jsmolka / mgba-suite), manifest
                schema, input scripts; bin: headless CLI; tests/roms.rs: cargo test driver
 gba-frontend/  bin `gba`: app.rs (screens + game session), ui/ (software renderer: tiny-skia + fontdue,

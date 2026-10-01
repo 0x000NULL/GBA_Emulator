@@ -1,0 +1,15 @@
+# The library sweep's input schedule (`gba-test --triage`, `triage_keys`): Start for 10 frames in
+# pairs 100 frames apart (700/800, 1300/1400) and A for 10 frames at 1150. Used by the compat rows
+# that pin the BIOS sound driver titles, so their goldens match the sweep's 1500-frame pictures.
+steps = [
+  { frame = 700, press = "START" },
+  { frame = 710, release = "START" },
+  { frame = 800, press = "START" },
+  { frame = 810, release = "START" },
+  { frame = 1150, press = "A" },
+  { frame = 1160, release = "A" },
+  { frame = 1300, press = "START" },
+  { frame = 1310, release = "START" },
+  { frame = 1400, press = "START" },
+  { frame = 1410, release = "START" },
+]

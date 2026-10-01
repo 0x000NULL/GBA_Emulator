@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+**Accuracy**
+- The BIOS sound driver is emulated (SWI 1A-1E, 28, 29, 2A and the 36 SoundGetJumpList
+  routines): the six library titles that were silent without a BIOS file (Atari Anniversary
+  Advance, Lizzie McGuire: On the Go!, Pocket Professor: Kwik Notes, Rampage: Puzzle Attack,
+  X-Men: Reign of Apocalypse, Saibara Rieko no Dendou Mahjong) now play music; 1,528 of 1,543
+  library titles boot with sound. Save states made by 1.0.0 are not loadable (format 4).
+
 ## v1.0.0 — 2026-10-01
 
 First release. A from-scratch Game Boy Advance emulator in Rust: ARM7TDMI interpreter, PPU, APU,
@@ -30,7 +39,7 @@ BIOS file is needed.
 
 **Known gaps**
 - The BIOS sound driver (SWI 1A–1E, 2A) is not emulated: six titles that rely on it play without
-  music. A BIOS dump restores it.
+  music. A BIOS dump restores it. (Fixed in the next release.)
 - Hello Kitty Collection: Miracle Fashion Maker and both Tennis no Ouji-sama 2004 titles do not
   boot (details in PROGRESS.md).
 - Gamepad buttons cannot be rebound yet (keyboard can).

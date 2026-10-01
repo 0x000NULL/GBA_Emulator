@@ -11,15 +11,19 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   plus the two KH goldens in `tests/compat.toml` (title at frame 1800, gameplay at frame 27400).
 - **All jsmolka ROMs pass** (arm, thumb, memory, bios, nes, save/none, sram, flash64, flash128;
   ppu hello/shades/stripes by golden hash). `cargo test --workspace` is green: 328 core unit
-  tests, 149 frontend tests, 2 ROM-driver tests (~17 min with all 59 commercial goldens present).
+  tests, 149 frontend tests, 2 ROM-driver tests (~17 min with all 59 commercial goldens present;
+  381 core tests and 66 commercial goldens after the sound driver).
 - **v1.0.0 released (2026-10-01)**: tag `v1.0.0`; `.github/workflows/release.yml` builds the
   player for Windows x64, Linux x64, macOS x64/arm64 with `--profile dist` and attaches the
   archives to the GitHub release (`CHANGELOG.md` is the release body). Procedure in CLAUDE.md.
+- **BIOS sound driver HLE (2026-10-01)**: SWI 1Ah-1Eh, 28h, 29h and the SoundGetJumpList
+  routines are emulated (`gba-core/src/bios/sound/`, guest callbacks in `bios/call.rs`); the six
+  titles the sweep left silent play music, pinned by seven `tests/compat.toml` rows with
+  `audio_frames_min`. See the fix log of that date.
 - **Library sweep (2026-10-01)**: the user's full library (1,543 titles) runs through
-  `scripts/triage.py` (harness `gba-test --triage`): **1,522 boot to a moving picture with sound**,
-  10 stop at a menu the sweep does not answer (verified by eye), 6 run silent because they need
-  the BIOS sound driver (SWI 1A-1E/2A, the one known HLE gap), 1 needs its MP3 cartridge, 1 is
-  DS expansion data, and **3 are open**: Hello Kitty Collection - Miracle Fashion Maker and both
+  `scripts/triage.py` (harness `gba-test --triage`): **1,528 boot to a moving picture with sound**
+  (1,522 before the sound driver), 10 stop at a menu the sweep does not answer (verified by eye),
+  1 needs its MP3 cartridge, 1 is DS expansion data, and **3 are open**: Hello Kitty Collection - Miracle Fashion Maker and both
   Tennis no Ouji-sama 2004 titles (see "Library sweep" below). Per-title results:
   `docs/library-compat.md`. The sweep fixed five emulator bugs (fix logs dated 2026-10-01).
 - **GUI (M9, 2026-09-30)**: the frontend is now the "paper, ink, one red" interface from
@@ -49,7 +53,7 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
 | M1 | ARM7TDMI: all ARM+Thumb, modes, exceptions, flags | jsmolka `arm.gba`, `thumb.gba` | **DONE 2026-09-29**: 65 CPU unit tests; real 2-slot pipeline; mGBA-format trace |
 | M2 | Memory map, waitstates, DMA, timers, IRQ, HALTCNT | jsmolka `memory.gba`, `bios.gba`, `nes.gba`; mgba-suite memory/timing | **DONE 2026-09-30**: jsmolka green; mgba-suite Memory 1552/1552, DMA 1244/1244, Timing 2020/2020 pinned (prefetch buffer + BIOS-derived HLE SWI cycle costs + ROM-to-ROM DMA) |
 | M3 | PPU modes 0-5, OBJ, windows, blending, mosaic, timing | jsmolka ppu/* golden hashes; mgba-suite video | **DONE (jsmolka side) 2026-09-29**: goldens pinned, 56 PPU unit tests. Gaps: per-line OBJ cycle budget not modelled, OAM evaluated on the rendered line rather than one line early; mgba-suite video blocked as above |
-| M4 | BIOS HLE, every listed SWI | `bios.gba` under HLE; per-SWI unit tests | **DONE 2026-09-29**: `bios.gba` passes; all listed SWIs + IRQ vector/return emulation; 14 unit tests incl. LZ77/RL/Huffman encoder round trips. Sound-driver SWIs (1A-1E, 28, 29) are logged no-ops. LLE differential deferred (no BIOS image) |
+| M4 | BIOS HLE, every listed SWI | `bios.gba` under HLE; per-SWI unit tests | **DONE 2026-09-29**: `bios.gba` passes; all listed SWIs + IRQ vector/return emulation; 14 unit tests incl. LZ77/RL/Huffman encoder round trips. Sound driver (1A-1E, 28, 29, 2A and its 36 routines) added 2026-10-01 with 45 tests. LLE differential deferred (no BIOS image) |
 | M5 | Save detection, SRAM/Flash/EEPROM, `<rom>.sav` | jsmolka save/*; round trip | **DONE 2026-09-29**: none/sram/flash64/flash128 pass (flash entries need 400 frames: tests 10/11 program 64K bytes one command sequence each); 8 cart unit tests incl. EEPROM protocol; `.sav` persistence in the frontend |
 | M6 | KH:CoM title -> new game -> first room | title golden + input script | **DONE 2026-09-29**: see "Where things stand". Other priority titles reach title/file screens; Minish Cap reaches gameplay (golden + script) |
 | M7 | APU PSG + FIFO + mixing | PCM capture vs mGBA | **DONE (underrun half) 2026-09-29**: 70 APU unit tests; KH title capture (`--pcm`, 65536 Hz) has 0 underruns over frames 1200-1800, clean stereo music, no clipping. **Reference comparison deferred** (manual: `scripts/compare-wav.py`) |
@@ -134,7 +138,10 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   count-up rows, not derived). Prefetch buffer: the data-access stall rule is empirical
   (see the prefetch fix log) (ROM-to-ROM DMA timing was fixed later, see the ROM-to-ROM fix log).
 - BIOS HLE: BgAffineSet/ObjAffineSet use f64 trig instead of the BIOS sine table (tiny rounding
-  differences possible); division by zero returns mGBA's values instead of hanging.
+  differences possible); division by zero returns mGBA's values instead of hanging. The sound
+  driver's mixer is a design of ours (output scaling, reverb, pseudo-echo, fixed-rate voices,
+  next-slot write; see its fix log); SWI 20h-24h (SoundWhatever0-4) stay unimplemented, and
+  `ply_port`, FadeOutBody's fade-in and TrkVolPitSet are fallbacks no title seen depends on.
 - Cartridge: no GPIO/RTC (none of the target games use it); SRAM open-bus when the backend is EEPROM
   reads 0xFF.
 - Audio: HLE SWIs still complete atomically with respect to IRQs (an IRQ raised during a BIOS
@@ -423,22 +430,92 @@ Emulator fixes that came out of it (details in the dated fix logs below):
 - IntrWait parks with r12 = 0x04000000 as the real BIOS does and restores the caller's: Taito's
   dispatcher sets the flag mirror through r12 (Bubble Bobble / Elevator Action Old & New).
 - SoundGetJumpList (SWI 2A) fills its table with a returning stub instead of zeros, so m4a games
-  no longer branch to address 0 (Saibara Mahjong, Cyberdrive Zoids; their music still needs the
-  BIOS driver).
+  no longer branch to address 0 (Saibara Mahjong, Cyberdrive Zoids). Superseded the same day by
+  the full driver (see "Fix log (BIOS sound driver HLE)"): the six silent titles play.
 Open: Hello Kitty (uninitialised heap walk through BIOS open-bus values; mGBA escapes the loop),
 Tennis no Ouji-sama 2004 x2 (an uninitialised local corrupts the game's IWRAM mixer; depends on
-IRQ phase), and the BIOS sound driver itself (6 titles silent; needs an HLE port of the m4a
-driver or a BIOS dump).
+IRQ phase).
 
 ## Next steps, in order of value
-1. BIOS sound driver HLE (SoundDriverInit/Mode/Main/VSync, SoundChannelClear, the SWI 2A
-   routines): 6 library titles are silent without it.
-2. Hello Kitty Collection and the two Tennis no Ouji-sama 2004 titles (see "Library sweep").
-3. Misc edge H-blank bit / DMA prefetch rows (6/12, see "Misc edge attempt").
-4. Initial D garage screens (phone, driving technique) render blank content areas: verify and fix
+1. Hello Kitty Collection and the two Tennis no Ouji-sama 2004 titles (see "Library sweep").
+2. Misc edge H-blank bit / DMA prefetch rows (6/12, see "Misc edge attempt").
+3. Initial D garage screens (phone, driving technique) render blank content areas: verify and fix
    (see Known gaps). Mario Tennis: the first match is behind the story's center-court cutscene;
    not scripted.
-5. Reference-emulator audio comparison (needs an mGBA build with headless audio dump).
+4. Reference-emulator audio comparison (needs an mGBA build with headless audio dump); would also
+   settle the sound driver's output scaling, reverb and fixed-rate rules (see its fix log).
+5. Gamepad rebinding in Settings (keyboard only today).
+
+## Fix log (BIOS sound driver HLE, 2026-10-01)
+
+The six titles the library sweep left silent (Atari Anniversary Advance, Lizzie McGuire - On the
+Go!, Pocket Professor - Kwik Notes, Rampage - Puzzle Attack, X-Men - Reign of Apocalypse, Saibara
+Rieko no Dendou Mahjong) now play music under HLE: SWI 1Ah-1Eh, 28h, 29h and the 36
+SoundGetJumpList routines are emulated in `gba-core/src/bios/sound/` (clean room: GBATEK, the
+games' own memory traffic, and the published m4a structure layouts as an interface spec; no BIOS
+disassembly, no emulator source, no decompiled function bodies). Cyberdrive Zoids, the other
+jump-list title, is pinned too. Seven `tests/compat.toml` rows with `audio_frames_min` gate it.
+
+What the games do (measured before the change, `--log-swi`, `--watch`):
+- Five titles use the documented work-area API (Init, Mode, Main, VSync, ChannelClear; X-Men
+  calls MidiKey2Freq for every note). They write their channels at `area+0x50+0x40*n` with the
+  playback rate at +0x20 and the wave pointer at +0x24, i.e. the m4a `SoundInfo`/`SoundChannel`
+  layout, not the abbreviated struct GBATEK prints (`fr` at +0xC). Saibara hands the real BIOS
+  an m4a-layout area (`func` +0x20, `intp` +0x24, `CgbSound` +0x28, jump table +0x34), which
+  settles that the BIOS consumes that layout.
+- SoundDriverMain is what runs the game's sequencer: it calls `func(intp)` (MPlayMain, chained
+  through every music player) and then `CgbSound`, then mixes. With 1Ch a no-op Saibara's song
+  started but never advanced and no jump-list command was ever dispatched.
+- Saibara's own copies of SoundInit / SampleFreqSet / VSync (watched on the IO registers) give
+  the register programming: SOUNDCNT_H = A90Eh (FIFO A right, FIFO B left, timer 0, FIFO resets),
+  SOUNDBIAS high byte 42h, timer 0 stopped / reloaded / started, and the per-period DMA restart
+  "DMA1/2CNT = 84400004h (four words immediately), CNT_H = 0400h, CNT_H = B600h" with the VSync
+  counter running 9..1,0 -> reload 9 (restart when the decremented count reaches 0 or wraps).
+  Its work area for rate 3 reads samplesPerVBlank 0xB0, pcmFreq 0x2910, pcmDmaPeriod 9,
+  divFreq 0x31E: all reproduced by the derived table (period = 16777216/Hz, which divides the
+  280896-cycle frame exactly for all twelve GBATEK rates; divFreq = period/2).
+
+Design (ours, documented as such):
+- **Guest callbacks** (`bios/call.rs`): an HLE routine that must run guest code pushes a
+  `Continuation` (saved frame + what remains to do) on `Bios::calls`, sets `lr` = 0x140 and jumps.
+  The trap at 0x140 pops it and runs the next stage; the last stage restores r0-r3, r12, lr, CPSR
+  and PC like the real handler's `movs pc, lr`. Callbacks from an SWI run in System mode on the
+  user stack (GBATEK), IRQs stay live, calls nest (LIFO), and the stack is in the savestate
+  (`STATE_VERSION` 4).
+- **Jump-list slots** are 36 distinct trap addresses 0x200+4i (SWI 2Ah writes exactly 36 words:
+  the library keeps its CGB channel block right after the table). The traced contract: r0 =
+  player, r1 = track, `cmdPtr` already past the command byte, return `bx lr`, `flags == 0` means
+  the track ended. Slots 0-29 are the track commands (index = command byte - B1h), 30-35 the
+  helpers SampleFreqSet, TrackStop, FadeOutBody, TrkVolPitSet, RealClearChain and a 64-byte
+  clear. Saibara overrides 8, 17, 19, 28-33 with its own ROM copies; its title song uses
+  patt/pend/tempo/keysh/voice/vol/pan/bend/bendr/fine, RealClearChain (every note end) and the
+  clear (every track start). `ply_fine` delegates channel stopping to whatever slot 31 the table
+  holds (the library's TrackStop, which also silences CGB oscillators) through a nested callback.
+  `ply_port` (undocumented) only skips its two bytes; FadeOutBody implements the fade-out
+  direction only; TrkVolPitSet's scaling is a fitted fallback (every title seen installs its own).
+- **Mixer** (`bios/sound/mixer.rs`): once per Main, into ring slot `(period - cnt + 1) % period`
+  (the slot the DMA fetches next; the DMA is on slot `period - cnt`). Envelope per GBATEK (attack
+  adds `at`, decay and release multiply by `de`/`re` over 256, sustain holds `su`), STOP stays set
+  during the release so the channel still reads as in use (the published "on" mask C7h),
+  pseudo-echo after the release (`IEC`), one-shot and forward-loop waves, nearest-sample
+  resampling at `fr / pcmFreq`, output `clamp((sum(sample * ev*vol>>8) * masterVolume) >> 12)`
+  (one channel at full level reaches +-119), reverb = `(old_right + old_left) * reverb >> 8` from
+  the bytes being overwritten, first buffer half = right (FIFO A), second = left (FIFO B).
+  **Fixed-rate voices** (`type` bit 3) are copied one source sample per output sample: Pocket
+  Professor pairs 22 kHz clips with the 21024 Hz mode and never writes `fr`; Rampage writes an
+  `fr` of 946921, meaningless as a rate, and its wave headers carry the placeholder 01234567h.
+  Decay to a sustain level of zero ends the channel (design choice). Cost: ~6 cycles per
+  channel-sample and 3 per output sample, charged in 32-sample chunks with `hle_service()`.
+- Mode: zero fields leave the value (Lizzie's two calls); the D/A field sets SOUNDBIAS bits 14-15;
+  a rate change clears the buffer, re-arms timer 0 and restarts the DMA. VSyncOff marks the area
+  (ident+10) so Main and VSync idle until VSyncOn, whose next VSync restarts the stream.
+
+Results (1500 frames, triage input): audio frames Atari 455, Lizzie 993, Pocket Professor 76 (one
+clip; nothing else sounds in that window), Rampage 825, X-Men 1495, Saibara 1270, Zoids 1094;
+no clipping in any capture, peaks 17k-30k of 32k; 0-2 FIFO underruns per run. KH `--bench 1200`
+unchanged. Not verified against hardware: the output scaling, reverb and pseudo-echo formulas,
+the FIX rule beyond the two titles, and whether the real mixer writes the next slot or two ahead
+(ours writes the next; every title calls Main well before the DMA reaches that slot).
 
 ## Fix log (ROM-to-ROM DMA, Halt exit; 2026-09-30)
 mgba-suite "Timing tests" 1956/2020 -> 2020/2020 and "SIO timing tests" 0/4 -> 4/4; every other
