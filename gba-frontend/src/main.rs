@@ -17,7 +17,10 @@ mod debug_ui;
 mod input;
 mod overlay;
 mod pacing;
+mod render_tests;
 mod saves;
+mod screens;
+mod slots;
 mod ui;
 mod window;
 

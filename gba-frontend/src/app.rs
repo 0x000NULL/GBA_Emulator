@@ -8,13 +8,18 @@
 use crate::audio::AudioOut;
 use crate::config::{self, Cli, AUDIO_PACE_MAX_ADJUST, CPU_HZ, FAST_FORWARD_PRESENT, SAVE_INTERVAL_FRAMES, TITLE_REFRESH};
 use crate::debug_ui::{self, Hotkey, HotkeyMap, TitleInfo};
+use crate::overlay::pause::{Outcome, PauseMenu};
+use crate::overlay::Overlay;
 use crate::pacing::{paced_period, FpsCounter, Pacer};
 use crate::saves::SaveManager;
+use crate::slots::{self, SlotSet};
+use crate::ui::fmt::frames_to_secs;
 use crate::ui::input::{KeyMap, UiInput};
+use crate::ui::tokens::pixel::DIM_EVY;
 use crate::ui::{self, Canvas, Fonts, NIGHT};
 use crate::window::Video;
 use anyhow::Result;
-use gba_core::{BiosMode, Gba, Keys};
+use gba_core::{BiosMode, FrameBuffer, Gba, Keys};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -33,6 +38,8 @@ pub enum Screen {
     Bench,
 }
 
+pub const TOAST_TIME: Duration = Duration::from_millis(1500);
+
 /// A loaded game and everything that runs it.
 pub struct Session {
     pub gba: Gba,
@@ -40,6 +47,7 @@ pub struct Session {
     pub game: String,
     pub code: String,
     pub saves: SaveManager,
+    pub slots: SlotSet,
     pub audio: Option<AudioOut>,
     pub pacer: Pacer,
     pub fps: FpsCounter,
@@ -52,6 +60,10 @@ pub struct Session {
     last_present: Instant,
     last_title: Instant,
     pub started: Instant,
+    pub menu: Option<PauseMenu>,
+    pub toast: Option<(String, Instant)>,
+    /// Scratch frame the overlay draws into (never the core's own framebuffer).
+    scratch: Box<FrameBuffer>,
 }
 
 impl Session {
@@ -72,6 +84,7 @@ impl Session {
             Ok(false) => {}
             Err(e) => eprintln!("warning: {e:#}"),
         }
+        let slots = SlotSet::scan(rom, Some(gba.bus.cart.rom()));
         let audio = if no_audio {
             None
         } else {
@@ -90,6 +103,7 @@ impl Session {
             game,
             code,
             saves,
+            slots,
             audio,
             pacer: Pacer::new(),
             fps: FpsCounter::new(),
@@ -101,6 +115,9 @@ impl Session {
             last_present: now,
             last_title: now,
             started: now,
+            menu: None,
+            toast: None,
+            scratch: vec![0u16; gba_core::SCREEN_W * gba_core::SCREEN_H].into_boxed_slice().try_into().expect("frame"),
         })
     }
 
@@ -159,6 +176,31 @@ impl Session {
         }
     }
 
+    /// Play time as the design counts it: frames rendered by the machine.
+    pub fn play_secs(&self) -> u64 {
+        frames_to_secs(self.gba.bus.ppu.frame_count)
+    }
+
+    pub fn show_toast(&mut self, text: impl Into<String>) {
+        let text = text.into();
+        println!("{text}");
+        self.toast = Some((text, Instant::now()));
+    }
+
+    /// Save the machine into `slot`; reports through the pause bar or a toast.
+    pub fn save_slot(&mut self, slot: u8) -> Result<()> {
+        let meta = slots::save(&self.gba, &self.rom, slot, self.play_secs())?;
+        self.slots.set(meta);
+        Ok(())
+    }
+
+    pub fn load_slot(&mut self, slot: u8) -> Result<(), slots::SlotError> {
+        let meta = slots::load(&mut self.gba, &self.rom, slot)?;
+        self.slots.set(meta);
+        self.resync();
+        Ok(())
+    }
+
     pub fn title(&self) -> String {
         debug_ui::format_title(&TitleInfo {
             game: &self.game,
@@ -168,6 +210,28 @@ impl Session {
             fast_forward: self.fast,
             audio: self.audio.as_ref().map(|a| (a.device_rate(), a.underruns())),
         })
+    }
+
+    /// The frame to present: the live framebuffer, or a copy with the overlay drawn on it.
+    fn frame_to_present(&mut self, now: Instant) -> &[u16] {
+        if let Some((_, t)) = self.toast {
+            if now.duration_since(t) >= TOAST_TIME {
+                self.toast = None;
+            }
+        }
+        if self.menu.is_none() && self.toast.is_none() {
+            return &self.gba.framebuffer()[..];
+        }
+        self.scratch.copy_from_slice(&self.gba.framebuffer()[..]);
+        let mut o = Overlay::new(&mut self.scratch);
+        if let Some(menu) = &self.menu {
+            o.dim(DIM_EVY);
+            let infos = self.slots.infos();
+            menu.draw(&mut o, &infos, now);
+        } else if let Some((text, _)) = &self.toast {
+            o.toast(text);
+        }
+        &self.scratch[..]
     }
 }
 
@@ -196,6 +260,8 @@ pub struct App {
     pub opts: RunOptions,
     pub canvas: Canvas,
     pub quit: bool,
+    /// Current slot (1..=8): what in-game F1/F3 act on; the last slot used in any menu.
+    pub slot_cursor: u8,
     /// Frame step requested while paused (N).
     step: bool,
 }
@@ -216,25 +282,35 @@ impl App {
             opts,
             canvas: Canvas::new(ui::tokens::layout::DESIGN_W, ui::tokens::layout::DESIGN_H, Fonts::new()),
             quit: false,
+            slot_cursor: 1,
             step: false,
         };
         if let Some(rom) = &cli.rom {
             app.start_game(rom)?;
         }
-        app
-            .session
-            .as_ref()
-            .map(|_| ())
-            .ok_or_else(|| anyhow::anyhow!("no ROM given (the library screen arrives in the next milestone)"))?;
+        if app.session.is_none() {
+            anyhow::bail!("no ROM given (the library screen arrives in the next milestone)");
+        }
         Ok(app)
     }
 
     /// Boot `rom` and switch to the Game screen.
     pub fn start_game(&mut self, rom: &Path) -> Result<()> {
         let s = Session::new(rom, self.opts.bios.clone(), self.opts.no_audio, self.opts.mute)?;
+        self.slot_cursor = s.slots.latest().map(|m| m.slot).unwrap_or(1);
         self.session = Some(s);
         self.screen = Screen::Game;
         Ok(())
+    }
+
+    /// Flush saves and drop the session (QUIT in the pause menu).
+    pub fn end_game(&mut self) {
+        if let Some(mut s) = self.session.take() {
+            s.flush_save();
+        }
+        self.screen = Screen::Library;
+        // the Library arrives in the next milestone; until then quitting a game quits the app
+        self.quit = true;
     }
 
     /// Initial window size: `--scale N` means exactly 240N x 160N, else the design size.
@@ -258,48 +334,136 @@ impl App {
         self.step = false;
         match self.screen {
             Screen::Game => self.update_game(input, video)?,
-            Screen::Library | Screen::SaveStates { .. } | Screen::Settings { .. } | Screen::Bench => {
-                // later milestones
+            Screen::Library => {}
+            Screen::SaveStates { back } | Screen::Settings { back } => {
+                // placeholders until their milestones: X / Esc return
+                if input.action(crate::ui::input::Action::Back) || input.pressed(minifb::Key::Escape) {
+                    self.go_back(back);
+                }
+            }
+            Screen::Bench => {
+                if self.hotkeys.pressed(input).contains(&Hotkey::Bench) {
+                    self.screen = Screen::Game;
+                }
             }
         }
         Ok(())
     }
 
+    fn go_back(&mut self, back: Back) {
+        self.screen = match back {
+            Back::Game if self.session.is_some() => Screen::Game,
+            _ => Screen::Library,
+        };
+    }
+
     fn update_game(&mut self, input: &UiInput, video: &Video) -> Result<()> {
         let hotkeys: Vec<Hotkey> = self.hotkeys.pressed(input);
+        let now = Instant::now();
+        let slot = self.slot_cursor;
         let Some(s) = self.session.as_mut() else { return Ok(()) };
+
+        // --- pause menu ----------------------------------------------------------------------
+        if let Some(mut menu) = s.menu.take() {
+            let mut keep = true;
+            if hotkeys.contains(&Hotkey::Pause) {
+                keep = false;
+            }
+            if hotkeys.contains(&Hotkey::Bench) {
+                self.screen = Screen::Bench;
+            }
+            if hotkeys.contains(&Hotkey::SaveStates) {
+                self.screen = Screen::SaveStates { back: Back::Game };
+            }
+            if hotkeys.contains(&Hotkey::FrameStep) {
+                self.step = true;
+            }
+            let infos = s.slots.infos();
+            match menu.handle(input, &infos, now) {
+                Outcome::None => {}
+                Outcome::Resume => keep = false,
+                Outcome::SaveSlot(n) => {
+                    self.slot_cursor = n;
+                    match s.save_slot(n) {
+                        Ok(()) => menu.show_message(format!("SAVED TO SLOT {n}"), now),
+                        Err(e) => {
+                            eprintln!("state save failed: {e:#}");
+                            menu.show_message(format!("SAVE FAILED: {e}"), now);
+                        }
+                    }
+                }
+                Outcome::LoadSlot(n) => {
+                    self.slot_cursor = n;
+                    match s.load_slot(n) {
+                        Ok(()) => {
+                            println!("state loaded from slot {n}");
+                            keep = false;
+                        }
+                        Err(e) => {
+                            eprintln!("state load failed: {e}");
+                            menu.show_message(format!("LOAD FAILED: {e}"), now);
+                        }
+                    }
+                }
+                Outcome::Settings => self.screen = Screen::Settings { back: Back::Game },
+                Outcome::Bench => self.screen = Screen::Bench,
+                Outcome::Quit => {
+                    self.end_game();
+                    return Ok(());
+                }
+                Outcome::OpenStates => self.screen = Screen::SaveStates { back: Back::Game },
+            }
+            if keep {
+                s.menu = Some(menu);
+            } else {
+                s.set_paused(false);
+            }
+            if self.step {
+                s.step();
+            }
+            return Ok(());
+        }
+
+        // --- hotkeys while playing -------------------------------------------------------------
         for hk in hotkeys {
             match hk {
                 Hotkey::Pause => {
-                    let p = !s.paused;
-                    s.set_paused(p);
-                    if p {
-                        println!("paused (N = frame step, P/Esc = resume)");
-                    }
+                    s.set_paused(true);
+                    s.menu = Some(PauseMenu::new(slot));
                 }
                 Hotkey::FrameStep => self.step = s.paused,
                 Hotkey::DumpIo => debug_ui::dump_io(&mut s.gba),
                 Hotkey::Screenshot => match debug_ui::screenshot(&s.gba, &s.rom) {
-                    Ok(p) => println!("screenshot: {}", p.display()),
+                    Ok(p) => {
+                        let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                        s.show_toast(format!("SCREENSHOT {name}"));
+                    }
                     Err(e) => eprintln!("screenshot failed: {e:#}"),
                 },
                 Hotkey::SaveNow => match s.saves.force_write(&mut s.gba) {
-                    Ok(true) => println!("save written: {}", s.saves.path().display()),
-                    Ok(false) => println!("this cartridge has no save memory"),
+                    Ok(true) => s.show_toast(".SAV WRITTEN"),
+                    Ok(false) => s.show_toast("NO SAVE MEMORY"),
                     Err(e) => eprintln!("save failed: {e:#}"),
                 },
-                Hotkey::SaveState => match debug_ui::save_state(&s.gba, &s.rom) {
-                    Ok(p) => println!("state saved: {}", p.display()),
+                Hotkey::SaveState => match s.save_slot(slot) {
+                    Ok(()) => s.show_toast(format!("SAVED TO SLOT {slot}")),
                     Err(e) => eprintln!("state save failed: {e:#}"),
                 },
-                Hotkey::LoadState => match debug_ui::load_state(&mut s.gba, &s.rom) {
-                    Ok(p) => {
-                        println!("state loaded: {}", p.display());
-                        s.resync();
+                Hotkey::LoadState => match s.load_slot(slot) {
+                    Ok(()) => s.show_toast(format!("LOADED SLOT {slot}")),
+                    Err(e) => {
+                        eprintln!("state load failed: {e}");
+                        s.show_toast(format!("LOAD FAILED: {e}"));
                     }
-                    Err(e) => eprintln!("state load failed: {e:#}"),
                 },
-                Hotkey::Bench | Hotkey::SaveStates => {}
+                Hotkey::Bench => {
+                    self.screen = Screen::Bench;
+                    s.set_paused(true);
+                }
+                Hotkey::SaveStates => {
+                    self.screen = Screen::SaveStates { back: Back::Game };
+                    s.set_paused(true);
+                }
             }
         }
         s.set_fast(video.is_key_down(self.hotkeys.fast_forward));
@@ -320,8 +484,10 @@ impl App {
             Screen::Game => {
                 let scale = self.picture_scale(w as u32, h as u32);
                 let Some(s) = self.session.as_mut() else { return Ok(()) };
+                let now = Instant::now();
                 if !s.fast || s.last_present.elapsed() >= FAST_FORWARD_PRESENT {
-                    video.present_game(&s.gba.framebuffer()[..], scale, NIGHT.bg)?;
+                    let fb = s.frame_to_present(now);
+                    video.present_game(fb, scale, NIGHT.bg)?;
                     s.last_present = Instant::now();
                 } else {
                     video.poll();
@@ -331,9 +497,23 @@ impl App {
                     s.last_title = Instant::now();
                 }
             }
-            _ => {
+            Screen::SaveStates { .. } | Screen::Settings { .. } | Screen::Library => {
                 self.canvas.resize(w as u32, h as u32);
                 self.canvas.clear(ui::PAPER.bg);
+                let (num, title) = match self.screen {
+                    Screen::SaveStates { .. } => ("03", "Save states"),
+                    Screen::Settings { .. } => ("04", "Settings"),
+                    _ => ("01", "Library"),
+                };
+                ui::widgets::head(&mut self.canvas, num, title, None, None, &ui::PAPER);
+                ui::widgets::foot(&mut self.canvas, &[], Some(("X", "Back")), &ui::PAPER);
+                video.present_canvas(&self.canvas)?;
+            }
+            Screen::Bench => {
+                self.canvas.resize(w as u32, h as u32);
+                self.canvas.clear(NIGHT.bg);
+                ui::widgets::head(&mut self.canvas, "D", "Bench", None, None, &NIGHT);
+                ui::widgets::foot(&mut self.canvas, &[], Some(("F12", "Close bench")), &NIGHT);
                 video.present_canvas(&self.canvas)?;
             }
         }
