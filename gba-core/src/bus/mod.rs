@@ -1,6 +1,9 @@
 //! System bus: memory map, waitstates, open bus, IO dispatch, event dispatch.
 //! Source: GBATEK "GBA Memory Map", "GBA System Control" (WAITCNT), "Unpredictable Things".
 
+pub mod bench;
+#[cfg(test)]
+mod bench_tests;
 pub mod debug;
 pub mod dma_exec;
 pub mod io;
@@ -447,10 +450,24 @@ impl Bus {
                 Event::LineEnd => {
                     let Bus { sched, irq, dma, ppu, .. } = self;
                     ppu.on_line_end(&mut SysCtx { sched, irq, dma }, at);
+                    if self.debug.bench.is_some() && self.ppu.vcount == crate::timing::VISIBLE_LINES {
+                        self.bench_end_frame();
+                        // Mirrors the PPU's V-Blank IRQ condition (DISPSTAT bit 3) in `on_line_end`.
+                        if self.ppu.dispstat & (1 << 3) != 0 {
+                            if let Some(b) = self.debug.bench.as_deref_mut() {
+                                b.mark(crate::timing::VISIBLE_LINES, bench::EV_VBLANK_IRQ);
+                            }
+                        }
+                    }
                 }
                 Event::TimerOverflow(t) => {
                     let Bus { sched, irq, timers, apu, dma, .. } = self;
                     timers.on_overflow(t, sched, irq);
+                    if t == 0 {
+                        if let Some(b) = self.debug.bench.as_deref_mut() {
+                            b.mark(self.ppu.vcount, bench::EV_TIMER0_OVF);
+                        }
+                    }
                     let req = apu.on_timer_overflow(t);
                     if req.a {
                         dma.trigger(DmaTrigger::FifoA);

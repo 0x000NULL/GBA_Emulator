@@ -13,6 +13,7 @@
 //! the source control says. Immediate starts may also pre-empt a CPU data access
 //! (`Bus::arbitrate`).
 
+use super::bench::{EV_DMA0_START, EV_DMA12_START, EV_DMA1_FIFO, EV_DMA2_FIFO, EV_DMA3_START};
 use super::{Access, Bus, MemoryBus};
 use crate::irq::Irq;
 
@@ -51,6 +52,16 @@ impl Bus {
                 self.cart.eeprom_dma_hint(count);
             }
             self.idle(2); // internal cycles; see the ROM-to-ROM note at `both_pak` below
+            if let Some(b) = self.debug.bench.as_deref_mut() {
+                let ev = match (ch, fifo) {
+                    (1, true) => EV_DMA1_FIFO,
+                    (2, true) => EV_DMA2_FIFO,
+                    (0, _) => EV_DMA0_START,
+                    (3, _) => EV_DMA3_START,
+                    _ => EV_DMA12_START,
+                };
+                b.mark(self.ppu.vcount, ev);
+            }
         }
 
         let c = self.dma.ch[ch];

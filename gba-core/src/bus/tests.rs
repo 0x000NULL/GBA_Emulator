@@ -9,7 +9,7 @@ fn bus_with_rom(rom: Vec<u8>) -> Bus {
     Bus::new(Cartridge::new(rom, None).unwrap(), Bios::hle())
 }
 
-fn bus() -> Bus {
+pub(super) fn bus() -> Bus {
     bus_with_rom(vec![0u8; 0x100])
 }
 
@@ -312,7 +312,7 @@ fn sio_normal_transfer_through_bus() {
 
 /// Program `ch` for an immediate transfer of `count` units and enable it (the start is due 2
 /// cycles later).
-fn start_dma(b: &mut Bus, ch: u32, src: u32, dst: u32, count: u16, cnt_h: u16) {
+pub(super) fn start_dma(b: &mut Bus, ch: u32, src: u32, dst: u32, count: u16, cnt_h: u16) {
     let base = 0x0400_00B0 + ch * 12;
     b.write32(base, src, Access::N);
     b.write32(base + 4, dst, Access::N);
@@ -321,7 +321,7 @@ fn start_dma(b: &mut Bus, ch: u32, src: u32, dst: u32, count: u16, cnt_h: u16) {
 }
 
 /// Run every scheduled immediate start and the resulting transfers.
-fn finish_dma(b: &mut Bus) {
+pub(super) fn finish_dma(b: &mut Bus) {
     b.sched.now += 2;
     b.process_events();
     b.dma_run();

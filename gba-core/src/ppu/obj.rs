@@ -24,11 +24,14 @@ pub struct ObjLine {
     pub semi: [bool; SCREEN_W],
     /// Pixel is covered by an OBJ-window (mode 2) OBJ.
     pub window: [bool; SCREEN_W],
+    /// Bench diagnostics: bit `i & 63` of word `i >> 6` is set when OAM entry `i` had at least
+    /// one non-transparent, non-window texel on screen on this line.
+    pub drawn: [u64; 2],
 }
 
 impl ObjLine {
     pub fn new() -> Self {
-        ObjLine { color: [TRANSPARENT; SCREEN_W], prio: [4; SCREEN_W], semi: [false; SCREEN_W], window: [false; SCREEN_W] }
+        ObjLine { color: [TRANSPARENT; SCREEN_W], prio: [4; SCREEN_W], semi: [false; SCREEN_W], window: [false; SCREEN_W], drawn: [0; 2] }
     }
 
     pub fn clear(&mut self) {
@@ -36,6 +39,7 @@ impl ObjLine {
         self.prio.fill(4);
         self.semi.fill(false);
         self.window.fill(false);
+        self.drawn = [0; 2];
     }
 }
 
@@ -188,6 +192,7 @@ pub fn render(mem: &Mem, y: usize, out: &mut ObjLine) {
         let x_start = obj_x.max(0);
         let x_end = (obj_x + draw_w).min(SCREEN_W as i32);
         let iy = y_local - rh / 2;
+        let mut drew = false;
         for x in x_start..x_end {
             let sx_screen = if use_mosaic { x - x % mosaic.obj_h as i32 } else { x };
             let sx = sx_screen - obj_x;
@@ -214,11 +219,15 @@ pub fn render(mem: &Mem, y: usize, out: &mut ObjLine) {
                 out.window[x] = true;
                 continue;
             }
+            drew = true;
             if out.color[x] == TRANSPARENT || prio < out.prio[x] {
                 out.color[x] = mem.pal_color(256 + if sprite.bpp8 { idx } else { sprite.pal_bank + idx });
                 out.prio[x] = prio;
                 out.semi[x] = mode == 1;
             }
+        }
+        if drew {
+            out.drawn[i >> 6] |= 1 << (i & 63);
         }
     }
 }

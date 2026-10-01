@@ -1,6 +1,7 @@
 //! Top-level machine: owns the CPU and the bus and runs the main loop.
 
 use crate::bios::Bios;
+use crate::bus::bench::BenchCapture;
 use crate::bus::debug::Hit;
 use crate::bus::Bus;
 use crate::cart::{Cartridge, SaveType};
@@ -183,8 +184,145 @@ impl Gba {
         std::mem::replace(&mut self.bus.cart.dirty, false)
     }
 
+    /// Attach (`true`) or detach (`false`) the Bench capture: per-layer pictures, sound levels and
+    /// the scanline event log. Detaching also clears the layer and channel mutes, so output is
+    /// bit-identical to a machine that never had the bench.
+    pub fn set_bench(&mut self, on: bool) {
+        self.bus.set_bench(on);
+    }
+
+    /// The most recently published bench frame, or `None` while the bench is off.
+    pub fn bench(&self) -> Option<&BenchCapture> {
+        self.bus.debug.bench.as_deref()
+    }
+
+    /// Hide layers from the composed picture (bits 0-3 BG0-BG3, bit 4 OBJ). The bench still
+    /// captures them. No-op while the bench is off.
+    pub fn set_layer_mute(&mut self, mask: u8) {
+        if let Some(c) = self.bus.ppu.debug.as_deref_mut() {
+            c.mute = mask & 0x1F;
+        }
+    }
+
+    /// Silence channels (bit `CH_*`: SQ1, SQ2, WAVE, NOISE, FIFO A, FIFO B) in the mix only.
+    /// No-op while the bench is off.
+    pub fn set_channel_mute(&mut self, mask: u8) {
+        if let Some(c) = self.bus.apu.debug.as_deref_mut() {
+            c.set_mute(mask);
+        }
+    }
+
+    pub fn layer_mute(&self) -> u8 {
+        self.bus.ppu.debug.as_deref().map_or(0, |c| c.mute)
+    }
+
+    pub fn channel_mute(&self) -> u8 {
+        self.bus.apu.debug.as_deref().map_or(0, |c| c.mute)
+    }
+
     /// Lines printed by the guest through the mGBA debug registers since the last call.
     pub fn take_debug_log(&mut self) -> Vec<String> {
         std::mem::take(&mut self.bus.debug.log)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Access, MemoryBus};
+
+    /// mov r0,#1; mov r1,#0x02000000; loop: add r0,r0,#1; str r0,[r1]; b loop
+    fn test_rom() -> Vec<u8> {
+        let mut rom = vec![0u8; 0x4000];
+        rom[0xAC..0xB0].copy_from_slice(b"TEST");
+        for (i, w) in [0xE3A0_0001u32, 0xE3A0_1402, 0xE280_0001, 0xE581_0000, 0xEAFF_FFFC].iter().enumerate() {
+            rom[i * 4..i * 4 + 4].copy_from_slice(&w.to_le_bytes());
+        }
+        rom
+    }
+
+    /// A machine showing BG0 (two colours), two sprites and a sounding square channel.
+    fn machine(bench: bool) -> Gba {
+        let mut g = Gba::new(test_rom(), Options::default()).unwrap();
+        if bench {
+            g.set_bench(true);
+        }
+        let b = &mut g.bus;
+        b.write16(0x0500_0000, 0x1234, Access::N); // backdrop
+        b.write16(0x0500_0002, 0x001F, Access::N);
+        b.write16(0x0500_0004, 0x03E0, Access::N);
+        b.write16(0x0500_0200 + 2, 0x7C00, Access::N); // OBJ palette 1
+        for i in 0..16u32 {
+            b.write16(0x0600_0020 + i * 2, 0x1212, Access::N); // BG tile 1: alternating columns
+            b.write16(0x0601_0020 + i * 2, 0x1111, Access::N); // OBJ tile 1
+        }
+        for i in 0..64u32 {
+            b.write16(0x0600_4000 + i * 2, 1, Access::N); // BG0 map: tile 1 across two rows
+        }
+        for i in 0..128u32 {
+            b.write16(0x0700_0000 + i * 8, 0x0200, Access::N); // all OBJs disabled
+        }
+        for (i, x) in [(0u32, 40u16), (1, 90)] {
+            b.write16(0x0700_0000 + i * 8, 20 + i as u16 * 30, Access::N);
+            b.write16(0x0700_0002 + i * 8, x, Access::N);
+            b.write16(0x0700_0004 + i * 8, 1, Access::N);
+        }
+        b.write16(0x0400_0008, 8 << 8, Access::N); // BG0CNT screen block 8
+        b.write16(0x0400_0000, 1 << 8 | 1 << 12, Access::N);
+        b.write8(0x0400_0084, 0x80, Access::N);
+        b.write16(0x0400_0080, 0xFF77, Access::N);
+        b.write16(0x0400_0082, 0x0002, Access::N);
+        b.write8(0x0400_0063, 0xA0, Access::N);
+        b.write8(0x0400_0065, 0x80, Access::N);
+        g
+    }
+
+    #[test]
+    fn run_frame_with_bench_is_bit_identical() {
+        let mut plain = machine(false);
+        let mut benched = machine(true);
+        assert!(plain.bench().is_none());
+        let (mut audio_a, mut audio_b) = (Vec::new(), Vec::new());
+        for frame in 1..=10u64 {
+            assert_eq!(plain.run_frame(), StopReason::Done);
+            assert_eq!(benched.run_frame(), StopReason::Done);
+            assert!(plain.framebuffer()[..] == benched.framebuffer()[..], "frame {frame}");
+            assert_eq!(benched.bench().unwrap().frame, frame);
+            plain.drain_audio(&mut audio_a);
+            benched.drain_audio(&mut audio_b);
+        }
+        assert_eq!(plain.cpu.state_hash(), benched.cpu.state_hash());
+        assert_eq!(plain.bus.sched.now, benched.bus.sched.now);
+        assert_eq!(audio_a, audio_b);
+        assert!(!audio_a.is_empty() && audio_a.iter().any(|&s| s != [0, 0]), "the comparison covers real audio");
+        let bench = benched.bench().unwrap();
+        assert_eq!(bench.frame, benched.bus.ppu.frame_count);
+        assert_eq!(bench.layers.obj_drawn, 2);
+        assert_eq!(bench.sound.peak[crate::apu::capture::CH_SQ1], 10);
+    }
+
+    #[test]
+    fn mutes_need_the_bench_and_change_only_the_output() {
+        let mut g = machine(false);
+        g.set_layer_mute(0x1F);
+        g.set_channel_mute(0x3F);
+        assert_eq!((g.layer_mute(), g.channel_mute()), (0, 0), "no-ops while the bench is off");
+
+        let mut plain = machine(true);
+        let mut muted = machine(true);
+        muted.set_layer_mute(0x01);
+        muted.set_channel_mute(1 << crate::apu::capture::CH_SQ1);
+        assert_eq!((muted.layer_mute(), muted.channel_mute()), (0x01, 0x01));
+        // The HLE boot starts mid-frame (line 126), so the first frame is partial: run two.
+        for _ in 0..2 {
+            plain.run_frame();
+            muted.run_frame();
+        }
+        assert!(plain.framebuffer()[..] != muted.framebuffer()[..], "BG0 is hidden");
+        assert!(plain.bench().unwrap().layers.planes[0][..] == muted.bench().unwrap().layers.planes[0][..], "but captured");
+        assert!(plain.bench().unwrap().layers.planes[0].contains(&0x001F), "and really there");
+        assert_eq!(plain.cpu.state_hash(), muted.cpu.state_hash(), "the guest cannot tell");
+        muted.set_bench(false);
+        assert_eq!((muted.layer_mute(), muted.channel_mute()), (0, 0));
     }
 }

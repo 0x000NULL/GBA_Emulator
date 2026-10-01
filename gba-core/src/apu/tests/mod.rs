@@ -1,6 +1,7 @@
 //! APU unit tests. Each file drives an `Apu` directly through `write_io8` and the event
 //! entry points (`on_frame_seq`, `on_sample`, `on_timer_overflow`).
 
+mod capture;
 mod fifo;
 mod mixer;
 mod noise;

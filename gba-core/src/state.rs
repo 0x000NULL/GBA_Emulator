@@ -119,6 +119,9 @@ impl crate::Gba {
         fresh.bus.bios.set_image(self.bus.bios.take_image());
         // Keep the debugger configuration of the live machine.
         fresh.bus.debug = std::mem::take(&mut self.bus.debug);
+        // The bench captures live in the PPU/APU but are debugger state too: carry them over.
+        fresh.bus.ppu.debug = self.bus.ppu.debug.take();
+        fresh.bus.apu.debug = self.bus.apu.debug.take();
         *self = fresh;
         Ok(())
     }
@@ -175,5 +178,33 @@ mod tests {
         let mut s = g.save_state();
         s[4] = 99;
         assert!(matches!(g.load_state(&s), Err(super::StateError::Version(99))));
+    }
+
+    #[test]
+    fn bench_is_not_in_the_state_and_survives_load() {
+        let new = || Gba::new(test_rom(), Options { bios: BiosMode::Hle, save_type: None }).unwrap();
+        let mut a = new();
+        a.run_cycles(20_000);
+        let off = a.save_state();
+        a.set_bench(true);
+        a.set_layer_mute(0x05);
+        a.set_channel_mute(0x21);
+        let on = a.save_state();
+        assert_eq!(off.len(), on.len());
+        assert_eq!(off, on, "the bench contributes no bytes to the state");
+
+        // A load keeps the live machine's bench, with its mutes.
+        let mut b = new();
+        b.set_bench(true);
+        b.set_layer_mute(0x05);
+        b.set_channel_mute(0x21);
+        b.load_state(&off).unwrap();
+        assert!(b.bench().is_some() && b.bus.ppu.debug.is_some() && b.bus.apu.debug.is_some());
+        assert_eq!((b.layer_mute(), b.channel_mute()), (0x05, 0x21));
+
+        // And a load into a machine without a bench does not conjure one up.
+        let mut c = new();
+        c.load_state(&on).unwrap();
+        assert!(c.bench().is_none() && c.bus.ppu.debug.is_none() && c.bus.apu.debug.is_none());
     }
 }

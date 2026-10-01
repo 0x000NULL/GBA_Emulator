@@ -21,12 +21,15 @@ pub mod state;
 pub mod timers;
 pub mod timing;
 
+pub use apu::capture::{CH_FIFO_A, CH_FIFO_B, CH_NOISE, CH_SQ1, CH_SQ2, CH_WAVE};
+pub use bus::bench::{BenchCapture, SoundFrame, EV_DMA0_START, EV_DMA12_START, EV_DMA1_FIFO, EV_DMA2_FIFO, EV_DMA3_START, EV_TIMER0_OVF, EV_VBLANK_IRQ};
 pub use bus::{Access, Bus, MemoryBus, SysCtx};
 pub use cart::SaveType;
 pub use cpu::{Cpu, Regs};
 pub use gba::{BiosMode, Gba, Options, StopReason};
 pub use irq::Irq;
 pub use keypad::Keys;
+pub use ppu::capture::{LayerFrame, LayerPlane, LAYER_BG0, LAYER_OBJ};
 pub use sched::Event;
 
 /// Screen width in pixels.
