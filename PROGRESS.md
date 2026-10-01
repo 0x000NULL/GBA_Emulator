@@ -454,3 +454,42 @@ Rows left: DMA Prefetch Break/Read, H-blank bit start Hblank/Flip 1/2/3. (The ha
   and share the path. Flip 2/3 are off by 1 and 2 cycles in the same way. Scanning the Halt exit
   0..40 never matched more than the current rows; processing due events before DISPSTAT reads
   (event lag is up to one instruction) changed nothing. Not fixed.
+
+## Fix log (library sweep: silent titles, 2026-10-01)
+
+Ten titles from the 1,543-title `--triage` sweep ran with a moving picture and no audio sample
+above +-64. Findings per title (only the Millionaire trio was an emulator bug):
+
+- **Who Wants to Be a Millionaire (Europe), 2nd Edition, Junior: FIXED.** The games program
+  `TM0CNT_H = 0x0084` (enabled, F/1, bit 2 = "count-up") as their FIFO sample timer. GBATEK:
+  count-up is "Not used in TM0CNT_H" / cannot be used for timer 0 (no predecessor). `timers.rs`
+  treated the bit as a cascade on every timer, so timer 0 never counted, never overflowed and
+  never clocked the FIFOs (`fifo popped=0`, no DMA refills, no sound). `Timer::running(n)` now
+  ignores the bit for timer 0 (the stored/read-back value is unchanged). Unit test
+  `timers::tests::timer0_ignores_the_count_up_bit`. After the fix `--triage` reports
+  audio_frames 1558 / 1266 / 1024; a `--pcm` capture (32768 Hz) has real content (peak +-32k,
+  about 0.3% of samples at the 10-bit clamp, i.e. loud source material, not a mix bug).
+- **Famicom Mini 08 Mappy, 13 Balloon Fight, 19 Twin Bee: not a bug (triage input aliasing).**
+  Same sound engine as the working Famicom Mini titles (FIFO A, timer 0 + timer 1 cascade, DMA1
+  special, SOUNDCNT_H=0x0304, PSG unused). They sit in an attract-mode loop of about 400 frames
+  and the triage Start presses are exactly 400 frames apart (700, 1100, ...), so every press
+  lands in the attract demo (which on the NES is silent and just returns to the title). The mix
+  buffer is cleared and clamped every frame but never accumulated into, i.e. the NES APU
+  emulation has nothing to play. With Start at frame 150 (title) and 300 all three produce
+  audio (120 / 163 / 318 audio frames in 600-900 frames, 65536 Hz, no clipping).
+- **Arthur and the Invisibles, Deal or No Deal, Lara Croft Tomb Raider Legend: not a bug.** At
+  frame 2400 they are still in publisher/developer logo sequences (language select, health
+  warning, Mystic / DSI Games / Human Soft logos); FIFO-mode DMA runs but streams zeros. With
+  6000 frames the same sweep input gives audio_frames 3386 / 3151 / 3477.
+- **Strawberry Shortcake Summertime Adventure: not a bug.** Sound hardware initialised at
+  frame 719 (SOUNDCNT_X/L/H written, FIFO timers armed) but the game starts no sample until a
+  menu choice; with an A-tap script it reaches 6546 audio frames in 9000 frames. The 1.2M
+  underruns are timer-0 pops of routed but unfed FIFOs while the menu idles.
+- Open question, not changed: `Apu::write_io8` drops SOUNDCNT_L (0x80/0x81) writes while the
+  master enable is clear (range 0x60..=0x81 per GBATEK "registers reset to zero"). The
+  Millionaire games write SOUNDCNT_L = 0x77 before SOUNDCNT_X = 0x80, so it is lost; they use
+  only the FIFOs so it is inaudible there, but a PSG title with that order would be silent.
+  Hardware behaviour is not documented in the GBATEK excerpt, so it was left alone.
+- Sweep recommendation: make the `triage_keys` Start spacing irregular (not a multiple of 400)
+  and extend past 2400 frames for slow-logo titles; both "silent" classes above are artefacts of
+  the fixed schedule.
