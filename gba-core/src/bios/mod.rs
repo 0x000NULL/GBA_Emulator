@@ -19,6 +19,10 @@ pub const BIOS_OPENBUS_AFTER_IRQ: u32 = 0xE55E_C002;
 /// address; executing "from" it triggers the return sequence.
 pub const HLE_IRQ_RETURN_ADDR: u32 = 0x0000_0138;
 
+/// Address every SoundGetJumpList slot points at under HLE; executing "from" it returns to the
+/// caller (`bx lr`).
+pub const HLE_SOUND_STUB_ADDR: u32 = 0x0000_0150;
+
 #[cfg_attr(feature = "savestate", derive(serde::Serialize, serde::Deserialize))]
 pub struct Bios {
     #[cfg_attr(feature = "savestate", serde(skip))]
@@ -127,6 +131,7 @@ pub mod swi {
     pub const MIDI_KEY2FREQ: u8 = 0x1F;
     pub const SOUND_DRIVER_VSYNC_OFF: u8 = 0x28;
     pub const SOUND_DRIVER_VSYNC_ON: u8 = 0x29;
+    pub const SOUND_GET_JUMP_LIST: u8 = 0x2A;
 
     pub fn name(n: u8) -> &'static str {
         match n {
@@ -164,6 +169,7 @@ pub mod swi {
             0x1F => "MidiKey2Freq",
             0x28 => "SoundDriverVSyncOff",
             0x29 => "SoundDriverVSyncOn",
+            0x2A => "SoundGetJumpList",
             _ => "?",
         }
     }
