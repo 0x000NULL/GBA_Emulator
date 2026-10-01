@@ -3,8 +3,9 @@
 A from-scratch Game Boy Advance emulator. Success criterion (met): boot and play
 **Kingdom Hearts: Chain of Memories (USA)**; then Zelda titles and Initial D.
 `PROGRESS.md` is the handoff document (status, compat table, known gaps, fix log, next steps).
-`docs/ARCHITECTURE.md` is the design contract. `docs/gbatek/` holds the spec. `README.md` is the
-user-facing overview.
+`docs/ARCHITECTURE.md` is the design contract. `docs/gbatek/` holds the spec. `docs/gui/` is the
+GUI design package (DESIGN.md wins over the mockups; the emulator's behaviour wins over both, and
+deviations are logged in PROGRESS.md). `README.md` is the user-facing overview.
 
 ## Ground rules
 - **GBATEK is the spec.** Read the relevant `docs/gbatek/*.md` before touching a
@@ -29,7 +30,13 @@ gba-core/      no deps by default (feature `savestate` adds serde + bincode). cp
                sched.rs, timing.rs, gba.rs (main loop), state.rs (savestates)
 gba-test/      lib: load_rom (.gba/.zip), fb_hash (xxh3-64), checks (jsmolka / mgba-suite), manifest
                schema, input scripts; bin: headless CLI; tests/roms.rs: cargo test driver
-gba-frontend/  minifb window + cpal audio + gilrs gamepad + pacing + saves + savestates (bin: gba)
+gba-frontend/  bin `gba`: app.rs (screens + game session), ui/ (software renderer: tiny-skia + fontdue,
+               tokens, widgets, SVG drawings, input), overlay/ (native 240x160 pause menu + toasts),
+               screens/ (library, states, settings, bench), library/ (scan, names, index, captures),
+               slots.rs (8 state slots per game), settings.rs (TOML in the config dir), window.rs
+               (resizable minifb, letterbox fast path, filters), audio.rs (cpal, gain), pacing.rs,
+               saves.rs, debug_ui.rs (hotkey map); assets/fonts/ (OFL faces, embedded)
+docs/gui/      DESIGN.md, SCREENS.md, tokens.json, mockups/*.png, drawings/*.svg
 tests/golden.toml   test-suite ROMs: check strategy + golden hashes
 tests/compat.toml   commercial ROM goldens (skipped when Games/ is absent)
 tests/inputs/       scripted input logs (khcom-newgame.toml, minish-newgame.toml)
@@ -54,16 +61,23 @@ cargo run -p gba-test -- <rom> --frames 300 --log-swi                         # 
 cargo run -p gba-test -- <rom> --frames 27400 --input tests/inputs/khcom-newgame.toml --save-state kh.state
 cargo run -p gba-test -- <rom> --frames 300 --load-state kh.state    # resume a savestate headless
 cargo run -p gba-test -- <rom> --frames N --record                   # print a manifest stanza
-cargo run --release -p gba-frontend -- <rom|zip>                      # play
+cargo run --release -p gba-frontend                                   # the library (folders from settings / --library)
+cargo run --release -p gba-frontend -- <rom|zip>                      # play straight away
+cargo run --release -p gba-frontend -- <rom> --scale 3                # fixed 3x picture in a 720x480 window
 cargo run --release -p gba-frontend -- <rom> --bench 1200             # headless speed
+cargo test -p gba-frontend --release -- --ignored render_             # review renders of every screen -> target/ui-renders/*.png
 ```
 Harness exit codes: 0 pass, 1 fail, 2 error. `GBA_TESTS_REQUIRED=1` turns the
 "GBA_TESTS_DIR unset" skip into a failure. Builds from concurrent shells should use their own
 `CARGO_TARGET_DIR` (e.g. `target/integ`) to avoid the cargo lock.
 
-Frontend keys: Z=A X=B A=L S=R Enter=Start RShift=Select arrows=D-pad; Tab fast-forward;
-P pause; N frame-step; F1/F3 save/load state (`<rom>.state`); F5 write `.sav`; F10 IO dump;
-F11 screenshot; Esc quit. Hidden `--exit-after N` ends a windowed run and prints timing stats.
+Frontend keys (defaults, rebindable in Settings): Z=A X=B A=L S=R Enter=Start RShift=Select
+arrows=D-pad; Tab fast-forward; Esc or P pause menu (resume / save / load / settings / bench /
+quit); N frame-step; F1/F3 save/load the current slot (`<rom stem>.s<N>.state`); F2 save states
+screen; F5 write `.sav`; F10 IO dump; F11 screenshot; F12 bench. Menus navigate with the GBA
+bindings (A confirm, B back, L/R pages, D-pad). Hidden `--exit-after N` ends a windowed run and
+prints timing stats. The settings file lives in `%APPDATA%\gba-advance\settings.toml`, the
+library index and title captures in `%LOCALAPPDATA%\gba-advance\`.
 
 ## Working on a subsystem
 The initial build split the code among parallel agents by directory (`cpu/`, `ppu/`, `apu/`,

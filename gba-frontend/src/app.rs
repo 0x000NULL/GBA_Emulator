@@ -278,6 +278,8 @@ pub struct App {
     /// Current slot (1..=8): what in-game F1/F3 act on; the last slot used in any menu.
     pub slot_cursor: u8,
     pub bench: BenchScreen,
+    /// Fast-forward speed limit as a multiple of real time (None = as fast as the host allows).
+    pub ff_limit: Option<u32>,
     /// The save-states screen while it is open, and (without a session) the game it shows.
     states: Option<StatesScreen>,
     states_rom: Option<(PathBuf, String, SlotSet)>,
@@ -303,6 +305,7 @@ impl App {
             quit: false,
             slot_cursor: 1,
             bench: BenchScreen::new(),
+            ff_limit: Some(4),
             states: None,
             states_rom: None,
             step: false,
@@ -749,7 +752,14 @@ impl App {
         let base_period = config::frame_period();
         match (self.screen, self.session.as_mut()) {
             (Screen::Game | Screen::Bench, Some(s)) if !s.paused => {
-                if s.fast || self.opts.fullspeed {
+                if self.opts.fullspeed {
+                    return;
+                }
+                if s.fast {
+                    match self.ff_limit {
+                        Some(n) if n > 1 => s.pacer.wait(base_period / n),
+                        _ => {}
+                    }
                     return;
                 }
                 let period = match &s.audio {
