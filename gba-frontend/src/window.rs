@@ -68,6 +68,64 @@ pub fn scale_into_at(fb: &[u16], lut: &[u32], scale: usize, out: &mut [u32], out
     }
 }
 
+/// Post-processing on the upscaled picture (never in the core).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Filter {
+    #[default]
+    None,
+    /// Darkens the last row and column of every scaled dot: the gaps of an LCD grid.
+    LcdGrid,
+    /// Averages with the previous presented picture: the slow original screen.
+    FrameBlend,
+}
+
+/// LCD grid: darken every `scale`-th row and column of the `fw` x `fh` picture at (x, y).
+pub fn lcd_grid(out: &mut [u32], out_w: usize, x: i32, y: i32, scale: usize, fw: usize, fh: usize) {
+    if scale < 2 {
+        return;
+    }
+    let out_h = out.len() / out_w.max(1);
+    let darken = |p: u32| -> u32 {
+        let r = ((p >> 16) & 0xFF) * 3 / 5;
+        let g = ((p >> 8) & 0xFF) * 3 / 5;
+        let b = (p & 0xFF) * 3 / 5;
+        r << 16 | g << 8 | b
+    };
+    for row in 0..fh * scale {
+        let dy = y + row as i32;
+        if dy < 0 || dy >= out_h as i32 {
+            continue;
+        }
+        let base = dy as usize * out_w;
+        let grid_row = row % scale == scale - 1;
+        for col in 0..fw * scale {
+            let dx = x + col as i32;
+            if dx < 0 || dx >= out_w as i32 {
+                continue;
+            }
+            if grid_row || col % scale == scale - 1 {
+                out[base + dx as usize] = darken(out[base + dx as usize]);
+            }
+        }
+    }
+}
+
+/// Frame blend: `out = (out + prev) / 2` per channel, then `prev = out`.
+pub fn frame_blend(out: &mut [u32], prev: &mut Vec<u32>) {
+    if prev.len() != out.len() {
+        prev.clear();
+        prev.extend_from_slice(out);
+        return;
+    }
+    for (o, p) in out.iter_mut().zip(prev.iter_mut()) {
+        let cur = *o;
+        let a = ((cur ^ *p) & 0x00FE_FEFE) >> 1;
+        let b = cur & *p;
+        *o = a.wrapping_add(b);
+        *p = cur;
+    }
+}
+
 fn pack(c: Rgb) -> u32 {
     (c[0] as u32) << 16 | (c[1] as u32) << 8 | c[2] as u32
 }
@@ -91,6 +149,8 @@ pub struct Video {
     chars: Arc<Mutex<Vec<char>>>,
     pad_repeat: PadRepeat,
     mouse_was_down: bool,
+    pub filter: Filter,
+    prev: Vec<u32>,
 }
 
 impl Video {
@@ -102,7 +162,7 @@ impl Video {
         window.set_target_fps(0);
         let chars = Arc::new(Mutex::new(Vec::new()));
         window.set_input_callback(Box::new(CharSink(chars.clone())));
-        Ok(Video { window, buf: vec![0; w * h], lut: build_lut(), chars, pad_repeat: PadRepeat::new(), mouse_was_down: false })
+        Ok(Video { window, buf: vec![0; w * h], lut: build_lut(), chars, pad_repeat: PadRepeat::new(), mouse_was_down: false, filter: Filter::None, prev: Vec::new() })
     }
 
     /// Current client size.
@@ -126,6 +186,11 @@ impl Video {
         let (x, y) = crate::ui::centred_frame(w as u32, h as u32, scale as u32);
         self.buf.fill(pack(bg));
         scale_into_at(fb, &self.lut, scale, &mut self.buf, w, x, y);
+        match self.filter {
+            Filter::None => {}
+            Filter::LcdGrid => lcd_grid(&mut self.buf, w, x, y, scale, SCREEN_W, SCREEN_H),
+            Filter::FrameBlend => frame_blend(&mut self.buf, &mut self.prev),
+        }
         self.window.update_with_buffer(&self.buf, w, h).map_err(|e| anyhow!("presenting frame: {e}"))
     }
 
@@ -217,6 +282,25 @@ mod tests {
         }
         assert_eq!(out[3], 0);
         assert_eq!(out[3 * w], 0);
+    }
+
+    #[test]
+    fn filters() {
+        let w = 8;
+        let mut out = vec![0xFFFFFFu32; w * 8];
+        lcd_grid(&mut out, w, 0, 0, 2, 4, 4);
+        assert_eq!(out[0], 0xFFFFFF, "dot interior untouched");
+        assert_eq!(out[1], 0x999999, "grid column darkened");
+        assert_eq!(out[w], 0x999999, "grid row darkened");
+        let mut a = vec![0x000000u32, 0xFFFFFF];
+        let mut prev = Vec::new();
+        frame_blend(&mut a, &mut prev);
+        assert_eq!(a, vec![0x000000, 0xFFFFFF], "first frame passes through");
+        let mut b = vec![0xFFFFFFu32, 0xFFFFFF];
+        frame_blend(&mut b, &mut prev);
+        assert_eq!(b[0], 0x7F7F7F);
+        assert_eq!(b[1], 0xFFFFFF);
+        assert_eq!(prev, vec![0xFFFFFF, 0xFFFFFF]);
     }
 
     #[test]

@@ -157,6 +157,20 @@ struct Shared {
     underruns: AtomicU64,
     /// Set once the ring reached the target fill; before that the callback plays silence quietly.
     primed: AtomicBool,
+    /// Output gain as f32 bits, applied in the callback so a volume change is heard at once.
+    gain: AtomicU32,
+}
+
+impl Shared {
+    fn gain(&self) -> f32 {
+        f32::from_bits(self.gain.load(Ordering::Relaxed))
+    }
+}
+
+/// Volume 0..=10 to a gain: a square law reads as evenly spaced loudness steps.
+pub fn volume_gain(volume: u8) -> f32 {
+    let v = volume.min(10) as f32 / 10.0;
+    v * v
 }
 
 pub struct AudioOut {
@@ -191,6 +205,7 @@ impl AudioOut {
             ring: RingBuffer::new(cap),
             underruns: AtomicU64::new(0),
             primed: AtomicBool::new(false),
+            gain: AtomicU32::new(1.0f32.to_bits()),
         });
 
         let stream = match sample_format {
@@ -224,6 +239,24 @@ impl AudioOut {
             dropped: 0,
             muted,
         })
+    }
+
+    /// Set the output gain (1.0 = unity); takes effect on the next callback.
+    pub fn set_gain(&self, gain: f32) {
+        self.shared.gain.store(gain.clamp(0.0, 4.0).to_bits(), Ordering::Relaxed);
+    }
+
+    pub fn gain(&self) -> f32 {
+        self.shared.gain()
+    }
+
+    /// Mute at the source (zeros are queued) so the pacing clock keeps running.
+    pub fn set_muted(&mut self, muted: bool) {
+        self.muted = muted;
+    }
+
+    pub fn muted(&self) -> bool {
+        self.muted
     }
 
     /// Update the core's sample rate (SOUNDBIAS can change it at runtime).
@@ -303,11 +336,12 @@ fn fill_output<T: SizedSample + FromSample<f32>>(data: &mut [T], channels: usize
         return;
     }
     let mut short = false;
+    let gain = shared.gain();
     for frame in data.chunks_mut(channels) {
         match shared.ring.pop() {
             Some([l, r]) => {
-                let l = T::from_sample(l as f32 / 32768.0);
-                let r = T::from_sample(r as f32 / 32768.0);
+                let l = T::from_sample((l as f32 / 32768.0 * gain).clamp(-1.0, 1.0));
+                let r = T::from_sample((r as f32 / 32768.0 * gain).clamp(-1.0, 1.0));
                 for (i, s) in frame.iter_mut().enumerate() {
                     *s = match i {
                         0 => l,
@@ -458,7 +492,7 @@ mod tests {
 
     #[test]
     fn fill_output_silence_before_prime_and_underrun_after() {
-        let shared = Shared { ring: RingBuffer::new(8), underruns: AtomicU64::new(0), primed: AtomicBool::new(false) };
+        let shared = Shared { ring: RingBuffer::new(8), underruns: AtomicU64::new(0), primed: AtomicBool::new(false), gain: AtomicU32::new(1.0f32.to_bits()) };
         let mut buf = vec![0.5f32; 8]; // 4 stereo frames
         fill_output(&mut buf, 2, &shared);
         assert!(buf.iter().all(|&s| s == 0.0));
@@ -482,5 +516,22 @@ mod tests {
         fill_output(&mut buf6, 6, &shared);
         assert_eq!(&buf6[..6], &[-32768, 32767, 0, 0, 0, 0]);
         assert_eq!(shared.underruns.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn gain_scales_the_callback_output() {
+        let shared = Shared { ring: RingBuffer::new(8), underruns: AtomicU64::new(0), primed: AtomicBool::new(true), gain: AtomicU32::new(0.5f32.to_bits()) };
+        shared.ring.push([16384, -32768]);
+        let mut buf = vec![0.0f32; 2];
+        fill_output(&mut buf, 2, &shared);
+        assert!((buf[0] - 0.25).abs() < 1e-6);
+        assert!((buf[1] + 0.5).abs() < 1e-6);
+        shared.gain.store(0.0f32.to_bits(), Ordering::Relaxed);
+        shared.ring.push([16384, 16384]);
+        fill_output(&mut buf, 2, &shared);
+        assert_eq!(buf, vec![0.0, 0.0]);
+        assert_eq!(volume_gain(10), 1.0);
+        assert_eq!(volume_gain(0), 0.0);
+        assert!((volume_gain(5) - 0.25).abs() < 1e-6);
     }
 }
