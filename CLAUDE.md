@@ -55,6 +55,8 @@ cargo run -p gba-test -- <rom|zip> --frames 32 --check jsmolka        # one test
 cargo run -p gba-test -- <rom|zip> --frames 600 --png out.png --dump-io
 cargo run -p gba-test -- <rom> --frames 5 --trace trace.txt          # mGBA-format register trace
 cargo run -p gba-test -- <rom> --frames N --watch 0x040000C4..0x040000C7 --watch-log   # log every write to a range (omit --watch-log to stop at the first)
+cargo run -p gba-test -- <rom> --frames N --watch-read 0x04000000..0x040003FE --watch-log   # log every read of a range
+cargo run -p gba-test -- <rom> --frames N --dump-mem 0x03007D80..0x03007E40   # word dump of guest memory at the end
 cargo run -p gba-test -- <rom> --frames 1800 --pcm out.wav --stats-from 1200   # audio capture + underruns
 cargo run -p gba-test -- <rom> --frames 1900 --fifo-stats 1800                # per-frame FIFO pushed/popped/underruns
 cargo run -p gba-test -- <rom> --frames 300 --log-swi                         # every HLE SWI call as a guest: line

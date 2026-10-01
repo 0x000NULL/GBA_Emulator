@@ -27,6 +27,11 @@ pub struct Bios {
     pub open_bus: u32,
     /// Pending IntrWait: flags being waited for; set while the HLE loop is parked on the SWI.
     pub intr_wait: Option<u16>,
+    /// The caller's r12, saved while an IntrWait is parked (the real BIOS sits in its Halt code
+    /// with r12 = 0x04000000 and restores the caller's r12 on exit). Not serialised: a state
+    /// loaded mid-wait leaves r12 as the parked value, which is scratch for the caller.
+    #[cfg_attr(feature = "savestate", serde(skip))]
+    pub intr_wait_r12: Option<u32>,
     /// Counts SWIs serviced (diagnostics).
     pub swi_count: u64,
     /// Unimplemented SWI numbers seen (diagnostics), deduplicated.
@@ -44,7 +49,7 @@ pub struct Bios {
 
 impl Bios {
     pub fn hle() -> Self {
-        Bios { image: None, open_bus: BIOS_OPENBUS_BOOT, intr_wait: None, swi_count: 0, unimplemented: Vec::new(), swi_refill: false, halt_exit: false }
+        Bios { image: None, open_bus: BIOS_OPENBUS_BOOT, intr_wait: None, intr_wait_r12: None, swi_count: 0, unimplemented: Vec::new(), swi_refill: false, halt_exit: false }
     }
 
     pub fn lle(data: &[u8]) -> Result<Self, CoreError> {
@@ -53,7 +58,7 @@ impl Bios {
         }
         let mut img = Box::new([0u8; BIOS_SIZE]);
         img.copy_from_slice(data);
-        Ok(Bios { image: Some(img), open_bus: BIOS_OPENBUS_BOOT, intr_wait: None, swi_count: 0, unimplemented: Vec::new(), swi_refill: false, halt_exit: false })
+        Ok(Bios { image: Some(img), open_bus: BIOS_OPENBUS_BOOT, intr_wait: None, intr_wait_r12: None, swi_count: 0, unimplemented: Vec::new(), swi_refill: false, halt_exit: false })
     }
 
     #[inline]

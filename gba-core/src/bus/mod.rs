@@ -445,7 +445,7 @@ impl Bus {
             match ev {
                 Event::HBlank => {
                     let Bus { sched, irq, dma, ppu, .. } = self;
-                    ppu.on_hblank(&mut SysCtx { sched, irq, dma });
+                    ppu.on_hblank(&mut SysCtx { sched, irq, dma }, at);
                 }
                 Event::LineEnd => {
                     let Bus { sched, irq, dma, ppu, .. } = self;
