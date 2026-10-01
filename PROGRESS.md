@@ -503,3 +503,42 @@ Pinball Party 474,294 -> 6; Klonoa 2 208,062 -> 20; F-Zero Climax 223,893 -> 3; 
 Tour Golf 253,458 -> 5; Strawberry Shortcake Summertime Adventure 1,691,801 -> 1. Earlier
 game-driven cases in this file (Classic NES, Super Mario Advance, Backyard Baseball) now read as
 one event per dry-out; re-sweep the library to re-bucket it.
+## Fix log (library sweep: late black screens, 2026-10-01)
+Seven titles from the 1,543-title `--triage` sweep ended on a black/<= 2 colour picture at frame 3000.
+Six are game behaviour reached by the sweep's fixed key pattern; one was an emulator fault.
+- **Waiting for input / paused / by-design (no emulator fault):**
+  - Classic NES Dr. Mario: the Start at 2300 *pauses* the game (white "PAUSE" on black, halted in the
+    game's pause loop). Start again at 2600 resumes the playfield (Dr. Mario, level 0, virus 63). The
+    Classic NES anti-emulator tricks are not involved here.
+  - R-Type III: the Start at 2300 pauses stage 1 (green "PAUSE" blinks, so a sample can land on the
+    blank phase: 1 colour, changing every ~50 frames). Frames 0-2300 draw title, weapon select and the
+    stage normally. (Its IO dump shows 4770h in many IO registers after the game's own clears: not a fault.)
+  - CIMA - The Enemy: white-on-black story caption ("Altran. Jillani Region, Northwest 40 km.") waiting
+    for A. Pressing A every 100 frames from 3100 reaches the in-engine dialogue (Jester R., "this mine was
+    so deep, Chief") by 4000.
+  - SMT Devil Children Puzzle de Call!: black story text waiting for A; A every 100 frames from 3100
+    reaches the overworld (a tiny blue creature in a village) by 3000-4000.
+  - World Advance Soccer: instruction text "press A to start the qualifiers" (CPU busy = the game's
+    polling loop); A reaches the team-select screen (flags, group A-D grid).
+  - Derby Stallion Advance: the sweep's Start at 2300 answers the farm prompt "back already? (yes/no)"
+    with yes; the game then shows "saving data" and "Data saved, turn off the power" (flash save works,
+    the game deliberately ends the session there).
+- **Emulator fault, fixed: Twin Series 5 (Cake-ya-san + Wanwan Meitantei).** After the Start press
+  skips the intro, the game sits on a white forced-blank screen forever, CPU busy. Cause: the game's
+  VSync is `while (VCOUNT <= 0x9F) ;` (ROM 08002B2E, ~46 cycles per iteration) and its V-Blank IRQ
+  handler (a 42 kHz Sappy mixer, ~62k instructions) runs ~126k cycles, so the main thread is only
+  scheduled from about line 34 of each frame and has just the instant of line 160 to observe
+  VCOUNT >= 160. We raised the V-Blank request on the CPU line in the same cycle VCOUNT changes, so the
+  IRQ always pre-empted the poll (traced: the loop ran 3350 iterations per frame, never exiting, r1 stuck
+  at 9Fh). Timer overflows already reach the CPU line `IRQ_DELAY` (3) cycles late; the PPU's V-Blank and
+  V-Count requests now do the same (`ppu::on_line_end` uses `raise_at(.., at + IRQ_DELAY, ..)`; IF is
+  still set immediately). Any delay from 1 to 24 cycles unblocks the game (scanned), so the exact value
+  is not what matters, only that the window is non-zero; 3 is the existing, suite-fitted constant.
+  H-Blank IRQs are left immediate (their handler has no `at` and no title needed it).
+  Unit test: `ppu::timing_tests::vblank_and_vcount_irqs_are_delayed_on_the_cpu_line`.
+  After the fix Twin Series 5 reaches the story/opening dialogue (180 colours, last change 2432) in `--triage`.
+- **Gate:** `cargo test --workspace` green except one compat golden: NFS Most Wanted (frame 6600, the
+  TOLLBOOTH straight) moved `5741decb77b74fc7` -> `fc8e8136e1cefd2d`. Before/after PNGs reviewed: same
+  scene (59 MPH, 00:37.72, same minimap/HUD), only a traffic car and a roadside object differ by a few
+  pixels, i.e. the race's chaotic sensitivity to a 3-cycle shift of the V-Blank IRQ. Re-pinned in
+  `tests/compat.toml`. Every other golden/compat hash (58 compat frames, all suite rows) is unchanged.

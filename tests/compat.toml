@@ -330,7 +330,7 @@ note = "title with PRESS START (English picked at 600); BNWE (maker 69), 8 MB, E
 path = "Games/Need for Speed - Most Wanted (USA, Europe) (En,Fr,De,It).zip"
 frames = 6600
 input_file = "tests/inputs/nfsmw-race.toml"
-golden = "5741decb77b74fc7"
+golden = "fc8e8136e1cefd2d"
 note = "profile \"1\" -> buy the Lexus IS300 -> QUICK PLAY -> QUICK RACE -> TOLLBOOTH checkpoint race; golden on the straight at 59 MPH (~00:37 left) with A held from 6300; steering verified (LEFT or RIGHT held with A 6600-6900: A alone sits against the wall at 6 MPH, LEFT shows the wrong-way X, RIGHT rolls on at 23 MPH; three distinct hashes: 5d444e613753b74c / 9033f4ad03b5f385 / 46d700e6078b600b)"
 
 [[rom]]
