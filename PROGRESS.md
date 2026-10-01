@@ -10,8 +10,12 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   Oblivion and the battle tutorial with player control. Headless proof: `tests/inputs/khcom-newgame.toml`
   plus the two KH goldens in `tests/compat.toml` (title at frame 1800, gameplay at frame 27400).
 - **All jsmolka ROMs pass** (arm, thumb, memory, bios, nes, save/none, sram, flash64, flash128;
-  ppu hello/shades/stripes by golden hash). `cargo test --workspace` is green: 304 core unit
-  tests, 25 frontend tests, 2 ROM-driver tests (~11 min with all 59 commercial goldens present).
+  ppu hello/shades/stripes by golden hash). `cargo test --workspace` is green: 328 core unit
+  tests, 149 frontend tests, 2 ROM-driver tests (~17 min with all 59 commercial goldens present).
+- **GUI (M9, 2026-09-30)**: the frontend is now the "paper, ink, one red" interface from
+  `docs/gui/`: Library, in-frame pause menu with eight state slots, Save states, Settings (with key
+  rebinding and a settings file) and the Bench developer view on new core capture hooks. See the
+  M9 section below.
 - **Compat**: all 26 titles in `Games/` boot and 25 reach controllable gameplay under scripted
   headless runs pinned in `tests/compat.toml` (Mario Tennis: controllable overworld, its first
   match is behind a story cutscene). See the table below.
@@ -20,8 +24,9 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   Scores after the 2026-09-30 merges: Memory 1552/1552, I/O read 130/130, Timing 2020/2020,
   Timer count-up 936/936, Timer IRQ 90/90, Shifter/Carry/Multiply-long/BIOS-math all full,
   DMA 1244/1244, SIO R/W 90/90, SIO timing 4/4, Misc edge 6/12.
-- **Frontend verified windowed (2026-09-30)**: KH:CoM, 300 frames, 60.10 fps average, 1 late
-  frame, 0 audio underruns on a 48 kHz WASAPI device (`--exit-after 300`).
+- **Frontend verified windowed (2026-09-30, after the GUI)**: KH:CoM, 300 frames, 59.8 fps
+  average, 3 late frames, 0 audio underruns on a 48 kHz WASAPI device (`--exit-after 300`), at
+  the 1280x800 design size with the 4x letterboxed picture and at `--scale 3`.
 - **Open**: reference-emulator audio comparison manual; Misc edge 6/12 (see "Misc edge attempt"); KH:CoM's whole 27400-frame
   new-game run is FIFO-underrun-free apart from a handful at scene changes (was ~427k before
   the HLE service hook, see the 2026-09-30 fix log).
@@ -38,6 +43,7 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
 | M5 | Save detection, SRAM/Flash/EEPROM, `<rom>.sav` | jsmolka save/*; round trip | **DONE 2026-09-29**: none/sram/flash64/flash128 pass (flash entries need 400 frames: tests 10/11 program 64K bytes one command sequence each); 8 cart unit tests incl. EEPROM protocol; `.sav` persistence in the frontend |
 | M6 | KH:CoM title -> new game -> first room | title golden + input script | **DONE 2026-09-29**: see "Where things stand". Other priority titles reach title/file screens; Minish Cap reaches gameplay (golden + script) |
 | M7 | APU PSG + FIFO + mixing | PCM capture vs mGBA | **DONE (underrun half) 2026-09-29**: 70 APU unit tests; KH title capture (`--pcm`, 65536 Hz) has 0 underruns over frames 1200-1800, clean stereo music, no clipping. **Reference comparison deferred** (manual: `scripts/compare-wav.py`) |
+| M9 | GUI: library, pause overlay, save-state slots, settings, bench (`docs/gui/`) | `cargo test --workspace` green with the core hooks off; goldens unchanged; KH `--bench 1200` within 2 % | **DONE 2026-09-30**: all five screens built from the design package and wired; 149 frontend tests incl. review renders; core capture hooks (22 new tests) with the speed gate met (see the M9 section) |
 | M8 | Prefetch, timing polish, savestates, fast-forward | mgba-suite timing improves | **PARTIAL 2026-09-29**: savestates (feature `savestate`, ~429 KB, KH resume bit-exact vs straight run; F1/F3; harness `--save-state/--load-state`), Tab fast-forward, audio-clocked pacing, ~1900 fps headless release on KH. game-pak prefetch buffer landed 2026-09-30 (`bus/prefetch.rs`). **Deferred**: per-instruction timing refinement (no runnable gate) |
 
 ## Compatibility (headless, HLE BIOS)
@@ -347,6 +353,46 @@ hardware except the timer-start offset, HLE BIOS calls and DMA-during-fetch (all
   a higher-priority pending channel, resuming afterwards (GBATEK: higher-priority DMA may
   offhold sound DMA). FF IV underruns over 900 frames dropped to 270 (all in its boot phase).
 - `--pcm` WAV rate follows SOUNDBIAS (KH selects 65536 Hz).
+
+## GUI milestone (M9, 2026-09-30)
+Built from the user's design package (`docs/gui/`: DESIGN.md, SCREENS.md, tokens.json, six
+mockups, three SVG drawings) as a software renderer on the existing minifb window (tiny-skia +
+fontdue, all pure Rust; fonts are the OFL faces embedded from `gba-frontend/assets/fonts/`).
+Decisions taken with the user: no egui; Esc opens the pause menu (quitting is the menu's QUIT,
+the window close button, or Esc on the Library); the Bench in full including core hooks.
+- **Screens.** 01 Library (`library/`, `screens/library.rs`: folder scan thread, display names
+  from file names, TOML index cache, background title captures for the cartridge labels), 02
+  Paused (`overlay/`: drawn at native 240x160 into a frame copy, Pixel palette, 5x5 bitmap font,
+  BLDY-style dim), 03 Save states (`screens/states.rs`: film strips at 1x, grease-pencil ring,
+  loupe, delete dialog), 04 Settings (`settings.rs`, `screens/settings.rs`: the open manual with
+  key rebinding, three spreads, settings file in the config dir with unknown keys preserved and
+  CLI flags overriding for the run only), D Bench (`screens/bench.rs`). `app.rs` is the state
+  machine; `ui/` the toolkit (tokens checked against tokens.json by a test).
+- **Slots.** Eight per game, `<rom stem>.s<N>.state` beside the ROM, one file each with a header
+  (frame, time, play seconds, core state version, 240x160 thumbnail) and the core state; the old
+  `<rom>.state` is imported into slot 1 once. Format in `docs/ARCHITECTURE.md`.
+- **Core hooks** (`ppu/capture.rs`, `apu/capture.rs`, `bus/bench.rs`, `DebugHooks::bench`): per-layer
+  BGR555 planes captured per scanline as drawn, OBJ drawn/active counts, per-channel peaks, layer
+  and channel mutes applied only to what is composed/mixed, a 228-line event log (VBlank IRQ, FIFO
+  DMAs, DMA3, Timer 0 overflow). Off by default; one `is_some()` per line/sample/event. Nothing in
+  savestates. 22 unit tests. Speed gate (KH:CoM `--bench 1200`, release, quiet machine):
+  interleaved A/B against a binary built from the pre-hooks commit 65b50b5, four runs each: baseline 1154/998/1098/1038 fps (mean 1072), with hooks 1105/1083/1042/1085 fps (mean 1079), i.e. +0.6 %, within noise; the morning's 1565 fps baseline was taken on a quieter machine and is not comparable to the evening runs. Framebuffer hash unchanged (6872ee2c47e4c346).
+- **Review renders.** `cargo test -p gba-frontend --release -- --ignored render_` (with `GBA_ROM`
+  and `GBA_GAMES_DIR` set) writes every screen to `target/ui-renders/`; each was compared with its
+  mockup by eye at integration.
+- **Deviations from the design, and why.** No native file/folder dialogs (pure Rust, no OS
+  dialog crate): folders and the BIOS path are typed into underline fields in Settings; F2 opens
+  the Save states screen (the design names no key); in-game F1/F3 act on the "current slot" (the
+  last slot used in any menu, initially the newest); `PLAYED h:mm` replaces the mockup's "Runs"
+  filler row; the gamepad map is shown read-only; the Library shows 2 columns below ~1114 px
+  (3 would need a scaled drawing); the cart label art is a cover crop of the title capture; Find
+  needs `/`, Tab or a click to take letters that are bound to GBA buttons; the Bench's layer
+  thumbnails are exact 1/3 samples (80x53) instead of the mockup's fractional size; the pause
+  bar reads `A OVERWRITE  B BACK` with the GBA button names; Settings adds the F2 row to the
+  emulator-keys list; the Data face has no `▸`, so the film edge print draws the triangle as a path.
+- **Not done.** Gamepad rebinding (the design shows it on a second spread); the window has no
+  minimum size enforcement (layouts clip below 960x640); thread priority for the capture thread
+  (std has none; it runs one game at a time with pauses).
 
 ## Next steps, in order of value
 1. Misc edge H-blank bit / DMA prefetch rows (6/12, see "Misc edge attempt").
