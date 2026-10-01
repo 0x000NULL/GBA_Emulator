@@ -109,11 +109,48 @@ machine), framebuffer and PPU scratch (regenerated), audio sample queue, debug h
 KH:CoM from a state reproduces the straight run's framebuffer hash exactly.
 
 ## Frontend (gba-frontend)
-`window.rs` (BGR555 LUT, integer upscale, minifb), `input.rs` (keyboard + gilrs), `audio.rs`
-(SPSC ring, linear resampler from the core's SOUNDBIAS rate to the device rate, cpal stream,
-underrun counter), `pacing.rs` (1/59.7275 s frame clock, adaptive sleep margin, +-2% audio-fill
-correction), `saves.rs` (atomic `<rom>.sav` writes every 60 frames/F5/exit), `debug_ui.rs`
-(hotkeys, IO dump, screenshots, savestates). Runs without an audio device.
+The GUI follows `docs/gui/` (DESIGN.md is the design language, SCREENS.md the per-screen
+contract, tokens.json the constants, mockups/ the reference renders). It is a software renderer on
+the minifb window: no widget toolkit.
+
+- `app.rs`: the state machine. `Screen` is Library (01), Game (02, with the pixel pause overlay),
+  SaveStates (03), Settings (04) or Bench (D). `Session` owns the running `Gba`, its `.sav`
+  manager, slot set, audio, pacer and overlay state. Only Game (unpaused) and Bench (running)
+  call `Session::step`. `App::update` reacts to the frame's `UiInput`, `App::render` presents.
+- `ui/`: `tokens` (constants, checked against tokens.json by a test), `canvas` (tiny-skia pixmap
+  for vector shapes, direct pixel writes for text and framebuffer blits, clip rect, conversion to
+  minifb's 0RGB), `text` (seven embedded OFL faces rasterised by fontdue, glyph cache, ellipsis
+  and wrapping), `widgets` (keycap, tick, buttons, head/foot frame, tabs, numbered items, ruler),
+  `drawings` (a parser for the SVG subset of the three line drawings), `fmt` (copy rules),
+  `input` (per-frame snapshot; menu navigation derives from the GBA key bindings so a rebinding
+  moves the menus too; gamepad edge/repeat).
+- `overlay/`: everything drawn over a running game is drawn at native 240x160 into a *copy* of
+  the frame in the Pixel palette (5x5 bitmap font, windows, dim = BLDY maths with EVY 9, 48x32
+  thumbnails = exact 1/5 samples, toasts) and scaled with it. `overlay::pause` is the pause menu
+  state machine.
+- `slots.rs`: eight save-state slots per game, `<rom stem>.s<N>.state` beside the ROM. One file
+  per slot: little-endian header (`GBSL`, header version, header length, frame count, saved-at
+  unix seconds, play seconds, core `STATE_VERSION`, emulator version string, 240x160 BGR555
+  thumbnail) followed by `Gba::save_state()` bytes. Headers and thumbnails are read without the
+  body; a core-version mismatch marks the slot `CAN'T LOAD` (deletable, never loaded). The legacy
+  single `<rom>.state` is imported into slot 1 on first scan when slot 1 is empty (a scratch
+  machine supplies the thumbnail); the original is left alone. Writes go through
+  `saves::write_atomic`.
+- `screens/`: `library` (01), `states` (03), `settings` (04), `bench` (D), each a struct with
+  `update(&UiInput, ctx) -> Outcome` and `render(&mut Canvas, ctx)`; the app owns the wiring.
+  The bench switches the core capture on only while it is open (`Gba::set_bench`).
+- `window.rs` (resizable minifb window; `present_game` is the fast path: BGR555 LUT + integer
+  upscale onto the Night letterbox, optional LCD-grid / frame-blend filters; `present_canvas`
+  for the window-resolution screens; `gather_input`), `input.rs` (default key maps, gilrs),
+  `audio.rs` (SPSC ring, linear resampler from the core's SOUNDBIAS rate to the device rate, cpal
+  stream, underrun counter, a gain stage in the callback for the volume setting), `pacing.rs`
+  (1/59.7275 s frame clock, adaptive sleep margin, +-2% audio-fill correction), `saves.rs`
+  (atomic `<rom>.sav` writes every 60 frames/F5/exit), `debug_ui.rs` (hotkey map, IO dump,
+  screenshots, title bar), `settings.rs` (TOML settings file in the user's config dir, unknown
+  keys preserved; CLI flags override for the run only), `library/` (folder scan thread, display
+  names from file names, index cache, background title captures for the cartridge labels).
+  Runs without an audio device. Review renders: `cargo test -p gba-frontend --release --
+  --ignored render_` writes every screen as PNG under `target/ui-renders/`.
 
 ## Debug tooling
 `--trace` writes mGBA's register layout (sixteen `%08X`, then `cpsr: %08X`, r15 = PC+8/PC+4) per
