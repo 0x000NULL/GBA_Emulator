@@ -106,10 +106,12 @@ struct Cli {
     triage: bool,
 }
 
-/// Triage input: Start for 10 frames at 700, 1100, 1500, 1900, 2300; A for 10 frames at 1300, 2100.
-fn triage_keys(frame: u32) -> gba_core::Keys {
-    let start = [700, 1100, 1500, 1900, 2300].iter().any(|&f| (f..f + 10).contains(&frame));
-    let a = [1300, 2100].iter().any(|&f| (f..f + 10).contains(&frame));
+/// Triage input: Start for 10 frames at 700, 1130, 1490, 1870, 2310; A for 10 frames at 1310,
+/// 2090. The spacing is deliberately irregular (not a multiple of ~400 frames) so a title's
+/// attract loop cannot swallow every press.
+pub fn triage_keys(frame: u32) -> gba_core::Keys {
+    let start = [700, 1130, 1490, 1870, 2310].iter().any(|&f| (f..f + 10).contains(&frame));
+    let a = [1310, 2090].iter().any(|&f| (f..f + 10).contains(&frame));
     let mut k = 0;
     if start {
         k |= gba_core::Keys::START;
@@ -278,7 +280,7 @@ fn run() -> Result<bool> {
                 triage.last_change = f;
                 triage.last_hash = h;
             }
-            if [600, 1200, 1800, 2400].contains(&(f + 1)) {
+            if [600, 1200, 1800, 2400, 3000].contains(&(f + 1)) {
                 triage.checkpoints.push((f + 1, h));
             }
             if gba.bus.apu.samples.iter().any(|[l, r]| l.unsigned_abs() > 64 || r.unsigned_abs() > 64) {

@@ -104,8 +104,8 @@ def write_doc(rows, path: Path, when: str):
     cats = ["ok", "silent", "needs-bios-sound-driver", "static", "frozen", "black", "crash"]
     counts = {c: sum(1 for r in rows if r.get("category") == c) for c in cats}
     lines = [f"# Library compatibility ({n} titles, {when})", ""]
-    lines.append("Boot sweep by `scripts/triage.py` (harness `gba-test --triage`): every ROM runs 2400 frames (40 s) under the")
-    lines.append("HLE BIOS with Start pressed at frames 700/1100/1500/1900/2300 and A at 1300/2100, then the final picture, its")
+    lines.append("Boot sweep by `scripts/triage.py` (harness `gba-test --triage`): every ROM runs 3000 frames (50 s) under the")
+    lines.append("HLE BIOS with Start pressed at frames 700/1130/1490/1870/2310 and A at 1310/2090, then the final picture, its")
     lines.append("motion, the audio and the CPU state are classified. `ok` = a moving, coloured picture with audio. This is a boot")
     lines.append("and title/menu check, not a play-through; the scripted gameplay goldens live in `tests/compat.toml`.")
     lines.append("")
@@ -167,7 +167,7 @@ def main():
     ap.add_argument("folder", nargs="?", default="Games")
     ap.add_argument("--out", default="tools/triage")
     ap.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 4) - 2))
-    ap.add_argument("--frames", type=int, default=2400)
+    ap.add_argument("--frames", type=int, default=3000)
     ap.add_argument("--only", default=None, help="substring filter on the file name")
     ap.add_argument("--exe", default=str(EXE))
     ap.add_argument("--report", default=None, help="CSV to re-render into a report")
