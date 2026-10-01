@@ -26,6 +26,9 @@ pub struct DebugHooks {
     pub log: Vec<String>,
     /// Log every HLE SWI dispatch (number, name, r0-r3) into `log`.
     pub log_swi: bool,
+    /// Bench capture (layer pictures, sound levels, scanline event log). Deliberately not part of
+    /// `enabled`: that flag also switches on per-access watch scans.
+    pub bench: Option<Box<super::bench::BenchCapture>>,
 }
 
 impl Default for DebugHooks {
@@ -42,6 +45,7 @@ impl Default for DebugHooks {
             mgba_flags: 0,
             log_swi: false,
             log: Vec::new(),
+            bench: None,
         }
     }
 }

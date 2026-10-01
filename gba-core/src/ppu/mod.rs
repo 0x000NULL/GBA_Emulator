@@ -21,6 +21,7 @@
 mod bg_affine;
 mod bg_text;
 mod bitmap;
+pub mod capture;
 mod compose;
 mod obj;
 mod regs;
@@ -79,6 +80,9 @@ pub struct Ppu {
     pub bg_ref: [i32; 4],
     #[cfg_attr(feature = "savestate", serde(skip, default = "new_scratch"))]
     scratch: Box<Scratch>,
+    /// Bench layer capture; `None` unless attached with `Bus::set_bench`. Never serialised.
+    #[cfg_attr(feature = "savestate", serde(skip))]
+    pub debug: Option<Box<capture::PpuCapture>>,
 }
 
 impl Default for Ppu {
@@ -112,6 +116,7 @@ impl Ppu {
                 obj: obj::ObjLine::new(),
                 win: [0x3F; SCREEN_W],
             }),
+            debug: None,
         }
     }
 
@@ -247,12 +252,15 @@ impl Ppu {
     /// Reference Point Registers").
     pub fn render_scanline(&mut self, y: usize) {
         debug_assert!(y < SCREEN_H);
-        let Ppu { pal, vram, oam, io, fb, bg_ref, scratch, .. } = self;
+        let Ppu { pal, vram, oam, io, fb, bg_ref, scratch, debug, .. } = self;
         let mem = Mem { io, pal, vram, oam };
         let row = &mut fb[y * SCREEN_W..(y + 1) * SCREEN_W];
         let dispcnt = mem.dispcnt();
         if dispcnt & 0x80 != 0 {
             row.fill(0x7FFF);
+            if let Some(cap) = debug {
+                cap.blank_line(y);
+            }
             return;
         }
         let mode = dispcnt & 7;
@@ -300,8 +308,26 @@ impl Ppu {
             }
         }
 
+        // Bench: record the raw layers, then apply the layer mutes to what gets composed. The real
+        // OBJ window still applies when OBJ is muted (window_line reads `obj`, not `compose_obj`).
+        let obj_on = dispcnt & (1 << 12) != 0;
+        let mut compose_active = bg_active;
+        let mut compose_obj: &obj::ObjLine = obj;
+        if let Some(cap) = debug {
+            cap.capture_line(y, bg, bg_active, obj, obj_on);
+            if cap.mute != 0 {
+                for (i, a) in compose_active.iter_mut().enumerate() {
+                    if cap.mute & (1 << i) != 0 {
+                        *a = false;
+                    }
+                }
+                if cap.mute & 0x10 != 0 {
+                    compose_obj = &cap.empty_obj;
+                }
+            }
+        }
         compose::window_line(&mem, y, &obj.window, win);
-        compose::compose_line(&mem, bg, bg_active, obj, win, row);
+        compose::compose_line(&mem, bg, compose_active, compose_obj, win, row);
         if io[0x02] & 1 != 0 {
             compose::green_swap(row);
         }

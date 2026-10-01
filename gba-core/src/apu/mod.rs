@@ -7,6 +7,7 @@
 //! DirectSound FIFOs, `mixer` the SOUNDCNT_L/H volume mix, SOUNDBIAS and the 10-bit -> 16-bit
 //! conversion. Registers with R/W bits keep a raw byte mirror (`raw`) that is masked on read.
 
+pub mod capture;
 pub mod fifo;
 pub mod mixer;
 pub mod psg;
@@ -39,6 +40,9 @@ pub struct Apu {
     #[cfg_attr(feature = "savestate", serde(skip))]
     pub samples: Vec<[i16; 2]>,
     pub sample_count: u64,
+    /// Bench capture; `None` unless attached with `Bus::set_bench`. Never serialised.
+    #[cfg_attr(feature = "savestate", serde(skip))]
+    pub debug: Option<Box<capture::ApuCapture>>,
 }
 
 impl Default for Apu {
@@ -60,6 +64,7 @@ impl Apu {
             fifo_b: Fifo::default(),
             samples: Vec::new(),
             sample_count: 0,
+            debug: None,
         };
         // SOUNDBIAS = 0x200 after boot.
         a.raw[SOUNDBIAS - BASE] = 0x00;
@@ -319,11 +324,25 @@ impl Apu {
             sum[2] += self.wave.output() as u32;
             sum[3] += self.noise.output() as u32;
         }
+        let mut cnt_l = self.raw16(SOUNDCNT_L);
+        let mut cnt_h = self.raw16(SOUNDCNT_H);
+        if let Some(cap) = self.debug.as_deref_mut() {
+            let env = |on: bool, vol: u8| if on { vol } else { 0 };
+            cap.note(capture::CH_SQ1, env(self.sq1.enabled && self.sq1.dac_on(), self.sq1.envelope.volume));
+            cap.note(capture::CH_SQ2, env(self.sq2.enabled && self.sq2.dac_on(), self.sq2.envelope.volume));
+            cap.note(capture::CH_WAVE, self.wave.output());
+            cap.note(capture::CH_NOISE, env(self.noise.enabled && self.noise.dac_on(), self.noise.envelope.volume));
+            cap.note(capture::CH_FIFO_A, self.fifo_a.sample.unsigned_abs());
+            cap.note(capture::CH_FIFO_B, self.fifo_b.sample.unsigned_abs());
+            // Muting only removes the channel from the mix; registers and FIFOs stay untouched.
+            cnt_l &= !cap.mask_l;
+            cnt_h &= !cap.mask_h;
+        }
         let inp = MixInput {
             psg_sum: sum,
             ticks,
-            cnt_l: self.raw16(SOUNDCNT_L),
-            cnt_h: self.raw16(SOUNDCNT_H),
+            cnt_l,
+            cnt_h,
             fifo_a: self.fifo_a.sample,
             fifo_b: self.fifo_b.sample,
             bias: self.raw16(SOUNDBIAS),

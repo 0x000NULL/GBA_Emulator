@@ -120,3 +120,18 @@ correction), `saves.rs` (atomic `<rom>.sav` writes every 60 frames/F5/exit), `de
 instruction; `--trace-hash` writes `cycle pc hash`. `--break PC`, `--watch LO..HI`, `--exit-on-swi N`,
 `--dump-io`, `--png`. Hooks live in `bus/debug.rs` behind a single `enabled` flag so the hot path
 pays one branch. Guest `mgba` debug prints are collected and echoed as `guest:` lines.
+
+Bench capture (the developer "Bench" view: per-layer pictures, channel levels, scanline event log,
+layer/channel mutes) follows an ownership rule. The PPU and APU cannot reach `DebugHooks`
+(`render_scanline` and `on_sample` take no context), so each owns its capture behind
+`pub debug: Option<Box<..>>` (`ppu::capture::PpuCapture`, `apu::capture::ApuCapture`) and the Bus
+owns the published `BenchCapture` in `DebugHooks::bench`. `Bus::set_bench` attaches or drops all
+three together. Capture is written during rendering/mixing; the Bus publishes once per frame at
+the `LineEnd` that makes `vcount == 160` (where `Gba::run_frame` returns), swapping the PPU's
+finished `LayerFrame` in and snapshotting sound state. Nothing is serialised (savestate bytes and
+`STATE_VERSION` are unchanged; `load_state` carries the captures over like the other debug state).
+Mutes only edit what is composed or mixed (the layer set handed to `compose_line`, the SOUNDCNT
+copies handed to the mixer), never registers, FIFOs or underrun counts, so a muted run is
+indistinguishable to the guest. With the bench off the cost is one `is_some()` per rendered line,
+audio sample, line end, Timer 0 overflow and DMA start; the bench is deliberately not part of
+`DebugHooks::enabled`, which also gates the per-access watch scans.

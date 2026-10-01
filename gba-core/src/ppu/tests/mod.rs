@@ -3,6 +3,8 @@
 
 use super::*;
 
+mod capture;
+
 const W: usize = SCREEN_W;
 
 // ---------------------------------------------------------------- helpers
