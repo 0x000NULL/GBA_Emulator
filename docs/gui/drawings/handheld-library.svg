@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="436" height="320" viewBox="0 0 436 320" fill="none" stroke="#1A1A1A" stroke-width="1.5">
+  <!-- Library, right column. Layering, back to front: the inserted cartridge (drawn by the app at
+       x=143 y=0, 150x84, label strip from y=21), then this drawing, then the game picture at
+       x=98 y=92, 240x160, 1x, with a 1.5px ink outline. Keycaps are placed by the app:
+       L "A" at (34,60), R "S" at (380,60), "Z" under the A button at (387,181) in spot,
+       "X" under the B button at (355,215). The A button's ring is the screen's selection mark. -->
+  <rect x="28" y="54" width="104" height="26" rx="13" fill="#F4EFE3"/>
+  <rect x="304" y="54" width="104" height="26" rx="13" fill="#F4EFE3"/>
+  <rect x="1" y="66" width="434" height="252" rx="84" fill="#F4EFE3"/>
+  <rect x="82" y="78" width="272" height="188" rx="8" fill="#E7E0CF"/>
+  <path d="M38 158h16v17h17v16h-17v17h-16v-17h-17v-16h17z"/>
+  <circle cx="398" cy="160" r="15" stroke="#C8322A" stroke-width="3"/>
+  <circle cx="366" cy="194" r="15"/>
+  <circle cx="372" cy="250" r="4"/>
+  <circle cx="372" cy="268" r="4"/>
+  <g fill="#1A1A1A" stroke="none">
+    <circle cx="56" cy="272" r="1.3"/><circle cx="63" cy="276" r="1.3"/><circle cx="70" cy="280" r="1.3"/><circle cx="77" cy="284" r="1.3"/>
+  </g>
+</svg>

@@ -5,12 +5,10 @@ use gba_core::Gba;
 use minifb::{Key, KeyRepeat, Window};
 use std::path::{Path, PathBuf};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Hotkey {
-    /// Esc
-    Quit,
-    /// P
-    TogglePause,
+    /// Esc or P: open/close the pause menu (pauses the game)
+    Pause,
     /// N (while paused)
     FrameStep,
     /// F10
@@ -19,31 +17,71 @@ pub enum Hotkey {
     Screenshot,
     /// F5
     SaveNow,
-    /// F1: write `<rom>.state`
+    /// F1: save the current slot
     SaveState,
-    /// F3: load `<rom>.state`
+    /// F3: load the current slot
     LoadState,
+    /// F12: developer bench view
+    Bench,
+    /// F2: the save states screen
+    SaveStates,
 }
 
+/// Default hotkeys; `HotkeyMap` carries the live (rebindable) copy.
 pub const HOTKEYS: &[(Key, Hotkey)] = &[
-    (Key::Escape, Hotkey::Quit),
-    (Key::P, Hotkey::TogglePause),
+    (Key::Escape, Hotkey::Pause),
+    (Key::P, Hotkey::Pause),
     (Key::N, Hotkey::FrameStep),
     (Key::F10, Hotkey::DumpIo),
     (Key::F11, Hotkey::Screenshot),
     (Key::F5, Hotkey::SaveNow),
     (Key::F1, Hotkey::SaveState),
     (Key::F3, Hotkey::LoadState),
+    (Key::F12, Hotkey::Bench),
+    (Key::F2, Hotkey::SaveStates),
 ];
 
-/// Hotkeys pressed since the last window update (edge-triggered, no auto-repeat).
-pub fn poll_hotkeys(window: &Window) -> Vec<Hotkey> {
-    HOTKEYS.iter().filter(|(k, _)| window.is_key_pressed(*k, KeyRepeat::No)).map(|(_, h)| *h).collect()
+/// Live hotkey bindings (Settings can change them).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HotkeyMap {
+    pub keys: Vec<(Key, Hotkey)>,
+    /// Held key for fast-forward.
+    pub fast_forward: Key,
 }
 
-/// Held keys that act as modifiers rather than events.
-pub fn fast_forward_held(window: &Window) -> bool {
-    window.is_key_down(Key::Tab)
+impl Default for HotkeyMap {
+    fn default() -> Self {
+        HotkeyMap { keys: HOTKEYS.to_vec(), fast_forward: Key::Tab }
+    }
+}
+
+impl HotkeyMap {
+    /// Hotkeys among this frame's edge-triggered key presses.
+    pub fn pressed(&self, input: &crate::ui::input::UiInput) -> Vec<Hotkey> {
+        let mut out: Vec<Hotkey> = Vec::new();
+        for (k, h) in &self.keys {
+            if input.pressed(*k) && !out.contains(h) {
+                out.push(*h);
+            }
+        }
+        out
+    }
+
+    /// The first key bound to `h` (for keycaps).
+    pub fn key_for(&self, h: Hotkey) -> Option<Key> {
+        self.keys.iter().find(|(_, x)| *x == h).map(|(k, _)| *k)
+    }
+
+    /// Hotkeys pressed since the last window update (edge-triggered, no auto-repeat).
+    pub fn poll(&self, window: &Window) -> Vec<Hotkey> {
+        let mut out = Vec::new();
+        for (k, h) in &self.keys {
+            if window.is_key_pressed(*k, KeyRepeat::No) && !out.contains(h) {
+                out.push(*h);
+            }
+        }
+        out
+    }
 }
 
 /// F10: print the IO register dump and any guest debug-log lines.

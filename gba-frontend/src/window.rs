@@ -1,8 +1,14 @@
-//! minifb window: BGR555 -> 0RGB conversion through a LUT, integer upscaling, title bar.
+//! minifb window: resizable, presents either a window-resolution canvas (menus) or the game
+//! frame on a letterbox (fast path: BGR555 -> 0RGB through a LUT, integer upscale), and gathers
+//! the per-frame input snapshot.
 
 use crate::config::{SCREEN_H, SCREEN_W};
+use crate::ui::input::{actions, KeyMap, PadRepeat, UiInput};
+use crate::ui::{Canvas, Rgb};
 use anyhow::{anyhow, Result};
-use minifb::{Scale, ScaleMode, Window, WindowOptions};
+use minifb::{InputCallback, Key, KeyRepeat, MouseButton, MouseMode, Scale, ScaleMode, Window, WindowOptions};
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 /// 32768-entry BGR555 -> 0RGB8888 table (bit 15 of the source is ignored).
 pub fn build_lut() -> Vec<u32> {
@@ -16,53 +22,123 @@ pub fn build_lut() -> Vec<u32> {
 
 /// Nearest-neighbour upscale of a 240x160 BGR555 framebuffer into `out` (240*scale x 160*scale, 0RGB).
 pub fn scale_into(fb: &[u16], lut: &[u32], scale: usize, out: &mut [u32]) {
+    scale_into_at(fb, lut, scale, out, SCREEN_W * scale, 0, 0);
+}
+
+/// Upscale into a larger `out` buffer of width `out_w`, placing the picture at (x, y).
+/// Rows and columns that fall outside `out` are skipped.
+pub fn scale_into_at(fb: &[u16], lut: &[u32], scale: usize, out: &mut [u32], out_w: usize, x: i32, y: i32) {
     debug_assert_eq!(fb.len(), SCREEN_W * SCREEN_H);
+    let out_h = out.len() / out_w.max(1);
     let dst_w = SCREEN_W * scale;
-    debug_assert_eq!(out.len(), dst_w * SCREEN_H * scale);
-    for y in 0..SCREEN_H {
-        let src = &fb[y * SCREEN_W..(y + 1) * SCREEN_W];
-        let row0 = y * scale * dst_w;
-        {
-            let row = &mut out[row0..row0 + dst_w];
-            for (x, &p) in src.iter().enumerate() {
-                let c = lut[(p & 0x7FFF) as usize];
-                row[x * scale..(x + 1) * scale].fill(c);
+    for sy in 0..SCREEN_H {
+        let src = &fb[sy * SCREEN_W..(sy + 1) * SCREEN_W];
+        let dy0 = y + (sy * scale) as i32;
+        // the first scaled row is filled from the LUT, the rest are copies of it
+        let mut first: Option<usize> = None;
+        for r in 0..scale {
+            let dy = dy0 + r as i32;
+            if dy < 0 || dy >= out_h as i32 {
+                continue;
+            }
+            let row0 = dy as usize * out_w;
+            match first {
+                Some(src_row) => {
+                    let x0 = x.max(0) as usize;
+                    let x1 = ((x + dst_w as i32).min(out_w as i32)).max(0) as usize;
+                    if x1 > x0 {
+                        out.copy_within(src_row + x0..src_row + x1, row0 + x0);
+                    }
+                }
+                None => {
+                    for (sx, &p) in src.iter().enumerate() {
+                        let c = lut[(p & 0x7FFF) as usize];
+                        let px0 = x + (sx * scale) as i32;
+                        for s in 0..scale {
+                            let dx = px0 + s as i32;
+                            if dx >= 0 && dx < out_w as i32 {
+                                out[row0 + dx as usize] = c;
+                            }
+                        }
+                    }
+                    first = Some(row0);
+                }
             }
         }
-        for r in 1..scale {
-            out.copy_within(row0..row0 + dst_w, row0 + r * dst_w);
+    }
+}
+
+fn pack(c: Rgb) -> u32 {
+    (c[0] as u32) << 16 | (c[1] as u32) << 8 | c[2] as u32
+}
+
+struct CharSink(Arc<Mutex<Vec<char>>>);
+
+impl InputCallback for CharSink {
+    fn add_char(&mut self, uni_char: u32) {
+        if let Some(c) = char::from_u32(uni_char) {
+            if !c.is_control() {
+                self.0.lock().unwrap().push(c);
+            }
         }
     }
 }
 
 pub struct Video {
     window: Window,
-    scale: usize,
     buf: Vec<u32>,
     lut: Vec<u32>,
+    chars: Arc<Mutex<Vec<char>>>,
+    pad_repeat: PadRepeat,
+    mouse_was_down: bool,
 }
 
 impl Video {
-    pub fn new(title: &str, scale: u32) -> Result<Self> {
-        let scale = scale.max(1) as usize;
-        let (w, h) = (SCREEN_W * scale, SCREEN_H * scale);
-        let opts = WindowOptions {
-            resize: false,
-            scale: Scale::X1,
-            scale_mode: ScaleMode::Stretch,
-            ..WindowOptions::default()
-        };
+    /// Open a resizable window of `w` x `h` client pixels.
+    pub fn new(title: &str, w: usize, h: usize) -> Result<Self> {
+        let opts = WindowOptions { resize: true, scale: Scale::X1, scale_mode: ScaleMode::Stretch, ..WindowOptions::default() };
         let mut window = Window::new(title, w, h, opts).map_err(|e| anyhow!("creating window: {e}"))?;
         // minifb rate-limits update() to 250 fps by default; pacing is ours.
         window.set_target_fps(0);
-        Ok(Video { window, scale, buf: vec![0; w * h], lut: build_lut() })
+        let chars = Arc::new(Mutex::new(Vec::new()));
+        window.set_input_callback(Box::new(CharSink(chars.clone())));
+        Ok(Video { window, buf: vec![0; w * h], lut: build_lut(), chars, pad_repeat: PadRepeat::new(), mouse_was_down: false })
     }
 
-    /// Convert, upscale and blit one frame. Also pumps window events.
-    pub fn present(&mut self, fb: &[u16]) -> Result<()> {
-        scale_into(fb, &self.lut, self.scale, &mut self.buf);
-        let (w, h) = (SCREEN_W * self.scale, SCREEN_H * self.scale);
+    /// Current client size.
+    pub fn size(&self) -> (usize, usize) {
+        let (w, h) = self.window.get_size();
+        (w.max(1), h.max(1))
+    }
+
+    fn ensure_buf(&mut self) -> (usize, usize) {
+        let (w, h) = self.size();
+        if self.buf.len() != w * h {
+            self.buf = vec![0; w * h];
+        }
+        (w, h)
+    }
+
+    /// Present the game frame at `scale` on a letterbox of colour `bg`; the frame is centred.
+    pub fn present_game(&mut self, fb: &[u16], scale: u32, bg: Rgb) -> Result<()> {
+        let (w, h) = self.ensure_buf();
+        let scale = scale.max(1) as usize;
+        let (x, y) = crate::ui::centred_frame(w as u32, h as u32, scale as u32);
+        self.buf.fill(pack(bg));
+        scale_into_at(fb, &self.lut, scale, &mut self.buf, w, x, y);
         self.window.update_with_buffer(&self.buf, w, h).map_err(|e| anyhow!("presenting frame: {e}"))
+    }
+
+    /// Present a window-resolution canvas (it is resized to the window first by the caller).
+    pub fn present_canvas(&mut self, canvas: &Canvas) -> Result<()> {
+        let (w, h) = self.ensure_buf();
+        canvas.to_0rgb(&mut self.buf);
+        if self.buf.len() != w * h {
+            // the window changed size between layout and present; draw next frame instead
+            self.window.update();
+            return Ok(());
+        }
+        self.window.update_with_buffer(&self.buf, w, h).map_err(|e| anyhow!("presenting canvas: {e}"))
     }
 
     /// Pump window events without redrawing.
@@ -82,8 +158,25 @@ impl Video {
         &self.window
     }
 
-    pub fn size(&self) -> (usize, usize) {
-        self.window.get_size()
+    /// Everything that happened since the last update, as the screens want it.
+    pub fn gather_input(&mut self, map: &KeyMap, pad_mask: u16, now: Instant) -> UiInput {
+        let pressed = self.window.get_keys_pressed(KeyRepeat::No);
+        let repeated = self.window.get_keys_pressed(KeyRepeat::Yes);
+        let down = self.window.get_keys();
+        let chars: Vec<char> = std::mem::take(&mut *self.chars.lock().unwrap());
+        let mouse = self.window.get_mouse_pos(MouseMode::Pass).unwrap_or((-1.0, -1.0));
+        let mouse_down = self.window.get_mouse_down(MouseButton::Left);
+        let clicked = mouse_down && !self.mouse_was_down;
+        self.mouse_was_down = mouse_down;
+        let wheel = self.window.get_scroll_wheel().map(|(_, y)| y).unwrap_or(0.0);
+        let (pad_pressed, pad_repeated) = self.pad_repeat.update(pad_mask, now);
+        let acts = actions(map, &pressed, &repeated, pad_pressed, pad_repeated);
+        let game_mask = crate::input::sanitize(map.mask(|k| down.contains(&k)) | pad_mask);
+        UiInput { pressed, repeated, down, chars, mouse, mouse_down, clicked, wheel, actions: acts, game_mask }
+    }
+
+    pub fn is_key_down(&self, k: Key) -> bool {
+        self.window.is_key_down(k)
     }
 }
 
@@ -124,5 +217,24 @@ mod tests {
         }
         assert_eq!(out[3], 0);
         assert_eq!(out[3 * w], 0);
+    }
+
+    #[test]
+    fn scale_at_offset_into_a_letterbox() {
+        let lut = build_lut();
+        let mut fb = vec![0x03E0u16; SCREEN_W * SCREEN_H]; // green
+        fb[SCREEN_W * SCREEN_H - 1] = 0x001F; // red bottom-right
+        let (w, h) = (1280usize, 800usize);
+        let mut out = vec![0x141414u32; w * h];
+        scale_into_at(&fb, &lut, 4, &mut out, w, 160, 80);
+        assert_eq!(out[79 * w + 160], 0x141414, "letterbox above");
+        assert_eq!(out[80 * w + 159], 0x141414, "letterbox left");
+        assert_eq!(out[80 * w + 160], 0x00FF00);
+        assert_eq!(out[(80 + 640 - 1) * w + 160 + 960 - 1], 0xFF0000);
+        assert_eq!(out[(80 + 640) * w + 160], 0x141414, "letterbox below");
+        // partially off-screen placement does not panic
+        let mut small = vec![0u32; 100 * 100];
+        scale_into_at(&fb, &lut, 2, &mut small, 100, -50, -30);
+        assert_eq!(small[0], 0x00FF00);
     }
 }

@@ -37,11 +37,16 @@ pub const FAST_FORWARD_PRESENT: Duration = Duration::from_millis(16);
 #[derive(Parser, Debug, Clone)]
 #[command(name = "gba", about = "Game Boy Advance emulator", version)]
 pub struct Cli {
-    /// ROM file: a .gba, or a .zip containing one.
-    pub rom: PathBuf,
-    /// Integer window scale (240x160 * N).
-    #[arg(long, default_value_t = 3, value_parser = clap::value_parser!(u32).range(1..=10))]
-    pub scale: u32,
+    /// ROM file: a .gba, or a .zip containing one. Without it the library opens.
+    pub rom: Option<PathBuf>,
+    /// Fixed picture scale (240x160 * N) and a window that fits it exactly; default: the
+    /// 1280x800 design size with the largest whole-number picture that fits.
+    #[arg(long, value_parser = clap::value_parser!(u32).range(1..=10))]
+    pub scale: Option<u32>,
+    /// Extra library folder (repeatable). The folder of a ROM given on the command line is
+    /// always included.
+    #[arg(long, value_name = "DIR")]
+    pub library: Vec<PathBuf>,
     /// 16 KiB BIOS image for low-level emulation (overrides GBA_BIOS).
     #[arg(long, conflicts_with = "hle")]
     pub bios: Option<PathBuf>,
