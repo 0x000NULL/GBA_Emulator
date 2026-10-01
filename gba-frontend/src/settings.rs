@@ -579,7 +579,7 @@ mod tests {
         assert_eq!(s.audio_device, None);
         assert_eq!(s.audio, AudioMode::On);
         assert_eq!(s.pacing, Pacing::AudioClocked);
-        assert_eq!(s.autosave_frames, crate::config::SAVE_INTERVAL_FRAMES);
+        assert_eq!(s.autosave_frames, 60);
         assert_eq!(s.window, None);
         assert_eq!(s.keymap.0["A"], "Z");
         assert_eq!(s.keymap.0["SELECT"], "R Shift");

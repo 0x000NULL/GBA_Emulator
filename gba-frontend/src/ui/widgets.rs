@@ -1,6 +1,9 @@
 //! Shared components from `docs/gui/DESIGN.md`: keycap, tick box, buttons, the head and foot
 //! frame of every window-resolution screen, tabs and the numbered settings item.
 
+// Toolkit surface: the screens use a subset of these components.
+#![allow(dead_code)]
+
 use super::canvas::Canvas;
 use super::text::Style;
 use super::tokens::{component as c, font as f, layout as l, Palette, Rgb};

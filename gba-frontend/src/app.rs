@@ -12,7 +12,9 @@ use crate::overlay::pause::{Outcome, PauseMenu};
 use crate::overlay::Overlay;
 use crate::pacing::{paced_period, FpsCounter, Pacer};
 use crate::saves::SaveManager;
+use crate::library::Library;
 use crate::screens::bench::{BenchCtx, BenchOutcome, BenchScreen};
+use crate::screens::library::{LibraryOutcome, LibraryScreen};
 use crate::screens::settings::{SettingsCtx, SettingsOutcome, SettingsScreen};
 use crate::screens::states::{StatesCtx, StatesOutcome, StatesScreen};
 use crate::settings::{AudioMode, Bios, PictureSize, Settings};
@@ -287,6 +289,10 @@ pub struct App {
     /// Current slot (1..=8): what in-game F1/F3 act on; the last slot used in any menu.
     pub slot_cursor: u8,
     pub bench: BenchScreen,
+    pub library: Library,
+    library_screen: LibraryScreen,
+    /// The window title names the game; in the library it is set once.
+    title_is_library: bool,
     pub settings: Settings,
     settings_path: Option<PathBuf>,
     settings_screen: SettingsScreen,
@@ -328,6 +334,8 @@ impl App {
         let keymap = settings.to_keymap();
         let hotkeys = settings.to_hotkeys();
         let ff_limit = settings.ff_limit.factor();
+        let folders = Self::library_folders(&settings, cli.rom.as_deref());
+        let library = Library::new(folders, Self::cache_dir());
         let mut app = App {
             screen: Screen::Library,
             session: None,
@@ -338,6 +346,9 @@ impl App {
             quit: false,
             slot_cursor: 1,
             bench: BenchScreen::new(),
+            library,
+            library_screen: LibraryScreen::new(),
+            title_is_library: false,
             settings,
             settings_path,
             settings_screen: SettingsScreen::new(),
@@ -350,31 +361,84 @@ impl App {
         };
         if let Some(rom) = &cli.rom {
             app.start_game(rom)?;
-        }
-        if app.session.is_none() {
-            anyhow::bail!("no ROM given (the library screen arrives in the next milestone)");
+            app.library_screen.select(rom);
         }
         Ok(app)
+    }
+
+    /// `<cache dir>/gba-advance`: the library index and title captures.
+    fn cache_dir() -> Option<PathBuf> {
+        dirs::cache_dir().map(|d| d.join("gba-advance"))
+    }
+
+    /// Settings folders, then the command-line ROM's folder, else `./Games` when it exists.
+    fn library_folders(settings: &Settings, rom: Option<&Path>) -> Vec<PathBuf> {
+        let mut folders: Vec<PathBuf> = settings.library_folders.clone();
+        if let Some(parent) = rom.and_then(|r| r.parent()) {
+            let p = if parent.as_os_str().is_empty() { PathBuf::from(".") } else { parent.to_path_buf() };
+            if !folders.contains(&p) {
+                folders.push(p);
+            }
+        }
+        if folders.is_empty() {
+            let games = PathBuf::from("Games");
+            if games.is_dir() {
+                folders.push(games);
+            }
+        }
+        folders
+    }
+
+    fn update_library(&mut self, input: &UiInput) -> Result<()> {
+        self.library.poll();
+        match self.library_screen.update(input, &self.library) {
+            LibraryOutcome::None => {}
+            LibraryOutcome::Quit => self.quit = true,
+            LibraryOutcome::Play(p) => {
+                if let Err(e) = self.start_game(&p) {
+                    eprintln!("cannot start {}: {e:#}", p.display());
+                }
+            }
+            LibraryOutcome::ResumeLatest(p) => match self.start_game(&p) {
+                Ok(()) => {
+                    let latest = self.session.as_ref().and_then(|s| s.slots.latest().map(|m| m.slot));
+                    if let (Some(n), Some(s)) = (latest, self.session.as_mut()) {
+                        self.slot_cursor = n;
+                        match s.load_slot(n) {
+                            Ok(()) => println!("resumed slot {n}"),
+                            Err(e) => eprintln!("state load failed: {e}"),
+                        }
+                    }
+                }
+                Err(e) => eprintln!("cannot start {}: {e:#}", p.display()),
+            },
+            LibraryOutcome::OpenStates(p) => self.open_states(Back::Library, Some(&p)),
+        }
+        Ok(())
     }
 
     /// Boot `rom` and switch to the Game screen.
     pub fn start_game(&mut self, rom: &Path) -> Result<()> {
         let mut s = Session::new(rom, self.opts.bios.clone(), self.settings.audio, self.settings.audio_device.as_deref(), self.settings.volume)?;
         s.autosave_frames = self.settings.autosave_frames;
+        self.title_is_library = false;
         self.slot_cursor = s.slots.latest().map(|m| m.slot).unwrap_or(1);
         self.session = Some(s);
         self.screen = Screen::Game;
         Ok(())
     }
 
-    /// Flush saves and drop the session (QUIT in the pause menu).
+    /// Flush saves and drop the session (QUIT in the pause menu); back to the library.
     pub fn end_game(&mut self) {
         if let Some(mut s) = self.session.take() {
             s.flush_save();
+            let played = frames_to_secs(s.frames);
+            self.library.record_played(&s.rom, played);
+            self.library_screen.select(&s.rom);
+            self.library_screen.refresh_slots();
         }
+        self.title_is_library = false;
         self.screen = Screen::Library;
-        // the Library arrives in the next milestone; until then quitting a game quits the app
-        self.quit = true;
     }
 
     /// Initial window size: `--scale N` means exactly 240N x 160N, else the design size.
@@ -425,6 +489,12 @@ impl App {
         }
         self.keymap = self.settings.to_keymap();
         self.hotkeys = self.settings.to_hotkeys();
+        let rom = self.session.as_ref().map(|s| s.rom.clone());
+        let folders = Self::library_folders(&self.settings, rom.as_deref());
+        if folders != self.library.folders() {
+            self.library = Library::new(folders, Self::cache_dir());
+            self.library_screen = LibraryScreen::new();
+        }
         self.save_settings();
     }
 
@@ -496,7 +566,7 @@ impl App {
         self.step = false;
         match self.screen {
             Screen::Game => self.update_game(input, video)?,
-            Screen::Library => {}
+            Screen::Library => self.update_library(input)?,
             Screen::SaveStates { back } => self.update_states(input, back)?,
             Screen::Settings { back } => self.update_settings(input, back),
             Screen::Bench => self.update_bench(input, video)?,
@@ -745,11 +815,6 @@ impl App {
                     self.end_game();
                     return Ok(());
                 }
-                Outcome::OpenStates => {
-                    s.menu = Some(menu);
-                    self.open_states(Back::Game, None);
-                    return Ok(());
-                }
             }
             if keep {
                 s.menu = Some(menu);
@@ -862,11 +927,13 @@ impl App {
             }
             Screen::Library => {
                 self.canvas.resize(w as u32, h as u32);
-                self.canvas.clear(ui::PAPER.bg);
-                let (num, title) = ("01", "Library");
-                ui::widgets::head(&mut self.canvas, num, title, None, None, &ui::PAPER);
-                ui::widgets::foot(&mut self.canvas, &[], Some(("X", "Back")), &ui::PAPER);
+                self.library.poll();
+                self.library_screen.render(&mut self.canvas, &self.library);
                 video.present_canvas(&self.canvas)?;
+                if !self.title_is_library {
+                    video.set_title("Advance");
+                    self.title_is_library = true;
+                }
             }
             Screen::Bench => {
                 let Some(s) = self.session.as_mut() else { return Ok(()) };

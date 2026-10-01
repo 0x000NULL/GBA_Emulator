@@ -266,6 +266,7 @@ impl SlotSet {
         SlotSet { slots }
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn get(&self, slot: u8) -> Option<&SlotMeta> {
         self.slots.get(slot as usize - 1).and_then(|s| s.as_ref())
     }

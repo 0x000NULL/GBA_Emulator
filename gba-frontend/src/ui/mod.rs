@@ -15,7 +15,7 @@ pub mod widgets;
 
 pub use canvas::Canvas;
 pub use text::Fonts;
-pub use tokens::{Rgb, NIGHT, PAPER};
+pub use tokens::{Rgb, NIGHT};
 
 /// Largest integer scale at which 240x160 fits in `w` x `h` (at least 1).
 pub fn fit_scale(w: u32, h: u32) -> u32 {

@@ -27,8 +27,6 @@ pub const AUDIO_TARGET_SECS: f64 = 0.05;
 /// Maximum relative speed adjustment applied by audio-clocked pacing (+-2%).
 pub const AUDIO_PACE_MAX_ADJUST: f64 = 0.02;
 
-/// Frames between periodic save writes.
-pub const SAVE_INTERVAL_FRAMES: u64 = 60;
 /// Title bar refresh interval.
 pub const TITLE_REFRESH: Duration = Duration::from_millis(500);
 /// Minimum interval between window presents while fast-forwarding.

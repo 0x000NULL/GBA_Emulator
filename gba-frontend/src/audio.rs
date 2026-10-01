@@ -187,11 +187,6 @@ pub struct AudioOut {
 }
 
 impl AudioOut {
-    /// Open the default output device. `src_rate` is the core's sample rate in Hz.
-    pub fn open(src_rate: f64, muted: bool) -> Result<AudioOut> {
-        Self::open_on(src_rate, muted, None)
-    }
-
     /// Names of the output devices the host offers.
     pub fn list_devices() -> Vec<String> {
         let host = cpal::default_host();
@@ -270,6 +265,7 @@ impl AudioOut {
         self.shared.gain.store(gain.clamp(0.0, 4.0).to_bits(), Ordering::Relaxed);
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn gain(&self) -> f32 {
         self.shared.gain()
     }
@@ -279,6 +275,7 @@ impl AudioOut {
         self.muted = muted;
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn muted(&self) -> bool {
         self.muted
     }

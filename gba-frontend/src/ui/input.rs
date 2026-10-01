@@ -4,6 +4,9 @@
 //! Menus navigate with the keys bound to the GBA buttons (confirm = A, back = B, pages = L/R,
 //! arrows = D-pad), so a rebinding in Settings moves the menus too.
 
+// Toolkit surface: the screens use a subset of these helpers.
+#![allow(dead_code)]
+
 use gba_core::Keys;
 use minifb::Key;
 use std::time::{Duration, Instant};

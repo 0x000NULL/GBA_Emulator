@@ -35,7 +35,9 @@ pub const GAMEPAD_MAP: &[(Button, u16)] = &[
 /// Left-stick deflection needed to register as a D-pad press.
 pub const STICK_DEADZONE: f32 = 0.5;
 
-/// Build the key mask from an "is this key down" predicate.
+/// Build the key mask from an "is this key down" predicate (the default layout; the live
+/// layout is `ui::input::KeyMap`).
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn keyboard_keys(down: impl Fn(Key) -> bool) -> u16 {
     KEYBOARD_MAP.iter().filter(|(k, _)| down(*k)).fold(0, |m, (_, bit)| m | bit)
 }

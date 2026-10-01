@@ -21,6 +21,7 @@ pub fn build_lut() -> Vec<u32> {
 }
 
 /// Nearest-neighbour upscale of a 240x160 BGR555 framebuffer into `out` (240*scale x 160*scale, 0RGB).
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn scale_into(fb: &[u16], lut: &[u32], scale: usize, out: &mut [u32]) {
     scale_into_at(fb, lut, scale, out, SCREEN_W * scale, 0, 0);
 }
@@ -217,10 +218,6 @@ impl Video {
 
     pub fn set_title(&mut self, title: &str) {
         self.window.set_title(title);
-    }
-
-    pub fn window(&self) -> &Window {
-        &self.window
     }
 
     /// Everything that happened since the last update, as the screens want it.

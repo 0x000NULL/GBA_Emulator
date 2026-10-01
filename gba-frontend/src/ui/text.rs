@@ -4,6 +4,9 @@
 //! Interface = Archivo SemiBold/Bold, Label = Archivo Bold 10.5 tracked, Reading = Source Serif 4,
 //! Data = IBM Plex Mono. All OFL; licences sit beside the files in `assets/fonts/`.
 
+// Toolkit surface: the screens use a subset of these helpers.
+#![allow(dead_code)]
+
 use super::tokens::{font as sizes, Rgb};
 use fontdue::{Font, FontSettings};
 use std::collections::HashMap;

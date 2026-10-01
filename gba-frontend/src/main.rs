@@ -66,6 +66,9 @@ fn run(cli: &Cli) -> Result<()> {
         Some(s) => format!("{} [{}]", s.game, s.code),
         None => "Advance".to_string(),
     };
+    if app.session.is_none() {
+        println!("library: {} folder(s)", app.library.folders().len());
+    }
     let mut video = window::Video::new(&title, w, h)?;
     println!("window: {w}x{h}");
     let mut pads = input::Gamepads::new();

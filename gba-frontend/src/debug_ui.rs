@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use gba_core::Gba;
-use minifb::{Key, KeyRepeat, Window};
+use minifb::Key;
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -72,16 +72,6 @@ impl HotkeyMap {
         self.keys.iter().find(|(_, x)| *x == h).map(|(k, _)| *k)
     }
 
-    /// Hotkeys pressed since the last window update (edge-triggered, no auto-repeat).
-    pub fn poll(&self, window: &Window) -> Vec<Hotkey> {
-        let mut out = Vec::new();
-        for (k, h) in &self.keys {
-            if window.is_key_pressed(*k, KeyRepeat::No) && !out.contains(h) {
-                out.push(*h);
-            }
-        }
-        out
-    }
 }
 
 /// F10: print the IO register dump and any guest debug-log lines.
@@ -161,22 +151,3 @@ mod tests {
     }
 }
 
-/// `<rom>.state` beside the ROM.
-pub fn state_path(rom: &Path) -> PathBuf {
-    rom.with_extension("state")
-}
-
-/// F1: write the machine state beside the ROM.
-pub fn save_state(gba: &Gba, rom: &Path) -> Result<PathBuf> {
-    let p = state_path(rom);
-    crate::saves::write_atomic(&p, &gba.save_state())?;
-    Ok(p)
-}
-
-/// F3: restore the machine state written by F1.
-pub fn load_state(gba: &mut Gba, rom: &Path) -> Result<PathBuf> {
-    let p = state_path(rom);
-    let bytes = std::fs::read(&p).map_err(|e| anyhow::anyhow!("reading {}: {e}", p.display()))?;
-    gba.load_state(&bytes).map_err(|e| anyhow::anyhow!("{e}"))?;
-    Ok(p)
-}

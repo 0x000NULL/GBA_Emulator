@@ -4,6 +4,9 @@
 //! it, so the two cannot drift apart silently. Sizes are CSS px at the 1280x800 design size;
 //! `pixel::*` values are native GBA pixels (240x160).
 
+// Toolkit surface: the screens use a subset of these helpers.
+#![allow(dead_code)]
+
 /// Opaque colour, `[r, g, b]`.
 pub type Rgb = [u8; 3];
 

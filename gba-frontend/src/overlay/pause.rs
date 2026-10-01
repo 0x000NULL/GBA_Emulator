@@ -39,7 +39,6 @@ pub enum Outcome {
     Settings,
     Bench,
     Quit,
-    OpenStates,
 }
 
 #[derive(Clone, Debug)]

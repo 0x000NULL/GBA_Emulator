@@ -5,6 +5,7 @@
 pub const GLYPH_W: usize = 5;
 pub const GLYPH_H: usize = 5;
 pub const ADVANCE: i32 = 6;
+#[cfg_attr(not(test), allow(dead_code))]
 pub const LINE: i32 = 8;
 
 /// Each glyph is five rows of five bits, MSB = leftmost pixel.

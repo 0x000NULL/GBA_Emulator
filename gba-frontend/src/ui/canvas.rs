@@ -1,6 +1,9 @@
 //! Software canvas: a tiny-skia pixmap for vector shapes, direct pixel writes for text and
 //! framebuffer blits, and a conversion to the 0RGB buffer minifb wants.
 
+// Toolkit surface: the screens use a subset of these helpers.
+#![allow(dead_code)]
+
 use super::drawings::{Drawing, Geometry, Seg};
 use super::text::{Fonts, Style};
 use super::tokens::Rgb;
