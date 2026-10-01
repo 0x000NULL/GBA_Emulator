@@ -15,6 +15,7 @@ mod audio;
 mod config;
 mod debug_ui;
 mod input;
+mod library;
 mod overlay;
 mod pacing;
 mod render_tests;

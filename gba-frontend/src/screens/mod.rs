@@ -2,5 +2,6 @@
 //! The in-game pause overlay (02) lives in `overlay::pause`.
 
 pub mod bench;
+pub mod library;
 pub mod settings;
 pub mod states;
