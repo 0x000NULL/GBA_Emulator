@@ -32,6 +32,7 @@ use crate::bus::SysCtx;
 use crate::dma::DmaTrigger;
 use crate::irq::Irq;
 use crate::sched::Event;
+use crate::timers::IRQ_DELAY;
 use crate::timing::*;
 use crate::{FrameBuffer, SCREEN_H, SCREEN_W};
 use regs::{Mem, TRANSPARENT};
@@ -183,14 +184,14 @@ impl Ppu {
                 self.frame_ready = true;
                 self.frame_count += 1;
                 if self.dispstat & (1 << 3) != 0 {
-                    ctx.irq.raise(Irq::VBlank);
+                    ctx.irq.raise_at(Irq::VBlank, at + IRQ_DELAY, ctx.sched);
                 }
                 ctx.dma.trigger(DmaTrigger::VBlank);
             }
             _ => {}
         }
         if self.dispstat & (1 << 5) != 0 && self.vcount == (self.dispstat >> 8) as u32 {
-            ctx.irq.raise(Irq::VCount);
+            ctx.irq.raise_at(Irq::VCount, at + IRQ_DELAY, ctx.sched);
         }
         let line_start = at;
         ctx.sched.schedule(Event::HBlank, line_start + HDRAW_CYCLES);
@@ -354,6 +355,50 @@ mod timing_tests {
     use crate::irq::IrqController;
     use crate::sched::Scheduler;
 
+    /// The V-Blank / V-Count requests reach the CPU line IRQ_DELAY cycles after VCOUNT changes
+    /// (like timer overflows), so a CPU polling VCOUNT can observe the new value before the
+    /// IRQ pre-empts it. Library sweep 2026-10-01: Twin Series 5 polls `VCOUNT > 0x9F` while its
+    /// V-Blank handler runs ~half a frame; with a zero-width window the poll never saw it.
+    #[test]
+    fn vblank_and_vcount_irqs_are_delayed_on_the_cpu_line() {
+        let mut sched = Scheduler::new();
+        let mut irq = IrqController::new();
+        let mut dma = DmaController::new();
+        let mut ppu = Ppu::new();
+        ppu.dispstat = (1 << 3) | (1 << 5) | (160 << 8); // V-Blank IRQ + V-Count IRQ at line 160
+        irq.ie = Irq::VBlank as u16 | Irq::VCount as u16;
+        irq.ime = true;
+        {
+            let mut ctx = SysCtx { sched: &mut sched, irq: &mut irq, dma: &mut dma };
+            ppu.boot_schedule(&mut ctx, false);
+        }
+        let mut lines = 0;
+        let mut at = 0;
+        while lines < 160 {
+            let deadline = sched.next_deadline();
+            sched.now = deadline;
+            let (ev, _) = sched.pop_due().unwrap();
+            let mut ctx = SysCtx { sched: &mut sched, irq: &mut irq, dma: &mut dma };
+            match ev {
+                Event::HBlank => ppu.on_hblank(&mut ctx),
+                Event::LineEnd => {
+                    ppu.on_line_end(&mut ctx, deadline);
+                    at = deadline;
+                    lines += 1;
+                }
+                _ => unreachable!(),
+            }
+        }
+        assert_eq!(ppu.vcount, 160);
+        let both = Irq::VBlank as u16 | Irq::VCount as u16;
+        assert_eq!(irq.if_, both, "IF is set at once");
+        irq.sync(at);
+        assert!(!irq.pending(), "not on the CPU line at the VCOUNT edge");
+        irq.sync(at + IRQ_DELAY - 1);
+        assert!(!irq.pending());
+        irq.sync(at + IRQ_DELAY);
+        assert!(irq.pending());
+    }
     #[test]
     fn vblank_flag_and_irq_timing() {
         let mut sched = Scheduler::new();
