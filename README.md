@@ -7,7 +7,9 @@ a headless test harness. Built against the GBATEK hardware documentation.
 Kingdom Hearts: Chain of Memories, the Zelda titles (Minish Cap, A Link to the Past & Four
 Swords, both Classic NES Series games), Initial D: Another Stage and twenty further commercial
 titles (Final Fantasy, Mario, Crash, Need for Speed, Max Payne, ...) reach controllable gameplay
-under scripted headless runs pinned in `tests/compat.toml`. The mgba test suite scores Timing
+under scripted headless runs pinned in `tests/compat.toml`. A sweep of a 1,543-title library
+(`docs/library-compat.md`) boots 1,522 to a moving picture with sound; the rest are menus the
+sweep does not answer, six titles that need the BIOS sound driver, and three open bugs. The mgba test suite scores Timing
 2020/2020, Memory 1552/1552, DMA 1244/1244 and Timer count-up 936/936. See `PROGRESS.md` for the
 exact state of every subsystem.
 

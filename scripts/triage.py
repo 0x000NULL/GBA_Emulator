@@ -101,7 +101,7 @@ def write_doc(rows, path: Path, when: str):
     for r in rows:
         if needs_bios_driver(r):
             r["category"] = "needs-bios-sound-driver"
-    cats = ["ok", "silent", "needs-bios-sound-driver", "static", "frozen", "black", "crash"]
+    cats = ["ok", "waiting", "silent", "needs-bios-sound-driver", "static", "frozen", "black", "needs-hardware", "not-a-game", "crash"]
     counts = {c: sum(1 for r in rows if r.get("category") == c) for c in cats}
     lines = [f"# Library compatibility ({n} titles, {when})", ""]
     lines.append("Boot sweep by `scripts/triage.py` (harness `gba-test --triage`): every ROM runs 3000 frames (50 s) under the")
@@ -113,6 +113,9 @@ def write_doc(rows, path: Path, when: str):
     lines.append("|---|---|---|")
     meaning = {
         "ok": "moving picture with colour and audio",
+        "waiting": "reached a menu or entry screen that waits for a key the sweep does not press (verified by eye)",
+        "needs-hardware": "needs cartridge hardware the emulator does not provide",
+        "not-a-game": "not a GBA program (expansion data)",
         "silent": "moving picture, no audio in the first 40 s (see the per-title note)",
         "needs-bios-sound-driver": "runs, but its music needs the BIOS sound driver (SWI 1A-1E/2A), which the HLE BIOS does not provide",
         "static": "a picture that stopped changing before the last 20 s",

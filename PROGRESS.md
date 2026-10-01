@@ -12,6 +12,13 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
 - **All jsmolka ROMs pass** (arm, thumb, memory, bios, nes, save/none, sram, flash64, flash128;
   ppu hello/shades/stripes by golden hash). `cargo test --workspace` is green: 328 core unit
   tests, 149 frontend tests, 2 ROM-driver tests (~17 min with all 59 commercial goldens present).
+- **Library sweep (2026-10-01)**: the user's full library (1,543 titles) runs through
+  `scripts/triage.py` (harness `gba-test --triage`): **1,522 boot to a moving picture with sound**,
+  10 stop at a menu the sweep does not answer (verified by eye), 6 run silent because they need
+  the BIOS sound driver (SWI 1A-1E/2A, the one known HLE gap), 1 needs its MP3 cartridge, 1 is
+  DS expansion data, and **3 are open**: Hello Kitty Collection - Miracle Fashion Maker and both
+  Tennis no Ouji-sama 2004 titles (see "Library sweep" below). Per-title results:
+  `docs/library-compat.md`. The sweep fixed five emulator bugs (fix logs dated 2026-10-01).
 - **GUI (M9, 2026-09-30)**: the frontend is now the "paper, ink, one red" interface from
   `docs/gui/`: Library, in-frame pause menu with eight state slots, Save states, Settings (with key
   rebinding and a settings file) and the Bench developer view on new core capture hooks. See the
@@ -394,12 +401,41 @@ the window close button, or Esc on the Library); the Bench in full including cor
   minimum size enforcement (layouts clip below 960x640); thread priority for the capture thread
   (std has none; it runs one game at a time with pauses).
 
+## Library sweep (2026-10-01): 1,543 titles
+`scripts/triage.py Games` runs every ROM for 3000 frames under HLE with Start pressed in pairs
+(700/800, 1300/1400, 1900/2000, 2500/2600) and A at 1150/2350, classifies the final picture, its
+motion, the audio and the CPU state, and writes `tools/triage/triage.csv` (+ a PNG per title) and,
+with `--doc`, `docs/library-compat.md`. Verdicts for the non-ok rows are kept in
+`tools/triage/notes.csv` (gitignored with the PNGs) and merged into the document.
+
+Emulator fixes that came out of it (details in the dated fix logs below):
+- FIFO underruns counted every pop of a routed-but-never-fed FIFO (an artefact that read as
+  hundreds of thousands per title); the counter now counts a routed stream running dry.
+- LCD IRQs (H/V-Blank, V-Count) reach the CPU line `LCD_IRQ_DELAY` = 3 cycles after the flag, like
+  the timers: games that poll VCOUNT with a long V-Blank handler (Twin Series 5, Majokko Cream-chan,
+  James Pond, Winter Sports) could never see line 160. One compat row moved and was re-pinned after
+  PNG review (NFS Most Wanted race, a traffic car one step further).
+- Timer 0 ignores the count-up bit (GBATEK: not used in TM0CNT_H): the three Who Wants to Be a
+  Millionaire titles clock their FIFO from TM0 with bit 2 set.
+- IntrWait parks with r12 = 0x04000000 as the real BIOS does and restores the caller's: Taito's
+  dispatcher sets the flag mirror through r12 (Bubble Bobble / Elevator Action Old & New).
+- SoundGetJumpList (SWI 2A) fills its table with a returning stub instead of zeros, so m4a games
+  no longer branch to address 0 (Saibara Mahjong, Cyberdrive Zoids; their music still needs the
+  BIOS driver).
+Open: Hello Kitty (uninitialised heap walk through BIOS open-bus values; mGBA escapes the loop),
+Tennis no Ouji-sama 2004 x2 (an uninitialised local corrupts the game's IWRAM mixer; depends on
+IRQ phase), and the BIOS sound driver itself (6 titles silent; needs an HLE port of the m4a
+driver or a BIOS dump).
+
 ## Next steps, in order of value
-1. Misc edge H-blank bit / DMA prefetch rows (6/12, see "Misc edge attempt").
-2. Initial D garage screens (phone, driving technique) render blank content areas: verify and fix
+1. BIOS sound driver HLE (SoundDriverInit/Mode/Main/VSync, SoundChannelClear, the SWI 2A
+   routines): 6 library titles are silent without it.
+2. Hello Kitty Collection and the two Tennis no Ouji-sama 2004 titles (see "Library sweep").
+3. Misc edge H-blank bit / DMA prefetch rows (6/12, see "Misc edge attempt").
+4. Initial D garage screens (phone, driving technique) render blank content areas: verify and fix
    (see Known gaps). Mario Tennis: the first match is behind the story's center-court cutscene;
    not scripted.
-3. Reference-emulator audio comparison (needs an mGBA build with headless audio dump).
+5. Reference-emulator audio comparison (needs an mGBA build with headless audio dump).
 
 ## Fix log (ROM-to-ROM DMA, Halt exit; 2026-09-30)
 mgba-suite "Timing tests" 1956/2020 -> 2020/2020 and "SIO timing tests" 0/4 -> 4/4; every other
