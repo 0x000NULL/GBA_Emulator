@@ -54,12 +54,11 @@ def run_one(rom: Path, out_dir: Path, frames: int, exe: Path) -> dict:
             row[kv[0]] = kv[1]
     m = re.search(r"^unimplemented_swi=(.*)$", p.stdout, re.M)
     row["unimplemented_swi"] = m.group(1) if m else ""
-    if p.returncode != 0 or "triage" not in row and not m:
+    if p.returncode not in (0, 1) or "triage:" not in p.stdout:
         err = (p.stderr.strip().splitlines() or [""])[-1]
         row["category"] = "crash"
         row["note"] = err[:200] or "no triage line"
-        if "triage:" not in p.stdout:
-            return row
+        return row
     row["category"] = classify(row, frames)
     return row
 
@@ -129,6 +128,8 @@ def write_doc(rows, path: Path, when: str):
     for r in sorted(rows, key=lambda r: r["rom"].lower()):
         name = r["rom"][:-4] if r["rom"].lower().endswith(".zip") else r["rom"]
         note = r.get("note", "") or ""
+        if note == "no triage line" and r.get("category") != "crash":
+            note = ""
         lines.append(f"| {name} | {r.get('code','')} | {r.get('save','')} | {r.get('category','')} | {note} |")
     lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")
