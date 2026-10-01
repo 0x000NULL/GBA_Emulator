@@ -126,8 +126,27 @@ impl Canvas {
         self.pix.fill(color(c));
     }
 
+    /// Axis-aligned fill, clipped to the canvas first (tiny-skia's anti-aliased rect fill has
+    /// a debug assertion that fires on rectangles starting off-canvas).
     pub fn fill_rect(&mut self, x: f32, y: f32, w: f32, h: f32, c: Rgb) {
-        if let Some(r) = Rect::from_xywh(x, y, w, h) {
+        let mut x0 = x.max(0.0);
+        let mut y0 = y.max(0.0);
+        let mut x1 = (x + w).min(self.width());
+        let mut y1 = (y + h).min(self.height());
+        if x1 <= x0 || y1 <= y0 {
+            return;
+        }
+        // A span whose two edges are both fractional with no whole pixel between them trips
+        // the same assertion; snap such thin spans to whole pixels.
+        if x0.ceil() >= x1.floor() && (x0.fract() != 0.0 || x1.fract() != 0.0) {
+            x0 = x0.round();
+            x1 = x1.round().max(x0 + 1.0);
+        }
+        if y0.ceil() >= y1.floor() && (y0.fract() != 0.0 || y1.fract() != 0.0) {
+            y0 = y0.round();
+            y1 = y1.round().max(y0 + 1.0);
+        }
+        if let Some(r) = Rect::from_ltrb(x0, y0, x1, y1) {
             self.pix.fill_rect(r, &paint(c), Transform::identity(), self.mask.as_ref());
         }
     }
@@ -136,8 +155,12 @@ impl Canvas {
         self.pix.fill_path(path, &paint(c), FillRule::Winding, t, self.mask.as_ref());
     }
 
+    /// tiny-skia treats widths <= 1.0 as hairlines, whose rasteriser carries a debug assertion
+    /// that fires on partially clipped geometry; every stroke here stays just above that.
+    const MIN_STROKE: f32 = 1.05;
+
     pub fn stroke_path(&mut self, path: &Path, width: f32, c: Rgb, round: bool, t: Transform) {
-        let mut st = Stroke { width, ..Stroke::default() };
+        let mut st = Stroke { width: width.max(Self::MIN_STROKE), ..Stroke::default() };
         if round {
             st.line_cap = LineCap::Round;
         }
@@ -152,7 +175,7 @@ impl Canvas {
 
     pub fn dashed_rect(&mut self, x: f32, y: f32, w: f32, h: f32, width: f32, dash: f32, c: Rgb) {
         let Some(r) = Rect::from_xywh(x, y, w, h) else { return };
-        let st = Stroke { width, dash: StrokeDash::new(vec![dash, dash], 0.0), ..Stroke::default() };
+        let st = Stroke { width: width.max(Self::MIN_STROKE), dash: StrokeDash::new(vec![dash, dash], 0.0), ..Stroke::default() };
         self.pix.stroke_path(&PathBuilder::from_rect(r), &paint(c), &st, Transform::identity(), self.mask.as_ref());
     }
 
@@ -192,7 +215,7 @@ impl Canvas {
         pb.move_to(x0, y);
         pb.line_to(x1, y);
         let Some(p) = pb.finish() else { return };
-        let st = Stroke { width: 1.0, dash: StrokeDash::new(vec![1.0, 3.0], 0.0), ..Stroke::default() };
+        let st = Stroke { width: Self::MIN_STROKE, dash: StrokeDash::new(vec![1.0, 3.0], 0.0), ..Stroke::default() };
         self.pix.stroke_path(&p, &paint(c), &st, Transform::identity(), self.mask.as_ref());
     }
 
@@ -463,6 +486,20 @@ mod tests {
         c.to_0rgb(&mut out);
         assert_eq!(out.len(), 64 * 64);
         assert_eq!(out[45 * 64 + 10], 0xE5483C);
+    }
+
+    #[test]
+    fn thin_and_offscreen_fills_do_not_panic() {
+        let mut c = Canvas::new(64, 64, Fonts::new());
+        c.clear(PAPER.bg);
+        c.fill_rect(10.25, 10.25, 1.5, 20.0, PAPER.fg); // two fractional edges, no inner pixel
+        c.fill_rect(-5.0, -5.0, 10.0, 10.0, PAPER.fg); // starts off-canvas
+        c.fill_rect(60.0, 60.0, 10.0, 10.0, PAPER.fg); // ends off-canvas
+        c.fill_rect(70.0, 70.0, 10.0, 10.0, PAPER.fg); // fully off-canvas
+        c.fill_rect(5.0, 30.5, 30.0, 1.0, PAPER.fg); // horizontal hairline at a half pixel
+        assert_eq!(c.pixel(10, 15), PAPER.fg);
+        assert_eq!(c.pixel(2, 2), PAPER.fg);
+        assert_eq!(c.pixel(62, 62), PAPER.fg);
     }
 
     #[test]

@@ -12,6 +12,7 @@ use crate::overlay::pause::{Outcome, PauseMenu};
 use crate::overlay::Overlay;
 use crate::pacing::{paced_period, FpsCounter, Pacer};
 use crate::saves::SaveManager;
+use crate::screens::bench::{BenchCtx, BenchOutcome, BenchScreen};
 use crate::slots::{self, SlotSet};
 use crate::ui::fmt::frames_to_secs;
 use crate::ui::input::{KeyMap, UiInput};
@@ -64,6 +65,10 @@ pub struct Session {
     pub toast: Option<(String, Instant)>,
     /// Scratch frame the overlay draws into (never the core's own framebuffer).
     scratch: Box<FrameBuffer>,
+    /// Host time of the last `step()` and the wall time between the last two steps (Bench).
+    pub host_ms: f64,
+    pub paced_ms: f64,
+    last_step: Option<Instant>,
 }
 
 impl Session {
@@ -118,12 +123,21 @@ impl Session {
             menu: None,
             toast: None,
             scratch: vec![0u16; gba_core::SCREEN_W * gba_core::SCREEN_H].into_boxed_slice().try_into().expect("frame"),
+            host_ms: 0.0,
+            paced_ms: 0.0,
+            last_step: None,
         })
     }
 
     /// Run one emulated frame and feed audio/saves; `fast` drops audio.
     pub fn step(&mut self) {
+        let t0 = Instant::now();
+        if let Some(last) = self.last_step {
+            self.paced_ms = t0.duration_since(last).as_secs_f64() * 1000.0;
+        }
+        self.last_step = Some(t0);
         self.gba.run_frame();
+        self.host_ms = t0.elapsed().as_secs_f64() * 1000.0;
         self.frames += 1;
         self.gba.drain_audio(&mut self.samples);
         if let Some(a) = &mut self.audio {
@@ -262,6 +276,7 @@ pub struct App {
     pub quit: bool,
     /// Current slot (1..=8): what in-game F1/F3 act on; the last slot used in any menu.
     pub slot_cursor: u8,
+    pub bench: BenchScreen,
     /// Frame step requested while paused (N).
     step: bool,
 }
@@ -283,6 +298,7 @@ impl App {
             canvas: Canvas::new(ui::tokens::layout::DESIGN_W, ui::tokens::layout::DESIGN_H, Fonts::new()),
             quit: false,
             slot_cursor: 1,
+            bench: BenchScreen::new(),
             step: false,
         };
         if let Some(rom) = &cli.rom {
@@ -341,11 +357,72 @@ impl App {
                     self.go_back(back);
                 }
             }
-            Screen::Bench => {
-                if self.hotkeys.pressed(input).contains(&Hotkey::Bench) {
-                    self.screen = Screen::Game;
-                }
+            Screen::Bench => self.update_bench(input, video)?,
+        }
+        Ok(())
+    }
+
+    /// Switch to the Bench: the core capture runs only while it is open.
+    pub fn open_bench(&mut self) {
+        if let Some(s) = self.session.as_mut() {
+            s.menu = None;
+            s.set_paused(true);
+            s.gba.set_bench(true);
+            s.gba.set_layer_mute(self.bench.layer_mute);
+            s.gba.set_channel_mute(self.bench.channel_mute);
+            self.screen = Screen::Bench;
+        }
+    }
+
+    pub fn close_bench(&mut self) {
+        if let Some(s) = self.session.as_mut() {
+            s.gba.set_bench(false);
+            s.set_paused(false);
+        }
+        self.screen = Screen::Game;
+    }
+
+    fn update_bench(&mut self, input: &UiInput, video: &Video) -> Result<()> {
+        let hotkeys = self.hotkeys.pressed(input);
+        let slot = self.slot_cursor;
+        if hotkeys.contains(&Hotkey::Bench) {
+            self.close_bench();
+            return Ok(());
+        }
+        if self.bench.update(input) == BenchOutcome::MutesChanged {
+            if let Some(s) = self.session.as_mut() {
+                s.gba.set_layer_mute(self.bench.layer_mute);
+                s.gba.set_channel_mute(self.bench.channel_mute);
             }
+        }
+        let Some(s) = self.session.as_mut() else { return Ok(()) };
+        for hk in hotkeys {
+            match hk {
+                Hotkey::Pause => {
+                    let p = !s.paused;
+                    s.set_paused(p);
+                }
+                Hotkey::FrameStep => self.step = true,
+                Hotkey::DumpIo => debug_ui::dump_io(&mut s.gba),
+                Hotkey::SaveState => match s.save_slot(slot) {
+                    Ok(()) => println!("state saved to slot {slot}"),
+                    Err(e) => eprintln!("state save failed: {e:#}"),
+                },
+                Hotkey::LoadState => match s.load_slot(slot) {
+                    Ok(()) => println!("state loaded from slot {slot}"),
+                    Err(e) => eprintln!("state load failed: {e}"),
+                },
+                Hotkey::Screenshot => match debug_ui::screenshot(&s.gba, &s.rom) {
+                    Ok(p) => println!("screenshot: {}", p.display()),
+                    Err(e) => eprintln!("screenshot failed: {e:#}"),
+                },
+                _ => {}
+            }
+        }
+        s.set_fast(video.is_key_down(self.hotkeys.fast_forward));
+        s.gba.set_keys(Keys(input.game_mask));
+        if !s.paused || self.step {
+            s.step();
         }
         Ok(())
     }
@@ -370,7 +447,9 @@ impl App {
                 keep = false;
             }
             if hotkeys.contains(&Hotkey::Bench) {
-                self.screen = Screen::Bench;
+                s.menu = Some(menu);
+                self.open_bench();
+                return Ok(());
             }
             if hotkeys.contains(&Hotkey::SaveStates) {
                 self.screen = Screen::SaveStates { back: Back::Game };
@@ -406,7 +485,10 @@ impl App {
                     }
                 }
                 Outcome::Settings => self.screen = Screen::Settings { back: Back::Game },
-                Outcome::Bench => self.screen = Screen::Bench,
+                Outcome::Bench => {
+                    self.open_bench();
+                    return Ok(());
+                }
                 Outcome::Quit => {
                     self.end_game();
                     return Ok(());
@@ -457,8 +539,8 @@ impl App {
                     }
                 },
                 Hotkey::Bench => {
-                    self.screen = Screen::Bench;
-                    s.set_paused(true);
+                    self.open_bench();
+                    return Ok(());
                 }
                 Hotkey::SaveStates => {
                     self.screen = Screen::SaveStates { back: Back::Game };
@@ -510,11 +592,24 @@ impl App {
                 video.present_canvas(&self.canvas)?;
             }
             Screen::Bench => {
+                let Some(s) = self.session.as_mut() else { return Ok(()) };
                 self.canvas.resize(w as u32, h as u32);
-                self.canvas.clear(NIGHT.bg);
-                ui::widgets::head(&mut self.canvas, "D", "Bench", None, None, &NIGHT);
-                ui::widgets::foot(&mut self.canvas, &[], Some(("F12", "Close bench")), &NIGHT);
+                let ctx = BenchCtx {
+                    gba: &s.gba,
+                    code: &s.code,
+                    save: s.gba.bus.cart.save_type,
+                    hle: s.gba.bus.bios.is_hle(),
+                    host_ms: s.host_ms,
+                    paced_ms: s.paced_ms,
+                    audio_underruns: s.audio.as_ref().map(|a| a.underruns()),
+                    running: !s.paused,
+                };
+                self.bench.render(&mut self.canvas, &ctx);
                 video.present_canvas(&self.canvas)?;
+                if s.last_title.elapsed() >= TITLE_REFRESH {
+                    video.set_title(&s.title());
+                    s.last_title = Instant::now();
+                }
             }
         }
         Ok(())
@@ -524,7 +619,7 @@ impl App {
     pub fn pace(&mut self) {
         let base_period = config::frame_period();
         match (self.screen, self.session.as_mut()) {
-            (Screen::Game, Some(s)) if !s.paused => {
+            (Screen::Game | Screen::Bench, Some(s)) if !s.paused => {
                 if s.fast || self.opts.fullspeed {
                     return;
                 }
