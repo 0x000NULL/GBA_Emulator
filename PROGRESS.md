@@ -454,3 +454,52 @@ Rows left: DMA Prefetch Break/Read, H-blank bit start Hblank/Flip 1/2/3. (The ha
   and share the path. Flip 2/3 are off by 1 and 2 cycles in the same way. Scanning the Halt exit
   0..40 never matched more than the current rows; processing due events before DISPSTAT reads
   (event lag is up to one instruction) changed nothing. Not fixed.
+
+## Fix log (library sweep: FIFO underruns, 2026-10-01)
+The 1,543-title sweep (2400 frames, `--triage`) reported 182 titles at 0 underruns but 163 above
+5000 (Strawberry Shortcake 1.69M, Ultimate Winter Games 817k, Super Monkey Ball Jr. 623k ...).
+Question: real starvation (our DMA/timer timing drains the FIFO) or accounting artefact?
+
+**Diagnosis: accounting artefact; no emulator timing bug found in the six titles examined.**
+`Fifo::underruns` counted every timer-overflow pop that found a speaker-routed FIFO empty,
+whether or not the game ever fed it. Traced with `--fifo-stats 600` (per-frame pushed / popped /
+underruns, DMA1/2, SOUNDCNT_H) and `--pcm --stats-from 600`:
+- Super Monkey Ball Jr. (622,751): FIFO A is healthy in steady state (256 bytes pushed and 256
+  popped per frame, 0 underruns, DMA1 = F640 special timing, len 18-25). FIFO B is routed
+  (SOUNDCNT_H 330E: bits 12/13), clocked by timer 0, DMA2 = 0000, pushed = 0 for the whole run:
+  256 pops of a never-fed FIFO per frame. Tiger Woods (253k) is the same: A fed (176 pushed /
+  185 popped per frame, 0 underruns), B routed (730E) and never fed after boot.
+- F-Zero Climax (223k) and Klonoa 2 (200k): most of the count (180k / 69k) is before the game
+  first feeds the FIFOs (sound enabled, timer running, DMA1/2 = 0400, 0-300 bytes pushed). After
+  the driver starts (DMA1/2 = B600) pushed = popped every frame, 0 underruns (F-Zero 304
+  bytes/frame, Klonoa 224). Klonoa's few remaining events are clips that end after one 16-byte
+  DMA block (DMA left at 0400).
+- Sonic Pinball Party (474k) and Strawberry Shortcake (1.69M): both FIFOs routed (210E / 330C), timer
+  running, 240 / 4 bytes pushed in total and never again (DMA1/2 disabled). Their PCM captures
+  are exactly zero for all 2400 frames (not investigated further whether the sound driver starts
+  later with different input; the FIFOs are simply not fed).
+- No title among the six shows pushed > 0 with the FIFO running dry at a steady rate, so the
+  DMA1/2 FIFO trigger (<= 16 bytes), timer overflow, HLE SWI service and SOUNDBIAS sample-rate
+  paths are not implicated. (KH:CoM's real bug of 2026-09-30 had pushed > 0.)
+- GBATEK is silent on an empty-FIFO pop; `Fifo::pop_ex` holds the last sample (an unfed FIFO
+  therefore stays at its reset value 0 = silence). That behaviour is unchanged.
+
+**Fix (counter only; audio path untouched):** `gba-core/src/apu/fifo.rs`. `underruns` now counts
+audible starvation: the **first empty pop after bytes were pushed** (a routed FIFO whose stream
+ran dry). A never-fed FIFO, or one that stays empty after its source stopped, adds nothing until
+fed again; a FIFO reset (SOUNDCNT_H bit 11/15) disarms it. The raw count remains as
+`Fifo::empty_pops`. `live` and `empty_pops` are `serde(skip)`, so the savestate format is
+unchanged. The routed-speaker rule from 2026-09-30 stays. Residual signal: one event per stream
+end or missed refill; a game starving at a steady rate still counts once per refill.
+
+Tests: `apu::fifo::tests::{never_fed_fifo_does_not_underrun,
+running_dry_counts_once_until_fed_again, unrouted_or_reset_fifo_does_not_count}`. Three older APU
+tests (`underrun_counts_and_repeats_last_sample`, `underruns_surface_through_timer_path`,
+`unrouted_fifo_pops_do_not_count_as_underruns`) pinned the old every-empty-pop count and were
+updated to the new rule; what they guard (last sample repeated, routing, timer path) is unchanged.
+
+`--triage` underruns, 2400 frames, before -> after: Super Monkey Ball Jr. 622,751 -> 3; Sonic
+Pinball Party 474,294 -> 6; Klonoa 2 208,062 -> 20; F-Zero Climax 223,893 -> 3; Tiger Woods PGA
+Tour Golf 253,458 -> 5; Strawberry Shortcake Summertime Adventure 1,691,801 -> 1. Earlier
+game-driven cases in this file (Classic NES, Super Mario Advance, Backyard Baseball) now read as
+one event per dry-out; re-sweep the library to re-bucket it.
