@@ -105,7 +105,7 @@ def write_doc(rows, path: Path, when: str):
     counts = {c: sum(1 for r in rows if r.get("category") == c) for c in cats}
     lines = [f"# Library compatibility ({n} titles, {when})", ""]
     lines.append("Boot sweep by `scripts/triage.py` (harness `gba-test --triage`): every ROM runs 3000 frames (50 s) under the")
-    lines.append("HLE BIOS with Start pressed at frames 700/1130/1490/1870/2310 and A at 1310/2090, then the final picture, its")
+    lines.append("HLE BIOS with Start pressed in pairs at frames 700+800/1300+1400/1900+2000/2500+2600 and A at 1150/2350, then the final picture, its")
     lines.append("motion, the audio and the CPU state are classified. `ok` = a moving, coloured picture with audio. This is a boot")
     lines.append("and title/menu check, not a play-through; the scripted gameplay goldens live in `tests/compat.toml`.")
     lines.append("")
