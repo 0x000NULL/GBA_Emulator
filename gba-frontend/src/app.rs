@@ -13,6 +13,7 @@ use crate::overlay::Overlay;
 use crate::pacing::{paced_period, FpsCounter, Pacer};
 use crate::saves::SaveManager;
 use crate::screens::bench::{BenchCtx, BenchOutcome, BenchScreen};
+use crate::screens::states::{StatesCtx, StatesOutcome, StatesScreen};
 use crate::slots::{self, SlotSet};
 use crate::ui::fmt::frames_to_secs;
 use crate::ui::input::{KeyMap, UiInput};
@@ -277,6 +278,9 @@ pub struct App {
     /// Current slot (1..=8): what in-game F1/F3 act on; the last slot used in any menu.
     pub slot_cursor: u8,
     pub bench: BenchScreen,
+    /// The save-states screen while it is open, and (without a session) the game it shows.
+    states: Option<StatesScreen>,
+    states_rom: Option<(PathBuf, String, SlotSet)>,
     /// Frame step requested while paused (N).
     step: bool,
 }
@@ -299,6 +303,8 @@ impl App {
             quit: false,
             slot_cursor: 1,
             bench: BenchScreen::new(),
+            states: None,
+            states_rom: None,
             step: false,
         };
         if let Some(rom) = &cli.rom {
@@ -351,13 +357,113 @@ impl App {
         match self.screen {
             Screen::Game => self.update_game(input, video)?,
             Screen::Library => {}
-            Screen::SaveStates { back } | Screen::Settings { back } => {
-                // placeholders until their milestones: X / Esc return
+            Screen::SaveStates { back } => self.update_states(input, back)?,
+            Screen::Settings { back } => {
+                // placeholder until the settings milestone lands: X / Esc return
                 if input.action(crate::ui::input::Action::Back) || input.pressed(minifb::Key::Escape) {
                     self.go_back(back);
                 }
             }
             Screen::Bench => self.update_bench(input, video)?,
+        }
+        Ok(())
+    }
+
+    /// Open the save-states screen for the running game (or for `rom` from the library).
+    pub fn open_states(&mut self, back: Back, rom: Option<&Path>) {
+        if let Some(s) = self.session.as_mut() {
+            s.menu = None;
+            s.set_paused(true);
+            self.states_rom = None;
+        } else if let Some(rom) = rom {
+            let name = rom.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            self.states_rom = Some((rom.to_path_buf(), name, SlotSet::scan(rom, None)));
+        } else {
+            return;
+        }
+        self.states = Some(StatesScreen::new(self.slot_cursor));
+        self.screen = Screen::SaveStates { back };
+    }
+
+    fn update_states(&mut self, input: &UiInput, back: Back) -> Result<()> {
+        let Some(mut screen) = self.states.take() else {
+            self.go_back(back);
+            return Ok(());
+        };
+        let outcome = {
+            let (slots, game, running) = match (&self.session, &self.states_rom) {
+                (Some(s), _) => (&s.slots, s.game.as_str(), true),
+                (None, Some((_, name, slots))) => (slots, name.as_str(), false),
+                (None, None) => {
+                    self.go_back(back);
+                    return Ok(());
+                }
+            };
+            let ctx = StatesCtx { slots, game, running };
+            let mut o = screen.update(input, &ctx);
+            if o == StatesOutcome::None && !screen.dialog_open() && input.pressed(minifb::Key::Escape) {
+                o = StatesOutcome::Back;
+            }
+            o
+        };
+        self.slot_cursor = screen.selected().clamp(1, 8);
+        let mut keep = true;
+        match outcome {
+            StatesOutcome::None => {}
+            StatesOutcome::Back => {
+                keep = false;
+                self.go_back(back);
+            }
+            StatesOutcome::Load(n) => {
+                self.slot_cursor = n;
+                if self.session.is_none() {
+                    if let Some((rom, _, _)) = self.states_rom.take() {
+                        self.start_game(&rom)?;
+                    }
+                }
+                if let Some(s) = self.session.as_mut() {
+                    match s.load_slot(n) {
+                        Ok(()) => {
+                            println!("state loaded from slot {n}");
+                            s.set_paused(false);
+                            keep = false;
+                            self.screen = Screen::Game;
+                        }
+                        Err(e) => eprintln!("state load failed: {e}"),
+                    }
+                }
+            }
+            StatesOutcome::SaveOver(n) => {
+                self.slot_cursor = n;
+                if let Some(s) = self.session.as_mut() {
+                    match s.save_slot(n) {
+                        Ok(()) => println!("state saved to slot {n}"),
+                        Err(e) => eprintln!("state save failed: {e:#}"),
+                    }
+                }
+            }
+            StatesOutcome::Delete(n) => {
+                let rom = self.session.as_ref().map(|s| s.rom.clone()).or_else(|| self.states_rom.as_ref().map(|(r, _, _)| r.clone()));
+                if let Some(rom) = rom {
+                    match slots::delete(&rom, n) {
+                        Ok(()) => {
+                            println!("deleted slot {n}");
+                            if let Some(s) = self.session.as_mut() {
+                                s.slots.clear(n);
+                            }
+                            if let Some((_, _, set)) = self.states_rom.as_mut() {
+                                set.clear(n);
+                            }
+                        }
+                        Err(e) => eprintln!("{e:#}"),
+                    }
+                }
+            }
+        }
+        if keep {
+            self.states = Some(screen);
+        } else {
+            self.states = None;
         }
         Ok(())
     }
@@ -429,7 +535,12 @@ impl App {
 
     fn go_back(&mut self, back: Back) {
         self.screen = match back {
-            Back::Game if self.session.is_some() => Screen::Game,
+            Back::Game if self.session.is_some() => {
+                if let Some(s) = self.session.as_mut() {
+                    s.set_paused(false);
+                }
+                Screen::Game
+            }
             _ => Screen::Library,
         };
     }
@@ -452,7 +563,9 @@ impl App {
                 return Ok(());
             }
             if hotkeys.contains(&Hotkey::SaveStates) {
-                self.screen = Screen::SaveStates { back: Back::Game };
+                s.menu = Some(menu);
+                self.open_states(Back::Game, None);
+                return Ok(());
             }
             if hotkeys.contains(&Hotkey::FrameStep) {
                 self.step = true;
@@ -493,7 +606,11 @@ impl App {
                     self.end_game();
                     return Ok(());
                 }
-                Outcome::OpenStates => self.screen = Screen::SaveStates { back: Back::Game },
+                Outcome::OpenStates => {
+                    s.menu = Some(menu);
+                    self.open_states(Back::Game, None);
+                    return Ok(());
+                }
             }
             if keep {
                 s.menu = Some(menu);
@@ -543,8 +660,8 @@ impl App {
                     return Ok(());
                 }
                 Hotkey::SaveStates => {
-                    self.screen = Screen::SaveStates { back: Back::Game };
-                    s.set_paused(true);
+                    self.open_states(Back::Game, None);
+                    return Ok(());
                 }
             }
         }
@@ -579,11 +696,23 @@ impl App {
                     s.last_title = Instant::now();
                 }
             }
-            Screen::SaveStates { .. } | Screen::Settings { .. } | Screen::Library => {
+            Screen::SaveStates { .. } => {
+                self.canvas.resize(w as u32, h as u32);
+                let (slots, game, running) = match (&self.session, &self.states_rom) {
+                    (Some(s), _) => (&s.slots, s.game.as_str(), true),
+                    (None, Some((_, name, slots))) => (slots, name.as_str(), false),
+                    (None, None) => return Ok(()),
+                };
+                let ctx = StatesCtx { slots, game, running };
+                if let Some(screen) = self.states.as_mut() {
+                    screen.render(&mut self.canvas, &ctx);
+                }
+                video.present_canvas(&self.canvas)?;
+            }
+            Screen::Settings { .. } | Screen::Library => {
                 self.canvas.resize(w as u32, h as u32);
                 self.canvas.clear(ui::PAPER.bg);
                 let (num, title) = match self.screen {
-                    Screen::SaveStates { .. } => ("03", "Save states"),
                     Screen::Settings { .. } => ("04", "Settings"),
                     _ => ("01", "Library"),
                 };
