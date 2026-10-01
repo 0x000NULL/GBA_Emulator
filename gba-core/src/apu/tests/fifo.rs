@@ -38,7 +38,12 @@ fn underrun_counts_and_repeats_last_sample() {
     assert_eq!(f.underruns, 1);
     assert_eq!(f.sample, 0x85u8 as i8, "empty FIFO repeats the last sample");
     f.pop();
-    assert_eq!(f.underruns, 2);
+    assert_eq!(f.underruns, 1, "only the first empty pop after data is starvation; the rest is idle silence");
+    assert_eq!(f.empty_pops, 2);
+    f.push(&[1]);
+    f.pop();
+    f.pop();
+    assert_eq!(f.underruns, 2, "fed again, ran dry again");
 }
 
 #[test]
@@ -161,7 +166,8 @@ fn underruns_surface_through_timer_path() {
     a.on_timer_overflow(0);
     a.on_timer_overflow(0);
     a.on_timer_overflow(0);
-    assert_eq!(a.fifo_a.underruns, 2);
+    assert_eq!(a.fifo_a.underruns, 1, "ran dry once; the third pop is idle");
+    assert_eq!(a.fifo_a.empty_pops, 2);
     assert_eq!(a.fifo_a.sample, 0x40);
     assert_eq!(a.fifo_b.underruns, 0, "B is on timer 1 here");
 }
@@ -171,13 +177,19 @@ fn unrouted_fifo_pops_do_not_count_as_underruns() {
     let (mut a, mut s) = apu_on();
     // A routed L+R on timer 0; B not routed anywhere but also clocked by timer 0 (bit 14 = 0).
     w16(&mut a, &mut s, 0x82, 0x0304);
+    a.fifo_write(0, &[1]);
+    a.fifo_write(1, &[1]);
     for _ in 0..10 {
         a.on_timer_overflow(0);
     }
-    assert_eq!(a.fifo_a.underruns, 10, "routed FIFO counts underruns");
+    assert_eq!(a.fifo_a.underruns, 1, "routed FIFO that ran dry counts once");
+    assert_eq!(a.fifo_a.empty_pops, 9);
     assert_eq!(a.fifo_b.underruns, 0, "unrouted FIFO pops silently");
-    // Route B to the left speaker: its underruns count from now on.
+    // Route B to the left speaker: starvation counts from now on.
     w16(&mut a, &mut s, 0x82, 0x2304);
+    a.fifo_write(1, &[2]);
+    a.on_timer_overflow(0);
+    assert_eq!(a.fifo_b.underruns, 0);
     a.on_timer_overflow(0);
     assert_eq!(a.fifo_b.underruns, 1);
     // An unrouted FIFO still pops data (the timer clocks it regardless).
