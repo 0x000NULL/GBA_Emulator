@@ -3,7 +3,7 @@ resolver = "2"
 members = ["gba-core", "gba-frontend", "gba-test"]
 
 [workspace.package]
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 license = "MIT"
 authors = ["Ethan Aldrich"]
@@ -18,3 +18,11 @@ opt-level = 3
 debug = 1
 lto = "thin"
 codegen-units = 4
+
+# Shipped binaries (the release workflow builds with `--profile dist`).
+[profile.dist]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+strip = true
+debug = false

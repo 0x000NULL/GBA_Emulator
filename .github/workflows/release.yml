@@ -1,0 +1,116 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: unit tests
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Linux build dependencies (ALSA for cpal, udev for gilrs)
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p gba-core -p gba-frontend
+
+  build:
+    name: build ${{ matrix.name }}
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: zip
+          - name: linux-x64
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            archive: tar
+          - name: macos-x64
+            os: macos-13
+            target: x86_64-apple-darwin
+            archive: tar
+          - name: macos-arm64
+            os: macos-14
+            target: aarch64-apple-darwin
+            archive: tar
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Build the player
+        run: cargo build --profile dist -p gba-frontend --target ${{ matrix.target }}
+      - name: Stage the package
+        shell: bash
+        run: |
+          set -euo pipefail
+          pkg="gba-${GITHUB_REF_NAME}-${{ matrix.name }}"
+          mkdir -p "dist/$pkg"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp "target/${{ matrix.target }}/dist/gba.exe" "dist/$pkg/"
+          else
+            cp "target/${{ matrix.target }}/dist/gba" "dist/$pkg/"
+          fi
+          cp README.md LICENSE QUICKSTART.md CHANGELOG.md "dist/$pkg/"
+          echo "PKG=$pkg" >> "$GITHUB_ENV"
+      - name: Archive (zip)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: Compress-Archive -Path "dist/$env:PKG" -DestinationPath "dist/$env:PKG.zip"
+      - name: Archive (tar.gz)
+        if: matrix.archive == 'tar'
+        shell: bash
+        run: tar -C dist -czf "dist/$PKG.tar.gz" "$PKG"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+          if-no-files-found: error
+
+  release:
+    name: GitHub release
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - name: Release notes for this tag (its CHANGELOG section)
+        shell: bash
+        run: |
+          set -euo pipefail
+          awk -v tag="$GITHUB_REF_NAME" '
+            /^## / { on = ($2 == tag) }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then echo "No CHANGELOG section for $GITHUB_REF_NAME" > notes.md; fi
+          cat notes.md
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: GBA Emulator ${{ github.ref_name }}
+          body_path: notes.md
+          files: assets/*
+          fail_on_unmatched_files: true

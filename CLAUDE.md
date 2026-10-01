@@ -71,6 +71,12 @@ cargo test -p gba-frontend --release -- --ignored render_             # review r
 python scripts/triage.py Games --jobs 8                               # library sweep -> tools/triage/{triage.csv,triage.md,png/}
 python scripts/triage.py --report tools/triage/triage.csv --doc docs/library-compat.md --notes tools/triage/notes.csv
 ```
+**Agent worktrees and `Games`.** Worktrees under `.claude/worktrees/` get a directory junction
+`Games -> <repo>\Games` so compat tests can run. **Never `git worktree remove` such a worktree while
+the junction exists**: git follows the junction and deletes the real ROM folder's contents (this
+happened on 2026-10-01). Remove the link first with `cmd /c rmdir <worktree>\Games` (deletes only
+the junction), then remove the worktree.
+
 Harness exit codes: 0 pass, 1 fail, 2 error. `GBA_TESTS_REQUIRED=1` turns the
 "GBA_TESTS_DIR unset" skip into a failure. Builds from concurrent shells should use their own
 `CARGO_TARGET_DIR` (e.g. `target/integ`) to avoid the cargo lock.
@@ -82,6 +88,15 @@ screen; F5 write `.sav`; F10 IO dump; F11 screenshot; F12 bench. Menus navigate 
 bindings (A confirm, B back, L/R pages, D-pad). Hidden `--exit-after N` ends a windowed run and
 prints timing stats. The settings file lives in `%APPDATA%\gba-advance\settings.toml`, the
 library index and title captures in `%LOCALAPPDATA%\gba-advance\`.
+
+## Releasing
+Bump `[workspace.package] version` in `Cargo.toml`, add the `## vX.Y.Z — date` section to
+`CHANGELOG.md` (it becomes the release body), commit, then `git tag -a vX.Y.Z -m "GBA Emulator X.Y.Z"`
+and `git push origin vX.Y.Z`. `.github/workflows/release.yml` runs the unit tests, builds the player
+with `--profile dist` for Windows x64, Linux x64, macOS x64 and arm64, and attaches
+`gba-vX.Y.Z-<os>.{zip,tar.gz}` (binary + README, LICENSE, QUICKSTART, CHANGELOG) to the GitHub
+release. Watch it with `gh run watch`; on a matrix failure fix the workflow, delete the tag locally
+and remotely, and push it again.
 
 ## Working on a subsystem
 The initial build split the code among parallel agents by directory (`cpu/`, `ppu/`, `apu/`,

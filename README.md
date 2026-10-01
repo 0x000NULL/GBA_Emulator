@@ -13,6 +13,12 @@ sweep does not answer, six titles that need the BIOS sound driver, and three ope
 2020/2020, Memory 1552/1552, DMA 1244/1244 and Timer count-up 936/936. See `PROGRESS.md` for the
 exact state of every subsystem.
 
+## Download
+
+Ready-to-run builds for Windows, macOS (Intel and Apple Silicon) and Linux x64 are on the
+[Releases page](https://github.com/0x000NULL/GBA_Emulator/releases); `QUICKSTART.md` inside each
+archive covers running it, the keys and where saves are kept.
+
 ## Build and run
 
 Requires stable Rust (1.85+). No C toolchain, cmake or SDL is needed.

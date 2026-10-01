@@ -12,6 +12,9 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
 - **All jsmolka ROMs pass** (arm, thumb, memory, bios, nes, save/none, sram, flash64, flash128;
   ppu hello/shades/stripes by golden hash). `cargo test --workspace` is green: 328 core unit
   tests, 149 frontend tests, 2 ROM-driver tests (~17 min with all 59 commercial goldens present).
+- **v1.0.0 released (2026-10-01)**: tag `v1.0.0`; `.github/workflows/release.yml` builds the
+  player for Windows x64, Linux x64, macOS x64/arm64 with `--profile dist` and attaches the
+  archives to the GitHub release (`CHANGELOG.md` is the release body). Procedure in CLAUDE.md.
 - **Library sweep (2026-10-01)**: the user's full library (1,543 titles) runs through
   `scripts/triage.py` (harness `gba-test --triage`): **1,522 boot to a moving picture with sound**,
   10 stop at a menu the sweep does not answer (verified by eye), 6 run silent because they need
