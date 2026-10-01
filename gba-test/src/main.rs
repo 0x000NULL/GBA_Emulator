@@ -4,7 +4,12 @@
 //!          [--input script.toml] [--trace [file]] [--trace-hash] [--break PC] [--watch LO..HI]
 //!          [--watch-log] [--log-swi] [--exit-on-swi N] [--dump-io] [--png out.png] [--png-every N] [--pcm out.wav] [--record]
 //!          [--bios file] [--hle] [--stats-from F] [--fifo-stats F] [--save-state f] [--load-state f]
+//!          [--triage]
 //! Exit code: 0 pass, 1 fail, 2 error.
+//!
+//! `--triage` is the library sweep mode: a built-in input pattern (Start / A presses after boot)
+//! and one `triage:` summary line at the end (picture activity, checkpoint hashes, CPU state,
+//! audio activity) that `scripts/triage.py` classifies.
 
 use anyhow::{anyhow, Result};
 use clap::Parser;
@@ -96,6 +101,45 @@ struct Cli {
     /// Write a savestate after the run.
     #[arg(long)]
     save_state: Option<PathBuf>,
+    /// Library sweep: built-in Start/A presses (unless --input is given) and a `triage:` summary.
+    #[arg(long)]
+    triage: bool,
+}
+
+/// Triage input: Start for 10 frames at 700, 1100, 1500, 1900, 2300; A for 10 frames at 1300, 2100.
+fn triage_keys(frame: u32) -> gba_core::Keys {
+    let start = [700, 1100, 1500, 1900, 2300].iter().any(|&f| (f..f + 10).contains(&frame));
+    let a = [1300, 2100].iter().any(|&f| (f..f + 10).contains(&frame));
+    let mut k = 0;
+    if start {
+        k |= gba_core::Keys::START;
+    }
+    if a {
+        k |= gba_core::Keys::A;
+    }
+    gba_core::Keys(k)
+}
+
+/// What the triage summary accumulates per frame.
+#[derive(Default)]
+struct Triage {
+    changes: u32,
+    last_change: u32,
+    last_hash: u64,
+    checkpoints: Vec<(u32, u64)>,
+    audio_frames: u32,
+    instr_at_minus_60: u64,
+    instr_last_60: u64,
+}
+
+fn pc_region(pc: u32) -> &'static str {
+    match pc >> 24 {
+        0x00 => "bios",
+        0x02 => "ewram",
+        0x03 => "iwram",
+        0x08..=0x0D => "rom",
+        _ => "other",
+    }
 }
 
 #[derive(clap::ValueEnum, Clone, Debug)]
@@ -175,9 +219,15 @@ fn run() -> Result<bool> {
     let mut fifo_prev: Option<[u64; 6]> = None;
     let tracing = trace_out.is_some() || cli.exit_on_swi.is_some();
 
+    let mut triage = Triage::default();
     'frames: for f in 0..cli.frames {
         if !script.is_empty() {
             gba.set_keys(script.keys_at(f)?);
+        } else if cli.triage {
+            gba.set_keys(triage_keys(f));
+        }
+        if cli.triage && f + 60 == cli.frames {
+            triage.instr_at_minus_60 = gba.cpu.instr_count;
         }
         if tracing {
             // Step instruction by instruction until the frame completes.
@@ -219,6 +269,22 @@ fn run() -> Result<bool> {
             }
         }
         log.append(&mut gba.take_debug_log());
+        if cli.triage {
+            let h = fb_hash(&gba.bus.ppu.fb[..]);
+            if h != triage.last_hash {
+                if f > 0 {
+                    triage.changes += 1;
+                }
+                triage.last_change = f;
+                triage.last_hash = h;
+            }
+            if [600, 1200, 1800, 2400].contains(&(f + 1)) {
+                triage.checkpoints.push((f + 1, h));
+            }
+            if gba.bus.apu.samples.iter().any(|[l, r]| l.unsigned_abs() > 64 || r.unsigned_abs() > 64) {
+                triage.audio_frames += 1;
+            }
+        }
         if let Some(n) = cli.png_every {
             if n > 0 && (f + 1) % n == 0 {
                 let stem = cli.png.clone().unwrap_or_else(|| PathBuf::from("frame.png")).with_extension("");
@@ -263,6 +329,40 @@ fn run() -> Result<bool> {
     }
     let hash = fb_hash(&gba.bus.ppu.fb[..]);
     println!("fb_hash={hash:016x}");
+    if cli.triage {
+        triage.instr_last_60 = gba.cpu.instr_count.saturating_sub(triage.instr_at_minus_60);
+        let mut seen = vec![false; 0x8000];
+        let mut colours = 0u32;
+        for &px in gba.bus.ppu.fb.iter() {
+            let i = (px & 0x7FFF) as usize;
+            if !seen[i] {
+                seen[i] = true;
+                colours += 1;
+            }
+        }
+        let dispcnt = gba.bus.ppu.dispcnt();
+        let cps: Vec<String> = triage.checkpoints.iter().map(|(f, h)| format!("{f}:{h:016x}")).collect();
+        println!(
+            "triage: colours={} changes={} last_change={} checkpoints={} audio_frames={} instr_last_60={} pc={:08X} region={} thumb={} halted={} ime={} ie={:04X} dispcnt={:04X} forced_blank={} mode={} unimpl_swi={} underruns={}",
+            colours,
+            triage.changes,
+            triage.last_change,
+            cps.join(","),
+            triage.audio_frames,
+            triage.instr_last_60,
+            gba.cpu.pc(),
+            pc_region(gba.cpu.pc()),
+            gba.cpu.regs.thumb(),
+            gba.bus.irq.halted,
+            gba.bus.irq.ime,
+            gba.bus.irq.ie,
+            dispcnt,
+            dispcnt & 0x80 != 0,
+            dispcnt & 7,
+            gba.bus.bios.unimplemented.len(),
+            gba.bus.apu.fifo_a.underruns + gba.bus.apu.fifo_b.underruns
+        );
+    }
     println!("{}", cpu_state_line(&gba));
     println!("frames={} vcount={} swi_count={} fifo_underruns={}", gba.bus.ppu.frame_count, gba.bus.ppu.vcount, gba.bus.bios.swi_count, gba.bus.apu.fifo_a.underruns + gba.bus.apu.fifo_b.underruns);
     if !gba.bus.bios.unimplemented.is_empty() {
