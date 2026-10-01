@@ -19,6 +19,7 @@ mod overlay;
 mod pacing;
 mod render_tests;
 mod saves;
+mod settings;
 mod screens;
 mod slots;
 mod ui;
