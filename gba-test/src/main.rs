@@ -2,7 +2,7 @@
 //!
 //! gba-test <rom|zip> --frames N [--golden HEX] [--check jsmolka|mgba-suite] [--reg r12]
 //!          [--input script.toml] [--trace [file]] [--trace-hash] [--break PC] [--watch LO..HI]
-//!          [--watch-log] [--log-swi] [--exit-on-swi N] [--dump-io] [--png out.png] [--png-every N] [--pcm out.wav] [--record]
+//!          [--watch-read LO..HI] [--watch-log] [--dump-mem LO..HI] [--log-swi] [--exit-on-swi N] [--dump-io] [--png out.png] [--png-every N] [--pcm out.wav] [--record]
 //!          [--bios file] [--hle] [--stats-from F] [--fifo-stats F] [--save-state f] [--load-state f]
 //!          [--triage]
 //! Exit code: 0 pass, 1 fail, 2 error.
@@ -59,6 +59,9 @@ struct Cli {
     /// Stop on a write inside LO..HI (hex, inclusive).
     #[arg(long, value_parser = parse_range)]
     watch: Vec<(u32, u32)>,
+    /// Stop on a read inside LO..HI (hex, inclusive); with --watch-log every read is logged.
+    #[arg(long, value_parser = parse_range)]
+    watch_read: Vec<(u32, u32)>,
     /// Log every --watch / --break hit (frame, cycle, PC, access) and keep running instead of stopping.
     #[arg(long)]
     watch_log: bool,
@@ -71,6 +74,9 @@ struct Cli {
     /// Print the IO register dump at the end.
     #[arg(long)]
     dump_io: bool,
+    /// Hex-dump guest memory LO..HI (hex, as 32-bit words, side-effect free) at the end.
+    #[arg(long, value_parser = parse_range)]
+    dump_mem: Vec<(u32, u32)>,
     /// Write the final framebuffer as PNG.
     #[arg(long)]
     png: Option<PathBuf>,
@@ -206,6 +212,7 @@ fn run() -> Result<bool> {
 
     gba.bus.debug.pc_breaks = cli.break_pc.clone();
     gba.bus.debug.write_watch = cli.watch.clone();
+    gba.bus.debug.read_watch = cli.watch_read.clone();
     gba.bus.debug.log_swi = cli.log_swi;
     gba.bus.debug.refresh_enabled();
 
@@ -380,6 +387,16 @@ fn run() -> Result<bool> {
     }
     if cli.dump_io {
         print!("{}", gba.bus.dump_io());
+    }
+    for &(lo, hi) in &cli.dump_mem {
+        let mut a = lo & !3;
+        while a <= hi {
+            println!("mem {a:08X}: {:08X}", gba.bus.peek32(a));
+            a = a.wrapping_add(4);
+            if a == 0 {
+                break;
+            }
+        }
     }
     if let Some(p) = &cli.png {
         write_png(p, &gba.bus.ppu.fb[..])?;

@@ -4,6 +4,8 @@
 # Run one entry: cargo run -p gba-test -- "<path>" --frames N --png out.png
 # Pinned 2026-09-29; KH gameplay and ALttP re-pinned 2026-09-30 after the CPU-timing, IO, DMA and timer
 # merges (PNGs reviewed: battle tutorial prompt, CHOOSE A FILE).
+# 2026-10-01: NFS Most Wanted frame 6600 re-pinned 5741decb77b74fc7 -> fc8e8136e1cefd2d after LCD IRQs got the 3-cycle
+# request delay (library sweep fix; PNG reviewed: same scene, 59 MPH, 00:37.72, only the traffic car moved).
 
 [defaults]
 hash = "xxh3-64"

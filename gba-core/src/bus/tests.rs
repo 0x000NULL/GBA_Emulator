@@ -494,3 +494,56 @@ fn rom_to_rom_dma_charges_a_sequential_write() {
     // A ROM write alone (source in EWRAM, 3 cycles per halfword) keeps its N access.
     assert_eq!(dma_cycles(ewram, rom, 1, 0), 2 + 3 + 5);
 }
+
+/// LCD IRQs (V-Blank, H-Blank, V-Count) go through the same synchroniser as the timers: IF is set
+/// when the event fires but the CPU's IRQ input follows `LCD_IRQ_DELAY` cycles later. A main
+/// loop polling VCOUNT for the start of V-Blank needs those cycles to win the race against the
+/// V-Blank handler (Majokko Cream-chan: `while (REG_VCOUNT <= 159)` never ended without them).
+#[test]
+fn lcd_irqs_reach_the_cpu_a_few_cycles_after_the_flag() {
+    use crate::ppu::LCD_IRQ_DELAY;
+    use crate::timing::VISIBLE_LINES;
+    let mut b = bus();
+    {
+        let Bus { sched, irq, dma, ppu, .. } = &mut b;
+        ppu.boot_schedule(&mut SysCtx { sched, irq, dma }, false);
+    }
+    b.write16(0x0400_0004, 0x0008 | 0x0010 | 0x0020 | (30 << 8), Access::N); // V-Blank, H-Blank, V-Count IRQ at line 30
+    b.write16(0x0400_0200, 0x0007, Access::N);
+    b.write16(0x0400_0208, 1, Access::N);
+    // Advance event by event until V-Blank starts.
+    let mut guard = 0;
+    let mut seen_hblank = false;
+    while b.ppu.vcount != VISIBLE_LINES {
+        let next = b.sched.next_deadline();
+        b.sched.now = next;
+        b.process_events();
+        if b.ppu.vcount == VISIBLE_LINES {
+            break;
+        }
+        if b.irq.if_ & Irq::HBlank as u16 != 0 && !seen_hblank {
+            seen_hblank = true;
+            let t = b.sched.now;
+            assert!(!b.irq.pending(), "H-Blank request not on the CPU line yet");
+            b.irq.sync(t + LCD_IRQ_DELAY - 1);
+            assert!(!b.irq.pending(), "still inside the delay");
+            b.irq.sync(t + LCD_IRQ_DELAY);
+            assert!(b.irq.pending(), "visible once the delay has passed");
+            b.write16(0x0400_0202, 0xFFFF, Access::N);
+        } else if b.irq.if_ != 0 {
+            b.irq.sync(b.sched.now + LCD_IRQ_DELAY);
+            b.write16(0x0400_0202, 0xFFFF, Access::N);
+        }
+        guard += 1;
+        assert!(guard < 100_000, "never reached V-Blank");
+    }
+    assert!(seen_hblank);
+    // Now at the start of line 160: IF has V-Blank, the CPU line does not yet.
+    assert_ne!(b.irq.if_ & Irq::VBlank as u16, 0, "V-Blank flag set at the line boundary");
+    assert!(!b.irq.pending(), "V-Blank request not on the CPU line at the line boundary");
+    let t = b.sched.now;
+    b.irq.sync(t + LCD_IRQ_DELAY - 1);
+    assert!(!b.irq.pending());
+    b.irq.sync(t + LCD_IRQ_DELAY);
+    assert!(b.irq.pending());
+}

@@ -580,3 +580,83 @@ above +-64. Findings per title (only the Millionaire trio was an emulator bug):
 - Sweep recommendation: make the `triage_keys` Start spacing irregular (not a multiple of 400)
   and extend past 2400 frames for slow-logo titles; both "silent" classes above are artefacts of
   the fixed schedule.
+## Fix log (library sweep: stuck boots, 2026-10-01)
+Six boots from the 1,543-title `scripts/triage.py` sweep were stuck after 2400 frames. Two causes were
+real emulator bugs (fixed, four games move now), one is an input-gated screen, one needs cartridge
+hardware, one is undefined behaviour in the game that only an exact open-bus model can reproduce.
+Harness additions (gba-test): `--dump-mem LO..HI` (side-effect-free word dump at the end of the run) and
+`--watch-read LO..HI` (read watch; `--watch-log` logs every read).
+
+**1. IntrWait / VBlankIntrWait never completed: r12 must be 0x04000000 while parked (Bubble Bobble
+- Old & New, Elevator Action - Old & New).** Black, 0 picture changes, halted with IE=2001, the SWI
+re-executed every frame. The Taito/AGB-SDK IRQ dispatcher in IWRAM starts with
+`mov r3,#0x4000000; add r3,r3,#0x200; ldr r2,[r3] ...` and sets the BIOS flag with
+`strhne r0,[r12,#-8]`, i.e. it relies on r12 = 0x04000000, so the write lands in 03FFFFF8 (the
+03007FF8 mirror). The real BIOS waits inside its Halt routine, whose HALTCNT access leaves
+r12 = 0x04000000, and the user handler is entered from there; our HLE parks the SWI with the
+caller's r12 (0x31E in Bubble Bobble), so the flag went to 0x316 and `--watch 0x03007FF8` showed
+the mirror never written. Fix: `hle_intr_wait` saves the caller's r12 on the first park, sets
+r12 = 0x04000000 while parked and restores the caller's r12 when the wait completes
+(`Bios::intr_wait_r12`, not serialised: a state loaded mid-wait leaves the parked value, which is
+scratch for the caller). Test `intr_wait_runs_the_irq_handler_with_r12_at_io_base_and_restores_the_callers`.
+`Halt` (SWI 2) has the same real-BIOS r12 but returns before the IRQ, so it is not modelled.
+Triage afterwards: Bubble Bobble 63 colours / 1361 changes / audio, Elevator Action 24 colours / 965
+changes (both moving to frame 2400).
+
+**2. LCD IRQs reached the CPU instantly: a main loop polling VCOUNT could never win the race
+(Majokko Cream-chan no Gokko Series 2 - Kisekae Angel).** White forced-blank screen after PUSH START
+from frame 734. The main thread sits in `while (REG_VCOUNT <= 159) ;` (0x08002B1E, from
+`0x08002B10`), the V-Blank handler is the m4a mixer (78k of 96k instructions per frame, ~170k cycles)
+and is longer than the 68 blanking lines, so the main thread resumes inside the next visible frame
+and spins until line 160, where the V-Blank IRQ is taken before the poll can read 160. The wait never
+ends (counter 0x0300091C reset at entry was at 420 after 840 frames). On hardware the request
+reaches the CPU a few cycles after the IF flag (same synchroniser as the timers) and the poll wins
+that race now and then; mGBA schedules every IRQ with a 7-cycle delay and plays the game through.
+Fix: H-Blank, V-Blank and V-Count requests use `raise_at(.. at + LCD_IRQ_DELAY)` with
+`LCD_IRQ_DELAY = timers::IRQ_DELAY` (3), the value already pinned for timers by the mgba-suite Timer
+IRQ rows (7 also works for this game). `Ppu::on_hblank` now takes the event time like `on_line_end`.
+Test `lcd_irqs_reach_the_cpu_a_few_cycles_after_the_flag`. Triage afterwards: 120 colours, 608 changes,
+last change at frame 2381.
+Side effect, reviewed and re-pinned: any non-zero delay moves the chaotic race rows of the compat
+manifest. With all three LCD IRQs delayed by 3 only NFS Most Wanted frame 6600 changed
+(5741decb77b74fc7 -> fc8e8136e1cefd2d; PNG compared: same scene, 59 MPH, 00:37.72, one traffic car
+elsewhere) and the row was re-pinned. For reference, delaying only V-Blank moved NFS MW and Mario
+Party Advance @3000 at 3 cycles and Mario Party only at 4, 6 and 7 (NFS MW at 1, 2 and 5; Mario Party was not checked there), and delaying all three by 7 (mGBA's `GBA_IRQ_DELAY`) moved both; the value 3 was kept
+because it is the one already pinned for the timer IRQ path by the hardware-recorded mgba-suite rows,
+and it disturbs the fewest pinned rows. The r12 fix above changes no golden or compat hash.
+Not the cause (tried): WAITCNT 0x4317 at boot with RegisterRamReset leaving WAITCNT alone (the EEPROM
+library ORs 0x0300 into whatever is there; faster ROM did not help), the EEPROM path (no DMA3 after
+frame 700), SIO (only three SIOCNT writes at frame 1).
+
+**3. Sonic Advance 2 (USA): not stuck.** The 27-colour picture is the REG. NAME screen of a blank
+Flash save and it is waiting for the player. The sweep's Start at 1100 moves the cursor to END and
+the A at 1300 presses END with an empty name, which does nothing on hardware either. With a script
+(A, RIGHT, A) the picture changes and the name field fills in (`--png` at 1400). No emulator change.
+The "only 99 audio frames" is the silent name screen.
+
+**4. Music Recorder MP3 (Japan): needs cartridge hardware, documented only.** The game shows
+"cartridge battery must be replaced" (カートリッジの電池を交換してください) at once. It drives a
+memory-mapped controller in the game pak space: byte writes to 0x0B080000/0x0B0A0000 (250 clock-like
+pulses of 0x00/0x81 from 0x08011E7E, a 6-register setup from 0x08011D7A, 0x0B0C0000-0x0B120000),
+nothing at 0x0E000000, save type none. That is the card/MP3 interface of the cartridge; we do not
+emulate the cart and the error screen is the correct reaction to a missing one.
+
+**5. Hello Kitty Collection - Miracle Fashion Maker (Japan): unresolved, undefined behaviour in the
+game (5+ attempts, notes for the next person).** Black, DISPCNT=0, the CPU runs a pointer chase at
+0x080427A0 for ever. Chain: 0x08042644 is the heap init (one free node at 0x02000010, size 0x30000,
+`next` = 0); the first `malloc` (0x08042674, frame 34, size 0x110) calls the coalescing routine
+0x080427A0 *before* searching, and with a single node it does `r3 = node->next (0)`,
+`r0 = [r3+0x14]`: a read of BIOS address 0x14 from ROM code, which returns the BIOS open-bus latch
+(0xE55EC002), so the loop keeps following garbage pointers (r2 = 0xE55EC002, then 0x28002800, the
+opcode halfword duplicated) in a 3-load cycle. **mGBA does exactly the same**: `mgba-sdl -l 127` on
+the ROM prints `Bad BIOS Load32: 0x14`, `0x1C`, `Bad memory Load32: 0xE55EC01E`, `0xE55EC016`, then
+the same 0x2800281C/0x28002814 cycle that we reach (5725 + 2878 loads), and the game still escapes
+a few thousand iterations later (the log shows the chain leaving the cycle through 0x69D069xx
+addresses, i.e. an open-bus value that is the halfword at X instead of X+4, and later reaching zero
+words), then re-entering `Bad BIOS Load32: 0x1C/0x14` once per call, and the title screen
+(pink, stars) comes up in the GUI build. We never escape. Candidates that were tried without effect:
+forcing the BIOS open-bus value to zero (the game then runs on, 449 picture changes by frame 1200, but the screen was still black, so further blockers may follow), HLE IRQ return
+leaving the first instruction's open bus at X+2, LCD IRQ delay 3 and 7. What mGBA does differently in
+the first escape could not be pinned down from its log (it prints addresses, not values); the real
+hardware path is probably a bus/DMA latch value (sound FIFO DMA is enabled) or the ROM prefetch
+state. Fixing it needs a cycle-accurate open-bus/prefetch-latch model, not a game hack.

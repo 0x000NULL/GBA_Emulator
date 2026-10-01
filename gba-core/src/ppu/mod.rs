@@ -32,10 +32,17 @@ use crate::bus::SysCtx;
 use crate::dma::DmaTrigger;
 use crate::irq::Irq;
 use crate::sched::Event;
-use crate::timers::IRQ_DELAY;
 use crate::timing::*;
 use crate::{FrameBuffer, SCREEN_H, SCREEN_W};
 use regs::{Mem, TRANSPARENT};
+
+/// Cycles between an LCD event (H-Blank / V-Blank / V-Count match) setting its IF bit and the CPU
+/// seeing the request: the same IRQ synchroniser as the timers (`timers::IRQ_DELAY`). Without it
+/// the CPU is interrupted before it can execute another instruction, so a main loop polling
+/// VCOUNT for the start of V-Blank (Majokko Cream-chan: `while (REG_VCOUNT <= 159)`) can never
+/// read 160 when its V-Blank handler outlasts the blanking period; on hardware the poll wins
+/// that race now and then.
+pub const LCD_IRQ_DELAY: u64 = crate::timers::IRQ_DELAY;
 
 pub const PAL_SIZE: usize = 0x400;
 pub const VRAM_SIZE: usize = 0x1_8000;
@@ -152,7 +159,7 @@ impl Ppu {
         }
     }
 
-    pub fn on_hblank(&mut self, ctx: &mut SysCtx) {
+    pub fn on_hblank(&mut self, ctx: &mut SysCtx, at: u64) {
         if self.vcount < VISIBLE_LINES {
             self.render_scanline(self.vcount as usize);
         }
@@ -169,7 +176,7 @@ impl Ppu {
         }
         self.hblank = true;
         if self.dispstat & (1 << 4) != 0 {
-            ctx.irq.raise(Irq::HBlank);
+            ctx.irq.raise_at(Irq::HBlank, at + LCD_IRQ_DELAY, ctx.sched);
         }
     }
 
@@ -184,14 +191,14 @@ impl Ppu {
                 self.frame_ready = true;
                 self.frame_count += 1;
                 if self.dispstat & (1 << 3) != 0 {
-                    ctx.irq.raise_at(Irq::VBlank, at + IRQ_DELAY, ctx.sched);
+                    ctx.irq.raise_at(Irq::VBlank, at + LCD_IRQ_DELAY, ctx.sched);
                 }
                 ctx.dma.trigger(DmaTrigger::VBlank);
             }
             _ => {}
         }
         if self.dispstat & (1 << 5) != 0 && self.vcount == (self.dispstat >> 8) as u32 {
-            ctx.irq.raise_at(Irq::VCount, at + IRQ_DELAY, ctx.sched);
+            ctx.irq.raise_at(Irq::VCount, at + LCD_IRQ_DELAY, ctx.sched);
         }
         let line_start = at;
         ctx.sched.schedule(Event::HBlank, line_start + HDRAW_CYCLES);
@@ -350,6 +357,7 @@ impl Ppu {
 
 #[cfg(test)]
 mod timing_tests {
+    use crate::timers::IRQ_DELAY;
     use super::*;
     use crate::dma::DmaController;
     use crate::irq::IrqController;
@@ -380,7 +388,7 @@ mod timing_tests {
             let (ev, _) = sched.pop_due().unwrap();
             let mut ctx = SysCtx { sched: &mut sched, irq: &mut irq, dma: &mut dma };
             match ev {
-                Event::HBlank => ppu.on_hblank(&mut ctx),
+                Event::HBlank => ppu.on_hblank(&mut ctx, deadline),
                 Event::LineEnd => {
                     ppu.on_line_end(&mut ctx, deadline);
                     at = deadline;
@@ -417,7 +425,7 @@ mod timing_tests {
             let (ev, _) = sched.pop_due().unwrap();
             let mut ctx = SysCtx { sched: &mut sched, irq: &mut irq, dma: &mut dma };
             match ev {
-                Event::HBlank => ppu.on_hblank(&mut ctx),
+                Event::HBlank => ppu.on_hblank(&mut ctx, deadline),
                 Event::LineEnd => {
                     ppu.on_line_end(&mut ctx, deadline);
                     lines += 1;
@@ -460,7 +468,7 @@ mod timing_tests {
             let mut ctx = SysCtx { sched: &mut sched, irq: &mut irq, dma: &mut dma };
             match ev {
                 Event::HBlank => {
-                    ppu.on_hblank(&mut ctx);
+                    ppu.on_hblank(&mut ctx, deadline);
                     if ppu.vcount == 19 && !written {
                         // Sprite 0: 8x8 at (30, 20), tile 1.
                         ppu.oam[0..2].copy_from_slice(&20u16.to_le_bytes());

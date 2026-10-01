@@ -239,6 +239,7 @@ impl Bus {
         regs.r[14] = target;
         regs.r[15] = target;
         self.bios.intr_wait = None;
+        self.bios.intr_wait_r12 = None;
     }
 
     /// IntrWait core. `discard`: clear the requested flags first and wait for a fresh one.
@@ -254,10 +255,20 @@ impl Bus {
             mirror &= !flags;
             self.write16(INTR_FLAGS_MIRROR, mirror, Access::N);
             self.bios.intr_wait = None;
+            if let Some(r12) = self.bios.intr_wait_r12.take() {
+                regs.r[12] = r12;
+            }
             self.idle(INTR_WAIT_EXIT_CYCLES);
             return;
         }
-        // Park: halt and re-execute the SWI after the next interrupt.
+        // Park: halt and re-execute the SWI after the next interrupt. The real BIOS waits inside
+        // its Halt routine, which has r12 = 0x04000000 (the HALTCNT base); an interrupt taken
+        // there hands that to the user handler. The AGB SDK / Taito handler relies on it:
+        // `strhne r0, [r12, #-8]` writes the V-Blank flag to 03FFFFF8 (the 03007FF8 mirror).
+        if self.bios.intr_wait.is_none() {
+            self.bios.intr_wait_r12 = Some(regs.r[12]);
+        }
+        regs.r[12] = 0x0400_0000;
         self.bios.intr_wait = Some(flags);
         self.irq.halted = true;
         regs.r[15] = regs.r[15].wrapping_sub(if regs.thumb() { 2 } else { 4 });
@@ -1468,6 +1479,28 @@ mod tests {
         assert_eq!(regs.r[15], 0x0800_0004);
         assert_eq!(b.read16(INTR_FLAGS_MIRROR, Access::N), 0);
         assert_eq!(b.bios.intr_wait, None);
+    }
+
+    #[test]
+    fn intr_wait_runs_the_irq_handler_with_r12_at_io_base_and_restores_the_callers() {
+        // The AGB SDK IRQ dispatcher stores the V-Blank flag with `strhne r0, [r12, #-8]`, which
+        // only reaches 03FFFFF8 because the real BIOS halts with r12 = 0x04000000.
+        let mut b = bus();
+        b.write16(INTR_FLAGS_MIRROR, 0, Access::N);
+        let mut regs = Regs::new();
+        regs.set_cpsr(MODE_SYS);
+        regs.r[12] = 0x31E;
+        regs.r[15] = 0x0800_0004;
+        b.hle_swi(swi::VBLANK_INTR_WAIT, &mut regs);
+        assert!(b.irq.halted);
+        assert_eq!(regs.r[12], 0x0400_0000, "r12 seen by the IRQ handler");
+        // The handler's write through r12-8 lands in the mirror (03FFFFF8 mirrors 03007FF8).
+        b.write16(regs.r[12].wrapping_sub(8), 1, Access::N);
+        assert_eq!(b.read16(INTR_FLAGS_MIRROR, Access::N), 1);
+        b.irq.halted = false;
+        b.hle_swi(swi::VBLANK_INTR_WAIT, &mut regs);
+        assert_eq!(b.bios.intr_wait, None);
+        assert_eq!(regs.r[12], 0x31E, "the caller's r12 comes back");
     }
 
     #[test]
