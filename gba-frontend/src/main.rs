@@ -75,9 +75,13 @@ fn run(cli: &Cli) -> Result<()> {
         if app.quit {
             break;
         }
+        if app.settings_dirty {
+            app.apply_settings(&mut video);
+        }
         app.render(&mut video)?;
         app.pace();
     }
-    app.shutdown();
+    let size = video.size();
+    app.shutdown(size);
     Ok(())
 }

@@ -183,13 +183,35 @@ pub struct AudioOut {
     target_fill: usize,
     dropped: u64,
     muted: bool,
+    device_name: String,
 }
 
 impl AudioOut {
     /// Open the default output device. `src_rate` is the core's sample rate in Hz.
     pub fn open(src_rate: f64, muted: bool) -> Result<AudioOut> {
+        Self::open_on(src_rate, muted, None)
+    }
+
+    /// Names of the output devices the host offers.
+    pub fn list_devices() -> Vec<String> {
         let host = cpal::default_host();
-        let device = host.default_output_device().ok_or_else(|| anyhow!("no default output device"))?;
+        match host.output_devices() {
+            Ok(it) => it.filter_map(|d| d.name().ok()).collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
+    /// Open the named output device (`None` or an unknown name = the default device).
+    pub fn open_on(src_rate: f64, muted: bool, name: Option<&str>) -> Result<AudioOut> {
+        let host = cpal::default_host();
+        let named = name.and_then(|n| host.output_devices().ok()?.find(|d| d.name().map(|dn| dn == n).unwrap_or(false)));
+        if name.is_some() && named.is_none() {
+            eprintln!("warning: audio device {:?} not found; using the default", name.unwrap_or(""));
+        }
+        let device = match named {
+            Some(d) => d,
+            None => host.default_output_device().ok_or_else(|| anyhow!("no default output device"))?,
+        };
         let supported = device.default_output_config().context("querying default output config")?;
         let sample_format = supported.sample_format();
         let config: StreamConfig = supported.config();
@@ -218,9 +240,10 @@ impl AudioOut {
         }?;
         stream.play().context("starting audio stream")?;
 
+        let device_name = device.name().unwrap_or_else(|_| "<unknown>".into());
         println!(
             "audio: {} @ {} Hz, {} ch, {:?}, ring {} frames, target {} frames",
-            device.name().unwrap_or_else(|_| "<unknown>".into()),
+            device_name,
             device_rate,
             channels,
             sample_format,
@@ -238,6 +261,7 @@ impl AudioOut {
             target_fill,
             dropped: 0,
             muted,
+            device_name,
         })
     }
 
@@ -302,6 +326,10 @@ impl AudioOut {
 
     pub fn device_rate(&self) -> u32 {
         self.device_rate
+    }
+
+    pub fn device_name(&self) -> &str {
+        &self.device_name
     }
 
     /// Discard buffered audio (fast-forward) and re-arm priming so the restart is silent.

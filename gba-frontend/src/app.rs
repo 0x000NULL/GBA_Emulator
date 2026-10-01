@@ -6,14 +6,17 @@
 //! advance the emulator.
 
 use crate::audio::AudioOut;
-use crate::config::{self, Cli, AUDIO_PACE_MAX_ADJUST, CPU_HZ, FAST_FORWARD_PRESENT, SAVE_INTERVAL_FRAMES, TITLE_REFRESH};
+use crate::config::{self, Cli, AUDIO_PACE_MAX_ADJUST, CPU_HZ, FAST_FORWARD_PRESENT, TITLE_REFRESH};
 use crate::debug_ui::{self, Hotkey, HotkeyMap, TitleInfo};
 use crate::overlay::pause::{Outcome, PauseMenu};
 use crate::overlay::Overlay;
 use crate::pacing::{paced_period, FpsCounter, Pacer};
 use crate::saves::SaveManager;
 use crate::screens::bench::{BenchCtx, BenchOutcome, BenchScreen};
+use crate::screens::settings::{SettingsCtx, SettingsOutcome, SettingsScreen};
 use crate::screens::states::{StatesCtx, StatesOutcome, StatesScreen};
+use crate::settings::{AudioMode, Bios, PictureSize, Settings};
+use crate::window::Filter;
 use crate::slots::{self, SlotSet};
 use crate::ui::fmt::frames_to_secs;
 use crate::ui::input::{KeyMap, UiInput};
@@ -70,10 +73,12 @@ pub struct Session {
     pub host_ms: f64,
     pub paced_ms: f64,
     last_step: Option<Instant>,
+    /// Frames between `.sav` writes (Settings › Saves).
+    pub autosave_frames: u64,
 }
 
 impl Session {
-    pub fn new(rom: &Path, bios: Option<BiosMode>, no_audio: bool, mute: bool) -> Result<Self> {
+    pub fn new(rom: &Path, bios: Option<BiosMode>, audio_mode: AudioMode, device: Option<&str>, volume: u8) -> Result<Self> {
         let gba = gba_test::build_gba(rom, bios, None)?;
         let header = gba.bus.cart.header.clone();
         let game = if header.title.is_empty() {
@@ -91,11 +96,14 @@ impl Session {
             Err(e) => eprintln!("warning: {e:#}"),
         }
         let slots = SlotSet::scan(rom, Some(gba.bus.cart.rom()));
-        let audio = if no_audio {
+        let audio = if audio_mode == AudioMode::Off {
             None
         } else {
-            match AudioOut::open(src_rate(&gba), mute) {
-                Ok(a) => Some(a),
+            match AudioOut::open_on(src_rate(&gba), audio_mode == AudioMode::Muted, device) {
+                Ok(a) => {
+                    a.set_gain(crate::audio::volume_gain(volume));
+                    Some(a)
+                }
                 Err(e) => {
                     eprintln!("warning: audio unavailable ({e:#}); running without sound");
                     None
@@ -127,6 +135,7 @@ impl Session {
             host_ms: 0.0,
             paced_ms: 0.0,
             last_step: None,
+            autosave_frames: 60,
         })
     }
 
@@ -150,7 +159,7 @@ impl Session {
         self.samples.clear();
         debug_ui::drain_debug_log(&mut self.gba);
         self.saves.poll(&mut self.gba);
-        if self.frames.is_multiple_of(SAVE_INTERVAL_FRAMES) {
+        if self.frames.is_multiple_of(self.autosave_frames.max(1)) {
             self.flush_save();
         }
         self.fps.tick();
@@ -255,16 +264,16 @@ pub fn src_rate(gba: &Gba) -> f64 {
     CPU_HZ / gba.bus.apu.cycles_per_sample() as f64
 }
 
-/// Run-time options that came from the command line.
+/// Run-time options: the command line plus what the settings file resolved to.
 #[derive(Clone, Debug)]
 pub struct RunOptions {
     pub bios: Option<BiosMode>,
-    pub no_audio: bool,
-    pub mute: bool,
     pub fullspeed: bool,
     pub exit_after: Option<u64>,
-    /// `--scale N`: a fixed picture scale and a window that fits it exactly.
+    /// Fixed picture scale (`--scale N` or Settings › Picture size); None = largest that fits.
     pub scale: Option<u32>,
+    /// `--scale N` was given: the window opens at exactly 240N x 160N.
+    pub exact_window: bool,
 }
 
 pub struct App {
@@ -278,6 +287,12 @@ pub struct App {
     /// Current slot (1..=8): what in-game F1/F3 act on; the last slot used in any menu.
     pub slot_cursor: u8,
     pub bench: BenchScreen,
+    pub settings: Settings,
+    settings_path: Option<PathBuf>,
+    settings_screen: SettingsScreen,
+    audio_devices: Vec<String>,
+    /// Settings changed: re-apply to the video/audio/session on the next loop iteration.
+    pub settings_dirty: bool,
     /// Fast-forward speed limit as a multiple of real time (None = as fast as the host allows).
     pub ff_limit: Option<u32>,
     /// The save-states screen while it is open, and (without a session) the game it shows.
@@ -289,23 +304,46 @@ pub struct App {
 
 impl App {
     pub fn new(cli: &Cli) -> Result<Self> {
-        let bios = match (&cli.bios, cli.hle) {
-            (Some(p), _) => Some(BiosMode::Lle(std::fs::read(p).map_err(|e| anyhow::anyhow!("reading BIOS {}: {e}", p.display()))?)),
-            (None, true) => Some(BiosMode::Hle),
-            (None, false) => None,
+        let settings_path = Settings::default_path();
+        let mut settings = settings_path.as_deref().map(Settings::load).unwrap_or_default();
+        settings.apply_cli(cli);
+        let bios = match (&cli.bios, cli.hle, &settings.bios) {
+            (Some(p), _, _) => Some(BiosMode::Lle(std::fs::read(p).map_err(|e| anyhow::anyhow!("reading BIOS {}: {e}", p.display()))?)),
+            (None, true, _) => Some(BiosMode::Hle),
+            (None, false, Bios::File(p)) if !p.as_os_str().is_empty() => match std::fs::read(p) {
+                Ok(b) => Some(BiosMode::Lle(b)),
+                Err(e) => {
+                    eprintln!("warning: BIOS file {}: {e}; using the built-in one", p.display());
+                    Some(BiosMode::Hle)
+                }
+            },
+            (None, false, _) => None,
         };
-        let opts = RunOptions { bios, no_audio: cli.no_audio, mute: cli.mute, fullspeed: cli.fullspeed, exit_after: cli.exit_after, scale: cli.scale };
+        let scale = match (cli.scale, settings.picture) {
+            (Some(n), _) => Some(n),
+            (None, PictureSize::Fixed(n)) => Some(n),
+            (None, PictureSize::Largest) => None,
+        };
+        let opts = RunOptions { bios, fullspeed: cli.fullspeed, exit_after: cli.exit_after, scale, exact_window: cli.scale.is_some() };
+        let keymap = settings.to_keymap();
+        let hotkeys = settings.to_hotkeys();
+        let ff_limit = settings.ff_limit.factor();
         let mut app = App {
             screen: Screen::Library,
             session: None,
-            keymap: KeyMap::default(),
-            hotkeys: HotkeyMap::default(),
+            keymap,
+            hotkeys,
             opts,
             canvas: Canvas::new(ui::tokens::layout::DESIGN_W, ui::tokens::layout::DESIGN_H, Fonts::new()),
             quit: false,
             slot_cursor: 1,
             bench: BenchScreen::new(),
-            ff_limit: Some(4),
+            settings,
+            settings_path,
+            settings_screen: SettingsScreen::new(),
+            audio_devices: AudioOut::list_devices(),
+            settings_dirty: false,
+            ff_limit,
             states: None,
             states_rom: None,
             step: false,
@@ -321,7 +359,8 @@ impl App {
 
     /// Boot `rom` and switch to the Game screen.
     pub fn start_game(&mut self, rom: &Path) -> Result<()> {
-        let s = Session::new(rom, self.opts.bios.clone(), self.opts.no_audio, self.opts.mute)?;
+        let mut s = Session::new(rom, self.opts.bios.clone(), self.settings.audio, self.settings.audio_device.as_deref(), self.settings.volume)?;
+        s.autosave_frames = self.settings.autosave_frames;
         self.slot_cursor = s.slots.latest().map(|m| m.slot).unwrap_or(1);
         self.session = Some(s);
         self.screen = Screen::Game;
@@ -340,9 +379,107 @@ impl App {
 
     /// Initial window size: `--scale N` means exactly 240N x 160N, else the design size.
     pub fn initial_window_size(&self) -> (usize, usize) {
-        match self.opts.scale {
-            Some(s) => (config::SCREEN_W * s as usize, config::SCREEN_H * s as usize),
-            None => (ui::tokens::layout::DESIGN_W as usize, ui::tokens::layout::DESIGN_H as usize),
+        match (self.opts.exact_window, self.opts.scale, self.settings.window) {
+            (true, Some(s), _) => (config::SCREEN_W * s as usize, config::SCREEN_H * s as usize),
+            (_, _, Some((w, h))) if w >= 320 && h >= 240 => (w as usize, h as usize),
+            _ => (ui::tokens::layout::DESIGN_W as usize, ui::tokens::layout::DESIGN_H as usize),
+        }
+    }
+
+    /// Push the current settings into the video, audio and session; persist them.
+    pub fn apply_settings(&mut self, video: &mut Video) {
+        self.settings_dirty = false;
+        self.opts.scale = match self.settings.picture {
+            PictureSize::Fixed(n) => Some(n),
+            PictureSize::Largest => None,
+        };
+        video.filter = match self.settings.filter {
+            crate::settings::Filter::None => Filter::None,
+            crate::settings::Filter::LcdGrid => Filter::LcdGrid,
+            crate::settings::Filter::FrameBlend => Filter::FrameBlend,
+        };
+        self.ff_limit = self.settings.ff_limit.factor();
+        if let Some(s) = self.session.as_mut() {
+            s.autosave_frames = self.settings.autosave_frames;
+            let gain = crate::audio::volume_gain(self.settings.volume);
+            match self.settings.audio {
+                AudioMode::Off => {
+                    s.audio = None;
+                }
+                mode => {
+                    let want_device = self.settings.audio_device.clone();
+                    let reopen = s.audio.is_none() || s.audio.as_ref().map(|a| a.device_name() != want_device.as_deref().unwrap_or("")).unwrap_or(false) && want_device.is_some();
+                    if reopen {
+                        match AudioOut::open_on(src_rate(&s.gba), mode == AudioMode::Muted, want_device.as_deref()) {
+                            Ok(a) => s.audio = Some(a),
+                            Err(e) => eprintln!("warning: audio unavailable ({e:#})"),
+                        }
+                        s.resync();
+                    }
+                    if let Some(a) = s.audio.as_mut() {
+                        a.set_muted(mode == AudioMode::Muted);
+                        a.set_gain(gain);
+                    }
+                }
+            }
+        }
+        self.keymap = self.settings.to_keymap();
+        self.hotkeys = self.settings.to_hotkeys();
+        self.save_settings();
+    }
+
+    fn save_settings(&self) {
+        if let Some(p) = &self.settings_path {
+            if let Err(e) = self.settings.save(p) {
+                eprintln!("warning: settings not saved: {e:#}");
+            }
+        }
+    }
+
+    /// Open the settings manual from the game or the library.
+    pub fn open_settings(&mut self, back: Back) {
+        if let Some(s) = self.session.as_mut() {
+            s.menu = None;
+            s.set_paused(true);
+        }
+        self.settings_screen.reset();
+        let dir = self.session.as_ref().and_then(|s| s.rom.parent().map(|p| p.to_path_buf()));
+        self.settings_screen.set_game_dir(dir);
+        self.screen = Screen::Settings { back };
+    }
+
+    fn update_settings(&mut self, input: &UiInput, back: Back) {
+        let outcome = {
+            let mut ctx = SettingsCtx {
+                settings: &mut self.settings,
+                keymap: &mut self.keymap,
+                hotkeys: &mut self.hotkeys,
+                audio_devices: &self.audio_devices,
+                rebinding: false,
+            };
+            self.settings_screen.update(input, &mut ctx)
+        };
+        match outcome {
+            SettingsOutcome::None => {}
+            SettingsOutcome::Changed => {
+                self.settings.from_keymap(&self.keymap);
+                self.settings.from_hotkeys(&self.hotkeys);
+                self.settings_dirty = true;
+            }
+            SettingsOutcome::Back => {
+                self.settings_screen.reset();
+                self.go_back(back);
+            }
+            SettingsOutcome::OpenFolder(p) => {
+                #[cfg(windows)]
+                {
+                    if let Err(e) = std::process::Command::new("explorer").arg(&p).spawn() {
+                        eprintln!("open folder: {e}");
+                    }
+                }
+                #[cfg(not(windows))]
+                println!("folder: {}", p.display());
+            }
         }
     }
 
@@ -361,12 +498,7 @@ impl App {
             Screen::Game => self.update_game(input, video)?,
             Screen::Library => {}
             Screen::SaveStates { back } => self.update_states(input, back)?,
-            Screen::Settings { back } => {
-                // placeholder until the settings milestone lands: X / Esc return
-                if input.action(crate::ui::input::Action::Back) || input.pressed(minifb::Key::Escape) {
-                    self.go_back(back);
-                }
-            }
+            Screen::Settings { back } => self.update_settings(input, back),
             Screen::Bench => self.update_bench(input, video)?,
         }
         Ok(())
@@ -600,7 +732,11 @@ impl App {
                         }
                     }
                 }
-                Outcome::Settings => self.screen = Screen::Settings { back: Back::Game },
+                Outcome::Settings => {
+                    s.menu = Some(menu);
+                    self.open_settings(Back::Game);
+                    return Ok(());
+                }
                 Outcome::Bench => {
                     self.open_bench();
                     return Ok(());
@@ -712,13 +848,22 @@ impl App {
                 }
                 video.present_canvas(&self.canvas)?;
             }
-            Screen::Settings { .. } | Screen::Library => {
+            Screen::Settings { .. } => {
+                self.canvas.resize(w as u32, h as u32);
+                let ctx = SettingsCtx {
+                    settings: &mut self.settings,
+                    keymap: &mut self.keymap,
+                    hotkeys: &mut self.hotkeys,
+                    audio_devices: &self.audio_devices,
+                    rebinding: false,
+                };
+                self.settings_screen.render(&mut self.canvas, &ctx);
+                video.present_canvas(&self.canvas)?;
+            }
+            Screen::Library => {
                 self.canvas.resize(w as u32, h as u32);
                 self.canvas.clear(ui::PAPER.bg);
-                let (num, title) = match self.screen {
-                    Screen::Settings { .. } => ("04", "Settings"),
-                    _ => ("01", "Library"),
-                };
+                let (num, title) = ("01", "Library");
                 ui::widgets::head(&mut self.canvas, num, title, None, None, &ui::PAPER);
                 ui::widgets::foot(&mut self.canvas, &[], Some(("X", "Back")), &ui::PAPER);
                 video.present_canvas(&self.canvas)?;
@@ -762,9 +907,9 @@ impl App {
                     }
                     return;
                 }
-                let period = match &s.audio {
-                    Some(a) => paced_period(base_period, a.fill(), a.target_fill(), AUDIO_PACE_MAX_ADJUST),
-                    None => base_period,
+                let period = match (&s.audio, self.settings.pacing) {
+                    (Some(a), crate::settings::Pacing::AudioClocked) => paced_period(base_period, a.fill(), a.target_fill(), AUDIO_PACE_MAX_ADJUST),
+                    _ => base_period,
                 };
                 s.pacer.wait(period);
             }
@@ -777,8 +922,12 @@ impl App {
         }
     }
 
-    /// Final save flush and the exit statistics line.
-    pub fn shutdown(&mut self) {
+    /// Final save flush, remembered window size and the exit statistics line.
+    pub fn shutdown(&mut self, window: (usize, usize)) {
+        if !self.opts.exact_window {
+            self.settings.window = Some((window.0 as u32, window.1 as u32));
+            self.save_settings();
+        }
         if let Some(s) = self.session.as_mut() {
             s.flush_save();
             let audio_stats = match &s.audio {
