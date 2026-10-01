@@ -90,6 +90,50 @@ def classify(r: dict, frames: int) -> str:
     return "ok"
 
 
+def needs_bios_driver(r: dict) -> bool:
+    """Titles whose only audio path is the BIOS sound driver (SWIs 1A-1E, 28-2A): a known HLE gap."""
+    swi = r.get("unimplemented_swi", "") or ""
+    return r.get("category") == "silent" and any(k in swi for k in ("1A:", "1B:", "1C:", "1D:", "1E:", "2A:"))
+
+
+def write_doc(rows, path: Path, when: str):
+    """The committed per-title compatibility list (docs/library-compat.md)."""
+    n = len(rows)
+    for r in rows:
+        if needs_bios_driver(r):
+            r["category"] = "needs-bios-sound-driver"
+    cats = ["ok", "silent", "needs-bios-sound-driver", "static", "frozen", "black", "crash"]
+    counts = {c: sum(1 for r in rows if r.get("category") == c) for c in cats}
+    lines = [f"# Library compatibility ({n} titles, {when})", ""]
+    lines.append("Boot sweep by `scripts/triage.py` (harness `gba-test --triage`): every ROM runs 2400 frames (40 s) under the")
+    lines.append("HLE BIOS with Start pressed at frames 700/1100/1500/1900/2300 and A at 1300/2100, then the final picture, its")
+    lines.append("motion, the audio and the CPU state are classified. `ok` = a moving, coloured picture with audio. This is a boot")
+    lines.append("and title/menu check, not a play-through; the scripted gameplay goldens live in `tests/compat.toml`.")
+    lines.append("")
+    lines.append("| Category | Titles | Meaning |")
+    lines.append("|---|---|---|")
+    meaning = {
+        "ok": "moving picture with colour and audio",
+        "silent": "moving picture, no audio in the first 40 s (see the per-title note)",
+        "needs-bios-sound-driver": "runs, but its music needs the BIOS sound driver (SWI 1A-1E/2A), which the HLE BIOS does not provide",
+        "static": "a picture that stopped changing before the last 20 s",
+        "frozen": "picture stopped and the CPU is idle or spinning",
+        "black": "no picture at all",
+        "crash": "the harness failed (panic / unreadable ROM)",
+    }
+    for c in cats:
+        lines.append(f"| {c} | {counts[c]} | {meaning[c]} |")
+    lines.append("")
+    lines.append("| Title | Code | Save | Result | Note |")
+    lines.append("|---|---|---|---|---|")
+    for r in sorted(rows, key=lambda r: r["rom"].lower()):
+        name = r["rom"][:-4] if r["rom"].lower().endswith(".zip") else r["rom"]
+        note = r.get("note", "") or ""
+        lines.append(f"| {name} | {r.get('code','')} | {r.get('save','')} | {r.get('category','')} | {note} |")
+    lines.append("")
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
 def write_report(rows, out_dir: Path):
     cats = ["ok", "silent", "static", "frozen", "black", "crash"]
     by = {c: [r for r in rows if r.get("category") == c] for c in cats}
@@ -126,6 +170,8 @@ def main():
     ap.add_argument("--only", default=None, help="substring filter on the file name")
     ap.add_argument("--exe", default=str(EXE))
     ap.add_argument("--report", default=None, help="CSV to re-render into a report")
+    ap.add_argument("--doc", default=None, help="also write the committed per-title list to this Markdown path")
+    ap.add_argument("--notes", default=None, help="CSV of `rom,note` lines merged into the doc (hand-written verdicts)")
     args = ap.parse_args()
     out_dir = (ROOT / args.out).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -137,6 +183,15 @@ def main():
             r["exit"] = int(r.get("exit") or 0)
         by = write_report(rows, out_dir)
         print({c: len(v) for c, v in by.items()})
+        if args.doc:
+            if args.notes:
+                with open(args.notes, newline="", encoding="utf-8") as f:
+                    notes = {n["rom"]: n["note"] for n in csv.DictReader(f)}
+                for r in rows:
+                    if r["rom"] in notes:
+                        r["note"] = notes[r["rom"]]
+            write_doc(rows, Path(args.doc), time.strftime("%Y-%m-%d"))
+            print(f"doc: {args.doc}")
         return
 
     roms = sorted(p for p in (ROOT / args.folder).iterdir() if p.suffix.lower() in (".zip", ".gba"))
