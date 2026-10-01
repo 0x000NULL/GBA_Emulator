@@ -454,3 +454,58 @@ Rows left: DMA Prefetch Break/Read, H-blank bit start Hblank/Flip 1/2/3. (The ha
   and share the path. Flip 2/3 are off by 1 and 2 cycles in the same way. Scanning the Halt exit
   0..40 never matched more than the current rows; processing due events before DISPSTAT reads
   (event lag is up to one instruction) changed nothing. Not fixed.
+
+## Fix log (library sweep: crash boots, 2026-10-01)
+Seven boots from the 1,543-title `--triage` sweep ended black with the CPU somewhere odd. Three
+causes found and fixed or ruled out, two games left undiagnosed. Harness: `gba-test --dump-mem LO..HI`
+(prints `mem AAAAAAAA: WWWWWWWW` at the end of a run) was added for this work.
+- **V-Blank IRQ latency (James Pond - Codename Robocod, Winter Sports): fixed.**
+  Both games sit in a main loop that waits for `VCOUNT == 160` (`ldrh r3,[VCOUNT]; cmp r3,#0xA0;
+  bne`) with the V-Blank IRQ enabled; the frame is exactly a multiple of the loop period, so the
+  phase never changes. The PPU raised its IRQs straight onto the CPU line at the line boundary,
+  so the handler preempted before any instruction could read 160 and the loop never left (the
+  game kept re-running its screen-clear; black picture, ROM-busy CPU, audio still playing). IF and
+  VCOUNT still change at the boundary but the V-Blank request now reaches the CPU
+  `ppu::PPU_IRQ_DELAY` = 7 cycles later (mGBA's `GBA_IRQ_DELAY`). Any delay 1..7 frees both games.
+  Golden impact (scanned D = 1..7, V-Blank only, all 45 frame-pinned compat rows): D = 1, 2, 3, 5
+  also move the NFS Most Wanted race hash at frame 6600 (5741decb77b74fc7), so 4, 6 or 7 are the
+  only candidates; delaying H-Blank/VCount as well moves it too, so those stay immediate. EVERY
+  D = 1..7 moves exactly one other row: Mario Party Advance, title at frame 3000, e010183ef13054ff
+  -> 416390f06629c657 at D = 7 (the `--png` pair was reviewed: identical title screen, only the
+  two balloons sit at a different animation phase; the 32100-frame row of the same game still
+  matches). That golden is NOT re-pinned here; `cargo test` fails on that one row until it is.
+  Test: `vblank_irq_reaches_the_cpu_after_the_vcount_change` (and `vblank_flag_and_irq_timing`
+  now drains `IrqLatch`). Triage after: James Pond 118 colours / 438 changes, last change 2301
+  (language select, then the Valcon/intro screens); Winter Sports 178 colours / 557 changes, last
+  change 2399.
+- **SoundGetJumpList, SWI 2Ah (Saibara Rieko no Dendou Mahjong, Cyberdrive Zoids): crash fixed,
+  audio still absent.** The m4a library calls `MPlayJumpTableCopy` (SWI 2Ah) to fetch 36 pointers
+  to the BIOS's track-command routines (`ply_*`), overrides a few, and `bx`es through the rest.
+  HLE left the buffer untouched, so slot 35 was 0 and the game executed the BIOS region from
+  address 0 (cpsr mode bits 0, pc=00000134 spin). Real routine addresses and bodies need a BIOS
+  dump, so HLE now writes the 120h-byte buffer full of `HLE_SOUND_STUB_ADDR` (0x150), which
+  `hle_vector` handles as `bx lr` (ARM or Thumb by LR bit 0). The track commands therefore do
+  nothing (no music), but both games now run: Saibara 55 colours / 2054 picture changes, Zoids 23
+  colours / 1037. Both still call SWI 1Ch SoundDriverMain (BIOS sound driver, not emulated; stays
+  a logged no-op), so `audio_frames` is 0 / 2. Test:
+  `sound_get_jump_list_fills_the_table_with_a_returning_stub`.
+- **Daigassou! Band-Brothers - Request Selection: not a bootable GBA program.** The library has
+  the "(DS Expansion Cartridge)" dump (no "(Demo)" file exists in `Games/`): 1 MiB whose first
+  0xA0 bytes are FFFFFFFFh and whose header carries no entry branch, so the CPU executes
+  conditional-NV words, takes the undefined vector and spins at 0x134 on hardware as well. It is
+  slot-2 data for the DS game. No emulator bug.
+- **Tennis no Ouji-sama 2004 Glorious Gold / Stylish Silver: not fixed (stuck rule).** Chain found,
+  newest effect first: the CPU ends executing zeroed IWRAM (Gold) / an undefined word (Silver);
+  that is the game's IWRAM sound mixer (m4a SoundMainRAM copy at 03000000, called from a ~14-line
+  timer IRQ) whose code has been corrupted. The mixer's stack mix buffer pointer `r6` ran past
+  03008000, the IWRAM mirror wrapped onto 03000000, and the mixer *added the sample value (-1) to
+  its own code* (every halfword decremented). It ran away because its loop-counter instruction
+  (`subs r4,r4,#2` at 030003B8) had already been zeroed by an earlier store. That store is the
+  game's own init routine (ROM 08064F20, GCC -O0 Thumb) writing `array[3*i + j]` where `j` is the
+  local at r7+0x10, which the function never initialises: it reads stale stack (0x3F3F left by an
+  earlier call, so the address lands at 03070xxx, an IWRAM mirror of the mixer). The stale word is
+  zero only if a mixer IRQ taken with a shallow sp has cleared that stack area since, so the
+  outcome depends on the exact IRQ phase against the main thread's call depth. Changing the PPU
+  IRQ delay (1..7) leaves the result identical; no register, I/O or memory-map divergence from
+  hardware was found. Open: compare against a reference trace from an mGBA build with the CLI
+  debugger, starting from a savestate at frame 17 (`--frames 17 --save-state`).
