@@ -75,9 +75,12 @@ impl Timer {
             _ => 1024,
         }
     }
+    /// Free-running (prescaler-driven) in timer slot `n`. TM0CNT_H bit 2 is "not used": timer 0
+    /// has no predecessor to cascade from, so it always counts on its prescaler (several games,
+    /// e.g. Who Wants to Be a Millionaire, set TM0CNT_H = 0x84 for their sample timer).
     #[inline]
-    fn running(&self) -> bool {
-        self.enabled() && !self.cascade()
+    fn running(&self, n: usize) -> bool {
+        self.enabled() && !(n > 0 && self.cascade())
     }
     /// Ticks counted in `(start_time, now]` (free-running prescaler).
     #[inline]
@@ -125,7 +128,7 @@ impl Timers {
     /// event has not been dispatched yet (reads inside the instruction that crossed them).
     pub fn counter(&self, n: usize, now: u64) -> u16 {
         let t = &self.t[n];
-        if !t.running() {
+        if !t.running(n) {
             return t.counter;
         }
         let ticks = t.ticks_until(now);
@@ -176,7 +179,7 @@ impl Timers {
             2 => {
                 // An overflow due at or before this write must be processed first (its tick
                 // precedes the write on the same edge); let the event handler apply the write.
-                if self.t[n].running() {
+                if self.t[n].running(n) {
                     if let Some(at) = sched.time_of(Event::TimerOverflow(n as u8)) {
                         if at <= sched.now {
                             self.deferred_control[n] = Some(v);
@@ -217,7 +220,7 @@ impl Timers {
                 t.counter = t.reload;
                 t.start_time = sched.now + START_DELAY;
             }
-            if !t.cascade() {
+            if t.running(n) {
                 self.schedule_overflow(n, sched);
             }
         }
@@ -242,7 +245,7 @@ impl Timers {
                 irq.raise_at(Irq::timer(n as u8), at + IRQ_DELAY, sched);
             }
         }
-        if self.t[n].running() {
+        if self.t[n].running(n) {
             self.schedule_overflow(n, sched);
         }
         // Cascade into the next timer.
@@ -467,6 +470,25 @@ mod tests {
         s.now = 3;
         assert_eq!(fire(&mut tm, &mut s, &mut irq), 3);
         assert_eq!(tm.counter(1, 3), 1);
+    }
+
+    /// TM0CNT_H bit 2 (count-up) is "not used" for timer 0: it still counts on its prescaler.
+    /// Who Wants to Be a Millionaire (and others) program TM0CNT_H = 0x84 for the FIFO timer.
+    #[test]
+    fn timer0_ignores_the_count_up_bit() {
+        let mut s = Scheduler::new();
+        let mut irq = IrqController::new();
+        let mut tm = Timers::new();
+        tm.write8(0x100, 0xFF, &mut s);
+        tm.write8(0x101, 0xFF, &mut s);
+        tm.write8(0x102, 0x84, &mut s); // timer0: enabled, count-up bit set, prescaler F/1
+        assert!(s.time_of(Event::TimerOverflow(0)).is_some(), "overflow scheduled");
+        s.now = 3;
+        assert_eq!(fire(&mut tm, &mut s, &mut irq), 3);
+        assert_eq!(tm.counter(0, 3), 0xFFFF, "reloaded after the overflow");
+        // The same bit on timer 1 does cascade (no own overflow event).
+        tm.write8(0x106, 0x84, &mut s);
+        assert!(s.time_of(Event::TimerOverflow(1)).is_none());
     }
 
     /// The overflow IRQ reaches the CPU IRQ_DELAY cycles after the overflow and is dropped if IF
