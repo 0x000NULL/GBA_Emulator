@@ -21,7 +21,7 @@ use crate::settings::{AudioMode, Bios, PictureSize, Settings};
 use crate::window::Filter;
 use crate::slots::{self, SlotSet};
 use crate::ui::fmt::frames_to_secs;
-use crate::ui::input::{KeyMap, UiInput};
+use crate::ui::input::{KeyMap, PadMap, UiInput};
 use crate::ui::tokens::pixel::DIM_EVY;
 use crate::ui::{self, Canvas, Fonts, NIGHT};
 use crate::window::Video;
@@ -282,6 +282,7 @@ pub struct App {
     pub screen: Screen,
     pub session: Option<Session>,
     pub keymap: KeyMap,
+    pub padmap: PadMap,
     pub hotkeys: HotkeyMap,
     pub opts: RunOptions,
     pub canvas: Canvas,
@@ -332,6 +333,7 @@ impl App {
         };
         let opts = RunOptions { bios, fullspeed: cli.fullspeed, exit_after: cli.exit_after, scale, exact_window: cli.scale.is_some() };
         let keymap = settings.to_keymap();
+        let padmap = settings.to_padmap();
         let hotkeys = settings.to_hotkeys();
         let ff_limit = settings.ff_limit.factor();
         let folders = Self::library_folders(&settings, cli.rom.as_deref());
@@ -340,6 +342,7 @@ impl App {
             screen: Screen::Library,
             session: None,
             keymap,
+            padmap,
             hotkeys,
             opts,
             canvas: Canvas::new(ui::tokens::layout::DESIGN_W, ui::tokens::layout::DESIGN_H, Fonts::new()),
@@ -488,6 +491,7 @@ impl App {
             }
         }
         self.keymap = self.settings.to_keymap();
+        self.padmap = self.settings.to_padmap();
         self.hotkeys = self.settings.to_hotkeys();
         let rom = self.session.as_ref().map(|s| s.rom.clone());
         let folders = Self::library_folders(&self.settings, rom.as_deref());
@@ -523,6 +527,7 @@ impl App {
             let mut ctx = SettingsCtx {
                 settings: &mut self.settings,
                 keymap: &mut self.keymap,
+                padmap: &mut self.padmap,
                 hotkeys: &mut self.hotkeys,
                 audio_devices: &self.audio_devices,
                 rebinding: false,
@@ -533,6 +538,7 @@ impl App {
             SettingsOutcome::None => {}
             SettingsOutcome::Changed => {
                 self.settings.from_keymap(&self.keymap);
+                self.settings.from_padmap(&self.padmap);
                 self.settings.from_hotkeys(&self.hotkeys);
                 self.settings_dirty = true;
             }
@@ -918,6 +924,7 @@ impl App {
                 let ctx = SettingsCtx {
                     settings: &mut self.settings,
                     keymap: &mut self.keymap,
+                    padmap: &mut self.padmap,
                     hotkeys: &mut self.hotkeys,
                     audio_devices: &self.audio_devices,
                     rebinding: false,

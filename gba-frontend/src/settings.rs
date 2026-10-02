@@ -15,7 +15,7 @@
 
 use crate::config::Cli;
 use crate::debug_ui::{Hotkey, HotkeyMap, HOTKEYS};
-use crate::ui::input::{bindable, key_name, KeyMap, BUTTON_NAMES};
+use crate::ui::input::{bindable, key_name, KeyMap, BUTTON_NAMES, pad_button_from_name, pad_button_name, PadMap};
 use anyhow::{Context, Result};
 use minifb::Key;
 use serde::de::DeserializeOwned;
@@ -145,6 +145,34 @@ impl KeyBindings {
     }
 }
 
+/// GBA button name -> gamepad button name (`ui::input::pad_button_name`), one map for every pad.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct PadBindings(pub BTreeMap<String, String>);
+
+impl Default for PadBindings {
+    fn default() -> Self {
+        Self::from_padmap(&PadMap::default())
+    }
+}
+
+impl PadBindings {
+    pub fn from_padmap(pm: &PadMap) -> Self {
+        PadBindings(BUTTON_NAMES.iter().zip(pm.buttons).map(|(n, b)| (n.to_string(), pad_button_name(b).to_string())).collect())
+    }
+
+    /// The live map; buttons missing from the file (or naming no pad button) keep their default.
+    pub fn to_padmap(&self) -> PadMap {
+        let mut pm = PadMap::default();
+        for (i, name) in BUTTON_NAMES.iter().enumerate() {
+            if let Some(b) = self.0.get(*name).and_then(|n| pad_button_from_name(n)) {
+                pm.buttons[i] = b;
+            }
+        }
+        pm
+    }
+}
+
 /// Every [`Hotkey`], in the order the settings file lists them.
 pub const ALL_HOTKEYS: [Hotkey; 9] = [
     Hotkey::Pause,
@@ -253,6 +281,8 @@ pub struct Settings {
     pub autosave_frames: u64,
     pub keymap: KeyBindings,
     pub hotkeys: HotkeyBindings,
+    /// Gamepad bindings, by gilrs button name.
+    pub gamepad: PadBindings,
     /// Remembered window size.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub window: Option<(u32, u32)>,
@@ -279,6 +309,7 @@ impl Default for Settings {
             autosave_frames: 60,
             keymap: KeyBindings::default(),
             hotkeys: HotkeyBindings::default(),
+            gamepad: PadBindings::default(),
             window: None,
             extra: Hidden::default(),
             cli: Hidden::default(),
@@ -287,7 +318,7 @@ impl Default for Settings {
 }
 
 /// Every key this version writes.
-const KNOWN_KEYS: [&str; 13] = [
+const KNOWN_KEYS: [&str; 14] = [
     "picture",
     "filter",
     "ff_limit",
@@ -300,6 +331,7 @@ const KNOWN_KEYS: [&str; 13] = [
     "autosave_frames",
     "keymap",
     "hotkeys",
+    "gamepad",
     "window",
 ];
 
@@ -347,12 +379,14 @@ impl Settings {
         field!(autosave_frames);
         field!(keymap);
         field!(hotkeys);
+        field!(gamepad);
         field!(window);
         s.volume = s.volume.min(10);
         s.autosave_frames = s.autosave_frames.max(1);
         // fill gaps (a hand-written file may name only some buttons)
         s.keymap = KeyBindings::from_keymap(&s.keymap.to_keymap());
         s.hotkeys = HotkeyBindings::from_hotkeys(&s.hotkeys.to_hotkeys());
+        s.gamepad = PadBindings::from_padmap(&s.gamepad.to_padmap());
         s.extra = Hidden(table);
         s
     }
@@ -434,6 +468,15 @@ impl Settings {
     #[allow(clippy::wrong_self_convention)]
     pub fn from_hotkeys(&mut self, hk: &HotkeyMap) {
         self.hotkeys = HotkeyBindings::from_hotkeys(hk);
+    }
+
+    pub fn to_padmap(&self) -> PadMap {
+        self.gamepad.to_padmap()
+    }
+
+    #[allow(clippy::wrong_self_convention)]
+    pub fn from_padmap(&mut self, pm: &PadMap) {
+        self.gamepad = PadBindings::from_padmap(pm);
     }
 }
 
@@ -559,6 +602,7 @@ mod tests {
     use super::*;
     use clap::Parser;
     use gba_core::Keys;
+    use gilrs::Button;
 
     fn temp_dir(tag: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("gba-settings-{tag}-{}", std::process::id()));
@@ -583,6 +627,8 @@ mod tests {
         assert_eq!(s.window, None);
         assert_eq!(s.keymap.0["A"], "Z");
         assert_eq!(s.keymap.0["SELECT"], "R Shift");
+        assert_eq!(s.gamepad.0["A"], "South");
+        assert_eq!(s.gamepad.0["L"], "LB");
         assert_eq!(s.hotkeys.fast_forward, "Tab");
         assert_eq!(s.hotkeys.keys["pause"], "P");
         assert_eq!(FfLimit::X2.factor(), Some(2));
@@ -660,7 +706,7 @@ mod tests {
         let d = temp_dir("missing");
         let p = d.join("settings.toml");
         assert_eq!(Settings::load(&p), Settings::default(), "no file");
-        std::fs::write(&p, "volume = 3\npicture = 99\nfilter = \"sepia\"\nautosave_frames = \"soon\"\n[keymap]\nA = \"Q\"\n").unwrap();
+        std::fs::write(&p, "volume = 3\npicture = 99\nfilter = \"sepia\"\nautosave_frames = \"soon\"\n[keymap]\nA = \"Q\"\n[gamepad]\nB = \"West\"\nL = \"Nonsense\"\n").unwrap();
         let s = Settings::load(&p);
         assert_eq!(s.volume, 3);
         assert_eq!(s.picture, PictureSize::Largest, "out of range");
@@ -671,6 +717,11 @@ mod tests {
         assert_eq!(km.key_for(Keys::A), Key::Q);
         assert_eq!(km.key_for(Keys::B), Key::X, "unnamed buttons keep their default");
         assert_eq!(s.keymap.0.len(), 10, "gaps are filled");
+        let pm = s.to_padmap();
+        assert_eq!(pm.button_for(Keys::B), Button::West);
+        assert_eq!(pm.button_for(Keys::L), Button::LeftTrigger, "a name that is no pad button keeps the default");
+        assert_eq!(pm.button_for(Keys::A), Button::South, "unnamed buttons keep their default");
+        assert_eq!(s.gamepad.0.len(), 10, "gaps are filled");
         std::fs::write(&p, "volume = 99\n").unwrap();
         assert_eq!(Settings::load(&p).volume, 10, "clamped");
         std::fs::write(&p, "this is [not toml").unwrap();
@@ -698,6 +749,12 @@ mod tests {
         assert_eq!(s.to_keymap(), KeyMap::default());
         let hk = s.to_hotkeys();
         assert_eq!(hk, HotkeyMap::default(), "defaults convert to the live defaults");
+        assert_eq!(s.to_padmap(), PadMap::default());
+        let mut pm = PadMap::default();
+        pm.rebind(Keys::A, Button::West);
+        s.from_padmap(&pm);
+        assert_eq!(s.gamepad.0["A"], "West");
+        assert_eq!(s.to_padmap(), pm);
         let mut km = KeyMap::default();
         km.rebind(Keys::START, Key::Space);
         s.from_keymap(&km);

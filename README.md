@@ -35,7 +35,7 @@ The frontend is a small GUI in the style of a 2001 game box ("paper, ink, one re
 with `--library DIR`; the folder of a ROM given on the command line is included), an in-game
 **pause menu** drawn inside the frame (resume, save/load one of eight state slots, settings,
 bench, quit), a **save states** screen with film-strip thumbnails, a **settings** manual
-(controls with key rebinding, picture size and filters, fast-forward limit, volume, BIOS,
+(controls with keyboard and gamepad rebinding, picture size and filters, fast-forward limit, volume, BIOS,
 folders, audio device, autosave), and a **bench** developer view (per-layer pictures, channel
 meters, scanline event timeline, CPU registers and disassembly).
 
@@ -50,12 +50,13 @@ built-in HLE.
 | GBA | Keyboard | Gamepad |
 |---|---|---|
 | A / B | Z / X | South / East |
-| L / R | A / S | LT / RT |
+| L / R | A / S | LB / RB |
 | Start / Select | Enter / Right Shift | Start / Select |
 | D-pad | Arrow keys | D-pad or left stick |
 
-All of these can be rebound in Settings; the menus navigate with the same bindings (A confirm,
-B back, L/R turn pages).
+All of these can be rebound in Settings (every GBA button shows a keyboard keycap and a gamepad
+keycap; click one and press the new key or pad button); the menus navigate with the same
+bindings (A confirm, B back, L/R turn pages).
 
 Hotkeys: **Esc** or **P** pause menu, **Tab** (held) fast-forward, **N** frame step,
 **F1 / F3** save / load the current slot, **F2** save states screen, **F5** write the `.sav`

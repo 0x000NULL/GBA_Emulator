@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+**Player**
+- Gamepad buttons can be rebound. The Controls page shows a second keycap for every GBA button;
+  click it and press a pad button (a button already in use swaps, like the keyboard). The map is
+  stored as `[gamepad]` in settings.toml; the left stick stays a D-pad. The default shoulder
+  buttons are the bumpers (LB/RB; earlier docs called them LT/RT).
+
 ## v1.1.0 — 2026-10-01
 
 **Accuracy**

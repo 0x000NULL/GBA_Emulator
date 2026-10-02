@@ -25,11 +25,12 @@ gba --scale 3 "Some Game.gba"                # fixed 3x picture in a 720x480 win
 | GBA | Keyboard | Gamepad |
 |---|---|---|
 | A / B | Z / X | South / East |
-| L / R | A / S | LT / RT |
+| L / R | A / S | LB / RB |
 | Start / Select | Enter / Right Shift | Start / Select |
 | D-pad | Arrow keys | D-pad or left stick |
 
-Menus use the same bindings: A confirms, B goes back, L/R turn pages.
+Menus use the same bindings: A confirms, B goes back, L/R turn pages. In Settings every GBA
+button has a keyboard keycap and a gamepad keycap; click one and press the new key or pad button.
 
 | Key | Action |
 |---|---|

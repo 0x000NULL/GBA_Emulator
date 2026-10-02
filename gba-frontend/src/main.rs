@@ -8,7 +8,9 @@
 //!
 //! Default keys: Z=A X=B A=L S=R Enter=Start RShift=Select arrows=D-pad; Tab (held) fast-forward;
 //! Esc/P pause menu; N frame-step; F5 write save; F1/F3 save/load state; F10 dump IO;
-//! F11 screenshot; F12 bench; F2 save states.
+//! F11 screenshot; F12 bench; F2 save states. Gamepad defaults: South=A East=B LB=L RB=R Start
+//! Select D-pad (the left stick is always a D-pad too). Keys and pad buttons are rebindable in
+//! Settings.
 
 mod app;
 mod audio;
@@ -74,7 +76,7 @@ fn run(cli: &Cli) -> Result<()> {
     let mut pads = input::Gamepads::new();
 
     while video.is_open() && !app.quit {
-        let input = video.gather_input(&app.keymap, pads.poll(), Instant::now());
+        let input = video.gather_input(&app.keymap, pads.poll(&app.padmap), Instant::now());
         app.update(&input, &video)?;
         if app.quit {
             break;

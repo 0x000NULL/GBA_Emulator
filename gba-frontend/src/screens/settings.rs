@@ -2,7 +2,8 @@
 //! (`docs/gui/SCREENS.md`, mockup `04-settings.png`).
 //!
 //! Spread 0 holds Controls (left) and Screen & sound (right), spread 1 System, spread 2 Saves.
-//! The screen edits the [`Settings`] it is given (and the live key maps) and reports
+//! The screen edits the [`Settings`] it is given (and the live keyboard, pad and hotkey maps)
+//! and reports
 //! [`SettingsOutcome::Changed`] after every edit so the app can persist and re-apply them.
 //!
 //! The app builds a [`SettingsCtx`] for every `update` and `render` call. While
@@ -16,7 +17,8 @@ use crate::debug_ui::{Hotkey, HotkeyMap};
 use crate::settings::{AudioMode, Bios, FfLimit, Filter, Pacing, PictureSize, Settings};
 use crate::ui::canvas::{round_rect_path, segs_to_path, Canvas, Clip};
 use crate::ui::drawings::{self, Drawing, Geometry};
-use crate::ui::input::{bindable, key_name, Action, KeyMap, UiInput};
+use crate::ui::input::{bindable, key_name, pad_button_name, Action, KeyMap, PadMap, UiInput};
+use gilrs::Button;
 use crate::ui::text::Style;
 use crate::ui::tokens::{component as c, font as f, layout as l, Palette, PAPER};
 use crate::ui::widgets::{self, mix};
@@ -30,6 +32,7 @@ use tiny_skia::Transform;
 pub struct SettingsCtx<'a> {
     pub settings: &'a mut Settings,
     pub keymap: &'a mut KeyMap,
+    pub padmap: &'a mut PadMap,
     pub hotkeys: &'a mut HotkeyMap,
     /// Output device names for the System spread (the app lists them with cpal).
     pub audio_devices: &'a [String],
@@ -52,13 +55,14 @@ const SPREADS: usize = 3;
 const TABS: [&str; SPREADS] = ["Controls · Screen & sound", "System", "Saves"];
 /// How long a swapped keycap flashes.
 const FLASH: Duration = Duration::from_millis(250);
-const GAMEPAD_TEXT: &str = "Mapped automatically: A=South B=East L=LT R=RT Start Select D-pad/left stick";
 
 /// What a keycap rebinds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Target {
-    /// A GBA button (`Keys` bit).
+    /// The keyboard key of a GBA button (`Keys` bit).
     Button(u16),
+    /// The gamepad button of a GBA button.
+    Pad(u16),
     Hot(Hotkey),
     FastForward,
 }
@@ -156,11 +160,13 @@ fn hot_key(hk: &HotkeyMap, h: Hotkey) -> Option<Key> {
     hk.keys.iter().find(|(k, x)| *x == h && *k != Key::Escape).map(|(k, _)| *k).or_else(|| hk.key_for(h))
 }
 
-fn target_key(t: Target, ctx: &SettingsCtx) -> Option<Key> {
+/// What the keycap of `t` prints.
+fn target_label(t: Target, ctx: &SettingsCtx) -> String {
     match t {
-        Target::Button(bit) => Some(ctx.keymap.key_for(bit)),
-        Target::Hot(h) => hot_key(ctx.hotkeys, h),
-        Target::FastForward => Some(ctx.hotkeys.fast_forward),
+        Target::Button(bit) => key_name(ctx.keymap.key_for(bit)),
+        Target::Pad(bit) => pad_button_name(ctx.padmap.button_for(bit)).to_string(),
+        Target::Hot(h) => hot_key(ctx.hotkeys, h).map(key_name).unwrap_or_else(|| "?".into()),
+        Target::FastForward => key_name(ctx.hotkeys.fast_forward),
     }
 }
 
@@ -298,7 +304,8 @@ impl SettingsScreen {
         let st = &*ctx.settings;
         match self.spread {
             0 => {
-                let mut v: Vec<Item> = [Keys::L, Keys::R, Keys::A, Keys::B, Keys::UP, Keys::DOWN, Keys::LEFT, Keys::RIGHT, Keys::START, Keys::SELECT].iter().map(|b| Item::Key(Target::Button(*b))).collect();
+                // each GBA button: its keyboard keycap, then its pad keycap
+                let mut v: Vec<Item> = [Keys::L, Keys::R, Keys::A, Keys::B, Keys::UP, Keys::DOWN, Keys::LEFT, Keys::RIGHT, Keys::START, Keys::SELECT].iter().flat_map(|b| [Item::Key(Target::Button(*b)), Item::Key(Target::Pad(*b))]).collect();
                 v.push(Item::Key(Target::FastForward));
                 v.extend(HOT_LEFT.iter().map(|(h, _)| Item::Key(Target::Hot(*h))));
                 v.extend(HOT_RIGHT.iter().map(|(h, _)| Item::Key(Target::Hot(*h))));
@@ -366,6 +373,7 @@ impl SettingsScreen {
                 ctx.settings.from_keymap(ctx.keymap);
                 true
             }
+            Target::Pad(_) => false,
             Target::Hot(h) => {
                 let (changed, partner) = bind_hot(ctx.hotkeys, h, key);
                 if partner.is_some() {
@@ -387,6 +395,20 @@ impl SettingsScreen {
                 changed
             }
         }
+    }
+
+    /// Bind pad `button` to the GBA button of `t` (a `Target::Pad`). Returns whether anything
+    /// changed.
+    fn bind_pad(&mut self, t: Target, button: Button, ctx: &mut SettingsCtx) -> bool {
+        let Target::Pad(bit) = t else { return false };
+        if ctx.padmap.button_for(bit) == button {
+            return false;
+        }
+        if let Some(other) = ctx.padmap.rebind(bit, button) {
+            self.flash_targets(t, Some(Target::Pad(other)));
+        }
+        ctx.settings.from_padmap(ctx.padmap);
+        true
     }
 
     /// Select option `i` of an option row. Returns whether the setting changed.
@@ -539,15 +561,19 @@ impl SettingsScreen {
             if input.clicked {
                 self.waiting = None; // the click is handled below like any other
             } else {
-                for &k in &input.pressed {
-                    if k == Key::Escape {
+                if input.pressed.contains(&Key::Escape) {
+                    self.waiting = None;
+                    return SettingsOutcome::None;
+                }
+                if let Target::Pad(_) = t {
+                    // a pad keycap takes the next pad button; keyboard keys are not candidates
+                    if let Some(&b) = input.pad_buttons.first() {
                         self.waiting = None;
-                        return SettingsOutcome::None;
+                        return changed(self.bind_pad(t, b, ctx));
                     }
-                    if bindable(k) {
-                        self.waiting = None;
-                        return changed(self.bind(t, k, ctx));
-                    }
+                } else if let Some(&k) = input.pressed.iter().find(|k| bindable(**k)) {
+                    self.waiting = None;
+                    return changed(self.bind(t, k, ctx));
                 }
                 return SettingsOutcome::None;
             }
@@ -838,7 +864,11 @@ impl SettingsScreen {
         let (up, down, a, lk, rk, b) = (kn(Keys::UP), kn(Keys::DOWN), kn(Keys::A), kn(Keys::L), kn(Keys::R), kn(Keys::B));
         if self.waiting.is_some() || self.text.is_some() {
             widgets::foot(cv, &[], None, pal);
-            let msg = if self.waiting.is_some() { "Press the new key · Esc cancels" } else { "Type the path · Enter confirms · Esc cancels" };
+            let msg = match self.waiting {
+                Some(Target::Pad(_)) => "Press a pad button · Esc cancels",
+                Some(_) => "Press the new key · Esc cancels",
+                None => "Type the path · Enter confirms · Esc cancels",
+            };
             let st = Style::interface(f::INTERFACE_BODY).color(pal.fg);
             cv.text(l::MARGIN, h - l::FOOT_H + (l::FOOT_H - st.size * 1.2) / 2.0 + 1.0, msg, &st);
         } else {
@@ -854,12 +884,54 @@ impl SettingsScreen {
         self.cur_focus == Some(item)
     }
 
+    /// The keycap text of `t` ("…" while it waits for its new binding).
+    fn cap_label(&self, t: Target, ctx: &SettingsCtx) -> String {
+        if self.waiting == Some(t) {
+            "…".to_string()
+        } else {
+            target_label(t, ctx)
+        }
+    }
+
+    /// Width of the keycap pair of GBA button `bit` (see [`Self::pair`]).
+    fn pair_width(&self, cv: &mut Canvas, ctx: &SettingsCtx, bit: u16, stacked: bool) -> f32 {
+        let wk = widgets::keycap_width(cv, &self.cap_label(Target::Button(bit), ctx));
+        let wp = widgets::keycap_width(cv, &self.cap_label(Target::Pad(bit), ctx));
+        if stacked {
+            wk.max(wp)
+        } else {
+            wk + 4.0 + wp
+        }
+    }
+
+    /// The keyboard keycap and the pad keycap of GBA button `bit`: side by side 4 px apart, or
+    /// with the pad keycap 26 px under the keyboard one when `stacked`. `x` is the pair's left
+    /// edge, or its right edge with `right`. Returns the pair's width.
+    #[allow(clippy::too_many_arguments)]
+    fn pair(&mut self, cv: &mut Canvas, ctx: &SettingsCtx, bit: u16, x: f32, y: f32, right: bool, stacked: bool, page: usize, now: Instant) -> f32 {
+        let (kb, pad) = (Target::Button(bit), Target::Pad(bit));
+        let wk = widgets::keycap_width(cv, &self.cap_label(kb, ctx));
+        let wp = widgets::keycap_width(cv, &self.cap_label(pad, ctx));
+        let w = self.pair_width(cv, ctx, bit, stacked);
+        let x = if right { x - w } else { x };
+        if stacked {
+            // right-aligned caps end together, left-aligned ones start together
+            let (xk, xp) = if right { (x + w - wk, x + w - wp) } else { (x, x) };
+            self.cap(cv, ctx, kb, xk, y, false, page, now);
+            self.cap(cv, ctx, pad, xp, y + 26.0, false, page, now);
+        } else {
+            self.cap(cv, ctx, kb, x, y, false, page, now);
+            self.cap(cv, ctx, pad, x + wk + 4.0, y, false, page, now);
+        }
+        w
+    }
+
     /// A keycap that rebinds `t`; `x` is its left edge, or its right edge with `right`.
     #[allow(clippy::too_many_arguments)]
     fn cap(&mut self, cv: &mut Canvas, ctx: &SettingsCtx, t: Target, x: f32, y: f32, right: bool, page: usize, now: Instant) -> f32 {
         let pal = &PAPER;
         let waiting = self.waiting == Some(t);
-        let label = if waiting { "…".to_string() } else { target_key(t, ctx).map(key_name).unwrap_or_else(|| "?".into()) };
+        let label = self.cap_label(t, ctx);
         let w = widgets::keycap_width(cv, &label);
         let x = if right { x - w } else { x };
         if self.flash.iter().any(|(ft, at)| *ft == t && now.duration_since(*at) < FLASH) {
@@ -951,41 +1023,63 @@ impl SettingsScreen {
         let mut y = r.y + 24.0 - self.scroll[0];
         y += page_title(cv, x0, y, "Controls");
         let reading = Style::reading(f::READING_BODY).color(pal.fg2);
-        y += cv.paragraph(x0, y, cw.min(420.0), "Click a key, then press the new one. A connected gamepad is mapped automatically.", &reading, f::READING_LINE_HEIGHT, 3) + 2.0;
+        y += cv.paragraph(x0, y, cw.min(420.0), "Click a keycap, then press the new key or pad button. The second keycap of every GBA button is the gamepad's; the left stick is always a D-pad.", &reading, f::READING_LINE_HEIGHT, 3) + 2.0;
 
-        // the handheld with its callouts; narrow pages scale the line art
-        let s = ((cw - 115.0) / 378.0).clamp(0.5, 1.0);
-        let dy = y - 6.0;
+        // the handheld with its callouts; the line art shrinks until the right-hand callouts
+        // (keycap pair, label) fit the column, and narrow pages stack each pad keycap under its
+        // keyboard keycap
+        const RIGHT: [(u16, &str); 5] = [(Keys::R, "R Button"), (Keys::A, "A Button"), (Keys::B, "B Button"), (Keys::START, "START"), (Keys::SELECT, "SELECT")];
+        let label = Style::interface_bold(f::INTERFACE_BODY).color(pal.fg);
+        let budget = RIGHT.iter().map(|(bit, name)| self.pair_width(cv, ctx, *bit, false) + 8.0 + cv.measure(name, &label)).fold(0.0, f32::max);
+        let s = ((cw - budget) / 378.0).clamp(0.5, 1.0);
+        let stacked = s < 0.75;
+        let dy = y - 6.0 + if stacked { 20.0 } else { 0.0 };
         draw_figure(cv, &self.figure, x0, dy, s);
         let ry = |v: f32| dy + v * s;
+        let pitch = if stacked { 50.0 } else { 24.0 };
         let mut right_y = [20.0, 100.0, 142.0, 184.0, 222.0].map(ry);
         for i in 1..right_y.len() {
-            right_y[i] = right_y[i].max(right_y[i - 1] + 24.0);
+            right_y[i] = right_y[i].max(right_y[i - 1] + pitch);
         }
-        let label = Style::interface_bold(f::INTERFACE_BODY).color(pal.fg);
         let lx = x0 + 126.0 * s;
         let rx = x0 + 378.0 * s;
-        // left: label then keycap, both ending at the leader
-        let wl = self.cap(cv, ctx, Target::Button(Keys::L), lx, ry(20.0), true, 0, now);
+        // left: the L button's keycaps end at the leader, the label before them (above them when
+        // stacked)
+        let wl = self.pair(cv, ctx, Keys::L, lx, ry(20.0), true, stacked, 0, now);
         let tw = cv.measure("L Button", &label);
-        centred_text(cv, lx - wl - 8.0 - tw, ry(20.0), "L Button", &label);
-        // control pad: label above, the four arrows in a row ending at the leader
-        let ky = ry(146.0).max(ry(20.0) + 70.0);
-        let arrows = [Keys::UP, Keys::DOWN, Keys::LEFT, Keys::RIGHT];
-        let widths: Vec<f32> = arrows.iter().map(|b| widgets::keycap_width(cv, &key_name(ctx.keymap.key_for(*b)))).collect();
-        let mut ax = lx - widths.iter().sum::<f32>() - 4.0 * 3.0;
-        for (b, wd) in arrows.iter().zip(&widths) {
-            self.cap(cv, ctx, Target::Button(*b), ax, ky, false, 0, now);
-            ax += wd + 4.0;
+        if stacked {
+            centred_text(cv, lx - tw, ry(20.0) - 24.0, "L Button", &label);
+        } else {
+            centred_text(cv, lx - wl - 8.0 - tw, ry(20.0), "L Button", &label);
         }
+        // control pad: label above, the four keyboard arrows in a row ending at the leader, the
+        // pad's four directions in a second row under them (two keycaps per row when stacked)
+        let ky = ry(146.0).max(ry(20.0) + if stacked { 80.0 } else { 70.0 });
+        let arrows = [Keys::UP, Keys::DOWN, Keys::LEFT, Keys::RIGHT];
+        let per_row = if stacked { 2 } else { 4 };
+        let mut row_y = ky;
+        for pad in [false, true] {
+            for chunk in arrows.chunks(per_row) {
+                let targets: Vec<Target> = chunk.iter().map(|b| if pad { Target::Pad(*b) } else { Target::Button(*b) }).collect();
+                let widths: Vec<f32> = targets.iter().map(|t| widgets::keycap_width(cv, &self.cap_label(*t, ctx))).collect();
+                let mut ax = lx - widths.iter().sum::<f32>() - 4.0 * (widths.len() - 1) as f32;
+                for (t, wd) in targets.iter().zip(&widths) {
+                    self.cap(cv, ctx, *t, ax, row_y, false, 0, now);
+                    ax += wd + 4.0;
+                }
+                row_y += 26.0;
+            }
+        }
+        let arrows_bottom = row_y - 26.0 + c::KEY_H;
         let tw = cv.measure("+Control Pad", &label);
         centred_text(cv, lx - tw, ky - 24.0, "+Control Pad", &label);
-        // right: keycap then label
-        for (i, (bit, name)) in [(Keys::R, "R Button"), (Keys::A, "A Button"), (Keys::B, "B Button"), (Keys::START, "START"), (Keys::SELECT, "SELECT")].into_iter().enumerate() {
-            let cwid = self.cap(cv, ctx, Target::Button(bit), rx, right_y[i], false, 0, now);
+        // right: the keycap pair then the label
+        for (i, (bit, name)) in RIGHT.into_iter().enumerate() {
+            let cwid = self.pair(cv, ctx, bit, rx, right_y[i], false, stacked, 0, now);
             centred_text(cv, rx + cwid + 8.0, right_y[i], name, &label);
         }
-        y = right_y[4] + c::KEY_H + 18.0;
+        let pair_h = if stacked { 26.0 + c::KEY_H } else { c::KEY_H };
+        y = (right_y[4] + pair_h).max(arrows_bottom) + 18.0;
 
         // emulator keys
         widgets::label(cv, x0, y, "Emulator keys", pal);
@@ -1003,11 +1097,6 @@ impl SettingsScreen {
             }
         }
         y += 5.0 * 26.0 + 4.0;
-
-        // the gamepad is fixed
-        widgets::label(cv, x0, y + 1.0, "Gamepad", pal);
-        let data = Style::data(f::DATA_SMALL).color(pal.fg2);
-        y += cv.paragraph(x0 + 84.0, y, cw - 84.0, GAMEPAD_TEXT, &data, 1.4, 2);
         y + 6.0
     }
 
@@ -1200,16 +1289,17 @@ mod tests {
     struct Fix {
         s: Settings,
         km: KeyMap,
+        pm: PadMap,
         hk: HotkeyMap,
         devices: Vec<String>,
     }
 
     impl Fix {
         fn new() -> Self {
-            Fix { s: Settings::default(), km: KeyMap::default(), hk: HotkeyMap::default(), devices: vec!["Speakers".into(), "Headphones".into()] }
+            Fix { s: Settings::default(), km: KeyMap::default(), pm: PadMap::default(), hk: HotkeyMap::default(), devices: vec!["Speakers".into(), "Headphones".into()] }
         }
         fn ctx(&mut self) -> SettingsCtx<'_> {
-            SettingsCtx { settings: &mut self.s, keymap: &mut self.km, hotkeys: &mut self.hk, audio_devices: &self.devices, rebinding: false }
+            SettingsCtx { settings: &mut self.s, keymap: &mut self.km, padmap: &mut self.pm, hotkeys: &mut self.hk, audio_devices: &self.devices, rebinding: false }
         }
     }
 
@@ -1219,6 +1309,10 @@ mod tests {
 
     fn press(k: Key) -> UiInput {
         UiInput { pressed: vec![k], repeated: vec![k], ..UiInput::default() }
+    }
+
+    fn pad(b: Button) -> UiInput {
+        UiInput { pad_buttons: vec![b], ..UiInput::default() }
     }
 
     fn typed(s: &str) -> UiInput {
@@ -1238,16 +1332,20 @@ mod tests {
         let mut ctx = fx.ctx();
         assert_eq!(scr.current_item(&ctx), Some(Item::Key(Target::Button(Keys::L))));
         scr.update(&act(Action::Down), &mut ctx);
+        assert_eq!(scr.current_item(&ctx), Some(Item::Key(Target::Pad(Keys::L))), "the pad keycap follows the keyboard one");
+        scr.update(&act(Action::Down), &mut ctx);
         assert_eq!(scr.current_item(&ctx), Some(Item::Key(Target::Button(Keys::R))));
-        scr.update(&act(Action::Up), &mut ctx);
-        scr.update(&act(Action::Up), &mut ctx);
+        for _ in 0..3 {
+            scr.update(&act(Action::Up), &mut ctx);
+        }
         assert_eq!(scr.focus[0], 0, "clamped at the top");
-        // left page first (10 buttons, fast-forward, 8 emulator keys), then the right page
+        // left page first (10 buttons x keyboard + pad, fast-forward, 8 emulator keys), then the
+        // right page
         let items = scr.items(&ctx);
-        assert_eq!(items.len(), 10 + 1 + 8 + 5);
-        assert_eq!(items[19], Item::Picture);
+        assert_eq!(items.len(), 20 + 1 + 8 + 5);
+        assert_eq!(items[29], Item::Picture);
         assert_eq!(*items.last().unwrap(), Item::Bios);
-        for _ in 0..19 {
+        for _ in 0..29 {
             scr.update(&act(Action::Down), &mut ctx);
         }
         assert_eq!(scr.current_item(&ctx), Some(Item::Picture));
@@ -1299,8 +1397,9 @@ mod tests {
         scr.update(&press(Key::Escape), &mut ctx);
 
         // A button: X is B's key, so they swap and both keycaps flash
-        scr.update(&act(Action::Down), &mut ctx);
-        scr.update(&act(Action::Down), &mut ctx);
+        for _ in 0..4 {
+            scr.update(&act(Action::Down), &mut ctx);
+        }
         assert_eq!(scr.current_item(&ctx), Some(Item::Key(Target::Button(Keys::A))));
         scr.update(&act(Action::Confirm), &mut ctx);
         assert_eq!(scr.update(&press(Key::X), &mut ctx), SettingsOutcome::Changed);
@@ -1313,6 +1412,53 @@ mod tests {
         // binding the key it already has changes nothing
         scr.update(&act(Action::Confirm), &mut ctx);
         assert_eq!(scr.update(&press(Key::X), &mut ctx), SettingsOutcome::None);
+    }
+
+    #[test]
+    fn pad_rebinding_flow_with_swap() {
+        let mut fx = Fix::new();
+        let mut scr = SettingsScreen::new();
+        let mut ctx = fx.ctx();
+        // the pad keycap of L: Confirm, then a pad button
+        scr.update(&act(Action::Down), &mut ctx);
+        assert_eq!(scr.current_item(&ctx), Some(Item::Key(Target::Pad(Keys::L))));
+        scr.update(&act(Action::Confirm), &mut ctx);
+        assert!(ctx.rebinding);
+        assert_eq!(scr.waiting, Some(Target::Pad(Keys::L)));
+        // keyboard keys are not pad buttons
+        assert_eq!(scr.update(&press(Key::Q), &mut ctx), SettingsOutcome::None);
+        assert!(ctx.rebinding, "still waiting");
+        assert_eq!(ctx.keymap.key_for(Keys::L), Key::A, "the keyboard map is untouched");
+        assert_eq!(scr.update(&pad(Button::LeftTrigger2), &mut ctx), SettingsOutcome::Changed);
+        assert!(!ctx.rebinding);
+        assert_eq!(ctx.padmap.button_for(Keys::L), Button::LeftTrigger2);
+        assert_eq!(ctx.settings.gamepad.0["L"], "LT", "the settings follow the live map");
+        assert!(scr.flash.is_empty(), "no swap, no flash");
+        // the button it already has changes nothing
+        scr.update(&act(Action::Confirm), &mut ctx);
+        assert_eq!(scr.update(&pad(Button::LeftTrigger2), &mut ctx), SettingsOutcome::None);
+        // Esc cancels
+        scr.update(&act(Action::Confirm), &mut ctx);
+        assert_eq!(scr.update(&press(Key::Escape), &mut ctx), SettingsOutcome::None);
+        assert!(!ctx.rebinding);
+        assert_eq!(ctx.padmap.button_for(Keys::L), Button::LeftTrigger2);
+        // East is B's button: binding it to L swaps, and both pad keycaps flash
+        scr.update(&act(Action::Confirm), &mut ctx);
+        assert_eq!(scr.update(&pad(Button::East), &mut ctx), SettingsOutcome::Changed);
+        assert_eq!(ctx.padmap.button_for(Keys::L), Button::East);
+        assert_eq!(ctx.padmap.button_for(Keys::B), Button::LeftTrigger2);
+        assert_eq!(ctx.settings.gamepad.0["B"], "LT");
+        let flashed: Vec<Target> = scr.flash.iter().map(|(t, _)| *t).collect();
+        assert!(flashed.contains(&Target::Pad(Keys::L)) && flashed.contains(&Target::Pad(Keys::B)));
+        // a keyboard rebind ignores pad buttons
+        scr.update(&act(Action::Up), &mut ctx);
+        assert_eq!(scr.current_item(&ctx), Some(Item::Key(Target::Button(Keys::L))));
+        scr.update(&act(Action::Confirm), &mut ctx);
+        assert_eq!(scr.update(&pad(Button::North), &mut ctx), SettingsOutcome::None);
+        assert!(ctx.rebinding);
+        assert_eq!(ctx.padmap.button_for(Keys::L), Button::East);
+        assert_eq!(scr.update(&press(Key::Q), &mut ctx), SettingsOutcome::Changed);
+        assert_eq!(ctx.keymap.key_for(Keys::L), Key::Q);
     }
 
     #[test]
@@ -1623,11 +1769,12 @@ mod tests {
             let mut scr = SettingsScreen::new();
             let mut cv = Canvas::new(w, h, Fonts::new());
             scr.set_spread(spread);
+            let items = scr.items(&fx.ctx());
             if rebinding {
-                scr.focus[0] = 2;
-                scr.waiting = Some(Target::Button(Keys::A));
+                scr.focus[0] = items.iter().position(|i| *i == Item::Key(Target::Pad(Keys::A))).unwrap();
+                scr.waiting = Some(Target::Pad(Keys::A));
             } else if spread == 0 {
-                scr.focus[0] = 19; // picture size
+                scr.focus[0] = items.iter().position(|i| *i == Item::Picture).unwrap();
             } else if spread == 1 {
                 scr.focus[1] = 1;
             }

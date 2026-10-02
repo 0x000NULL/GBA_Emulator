@@ -131,6 +131,8 @@ spread). Tabs in the head: `Controls · Screen & sound`, `System`, `Saves`. A/S 
 - Rebinding (**new**): click or Z on a keycap → it shows `…` in spot → the next key pressed is bound
   (Esc cancels). A key that is already used elsewhere is swapped, and both keycaps flash once.
   Gamepad layout `input::GAMEPAD_MAP` (**exists**) is shown on a second spread or a toggle.
+  (Built 2026-10-02 as a second keycap beside each keyboard keycap instead, rebound the same way
+  by pressing a pad button; narrow pages stack the pair. Logged in PROGRESS.md.)
 - "Emulator keys" with dotted leaders: Fast-forward (hold) Tab, Save state F1, Pause P, Load state
   F3, Advance one frame N, Write .sav now F5, Screenshot F11, Bench F12. Source:
   `debug_ui::HOTKEYS` (**exists**) plus F12 (**new**). IO dump F10 stays but is listed only in Bench.

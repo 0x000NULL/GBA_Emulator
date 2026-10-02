@@ -84,7 +84,8 @@ Harness exit codes: 0 pass, 1 fail, 2 error. `GBA_TESTS_REQUIRED=1` turns the
 `CARGO_TARGET_DIR` (e.g. `target/integ`) to avoid the cargo lock.
 
 Frontend keys (defaults, rebindable in Settings): Z=A X=B A=L S=R Enter=Start RShift=Select
-arrows=D-pad; Tab fast-forward; Esc or P pause menu (resume / save / load / settings / bench /
+arrows=D-pad; gamepad South=A East=B LB=L RB=R Start Select D-pad/left stick (pad buttons rebind
+too, stored as `[gamepad]`); Tab fast-forward; Esc or P pause menu (resume / save / load / settings / bench /
 quit); N frame-step; F1/F3 save/load the current slot (`<rom stem>.s<N>.state`); F2 save states
 screen; F5 write `.sav`; F10 IO dump; F11 screenshot; F12 bench. Menus navigate with the GBA
 bindings (A confirm, B back, L/R pages, D-pad). Hidden `--exit-after N` ends a windowed run and

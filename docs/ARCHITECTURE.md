@@ -158,8 +158,9 @@ the minifb window: no widget toolkit.
   minifb's 0RGB), `text` (seven embedded OFL faces rasterised by fontdue, glyph cache, ellipsis
   and wrapping), `widgets` (keycap, tick, buttons, head/foot frame, tabs, numbered items, ruler),
   `drawings` (a parser for the SVG subset of the three line drawings), `fmt` (copy rules),
-  `input` (per-frame snapshot; menu navigation derives from the GBA key bindings so a rebinding
-  moves the menus too; gamepad edge/repeat).
+  `input` (per-frame snapshot; `KeyMap` and `PadMap`, the rebindable keyboard and gamepad
+  layouts; menu navigation derives from the GBA key bindings so a rebinding moves the menus too;
+  gamepad edge/repeat).
 - `overlay/`: everything drawn over a running game is drawn at native 240x160 into a *copy* of
   the frame in the Pixel palette (5x5 bitmap font, windows, dim = BLDY maths with EVY 9, 48x32
   thumbnails = exact 1/5 samples, toasts) and scaled with it. `overlay::pause` is the pause menu
@@ -177,13 +178,16 @@ the minifb window: no widget toolkit.
   The bench switches the core capture on only while it is open (`Gba::set_bench`).
 - `window.rs` (resizable minifb window; `present_game` is the fast path: BGR555 LUT + integer
   upscale onto the Night letterbox, optional LCD-grid / frame-blend filters; `present_canvas`
-  for the window-resolution screens; `gather_input`), `input.rs` (default key maps, gilrs),
+  for the window-resolution screens; `gather_input`), `input.rs` (default keyboard and gamepad
+  tables; gilrs polling returns the key mask through the live `PadMap` plus the buttons that went
+  down, for rebinding),
   `audio.rs` (SPSC ring, linear resampler from the core's SOUNDBIAS rate to the device rate, cpal
   stream, underrun counter, a gain stage in the callback for the volume setting), `pacing.rs`
   (1/59.7275 s frame clock, adaptive sleep margin, +-2% audio-fill correction), `saves.rs`
   (atomic `<rom>.sav` writes every 60 frames/F5/exit), `debug_ui.rs` (hotkey map, IO dump,
   screenshots, title bar), `settings.rs` (TOML settings file in the user's config dir, unknown
-  keys preserved; CLI flags override for the run only), `library/` (folder scan thread, display
+  keys preserved; keyboard, gamepad and hotkey bindings stored by name; CLI flags override for
+  the run only), `library/` (folder scan thread, display
   names from file names, index cache, background title captures for the cartridge labels).
   Runs without an audio device. Review renders: `cargo test -p gba-frontend --release --
   --ignored render_` writes every screen as PNG under `target/ui-renders/`.

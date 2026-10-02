@@ -409,13 +409,14 @@ the window close button, or Esc on the Library); the Bench in full including cor
   dialog crate): folders and the BIOS path are typed into underline fields in Settings; F2 opens
   the Save states screen (the design names no key); in-game F1/F3 act on the "current slot" (the
   last slot used in any menu, initially the newest); `PLAYED h:mm` replaces the mockup's "Runs"
-  filler row; the gamepad map is shown read-only; the Library shows 2 columns below ~1114 px
+  filler row; the gamepad map is rebound beside the keyboard keycaps (2026-10-02; the design
+  offered a second spread or a toggle); the Library shows 2 columns below ~1114 px
   (3 would need a scaled drawing); the cart label art is a cover crop of the title capture; Find
   needs `/`, Tab or a click to take letters that are bound to GBA buttons; the Bench's layer
   thumbnails are exact 1/3 samples (80x53) instead of the mockup's fractional size; the pause
   bar reads `A OVERWRITE  B BACK` with the GBA button names; Settings adds the F2 row to the
   emulator-keys list; the Data face has no `▸`, so the film edge print draws the triangle as a path.
-- **Not done.** Gamepad rebinding (the design shows it on a second spread); the window has no
+- **Not done.** The window has no
   minimum size enforcement (layouts clip below 960x640); thread priority for the capture thread
   (std has none; it runs one game at a time with pauses).
 
@@ -452,7 +453,20 @@ IRQ phase).
    not scripted.
 4. Reference-emulator audio comparison (needs an mGBA build with headless audio dump); would also
    settle the sound driver's output scaling, reverb and fixed-rate rules (see its fix log).
-5. Gamepad rebinding in Settings (keyboard only today).
+
+## Gamepad rebinding (2026-10-02)
+
+The Settings Controls page shows two keycaps per GBA button: the keyboard key and the pad
+button (`ui::input::PadMap`, one shared map for every connected pad; the left stick is always a
+D-pad). Clicking the pad keycap waits for the next pad button (`Gamepads::poll` now keeps the
+`ButtonPressed` events it used to drain, carried in `UiInput::pad_buttons`); a button already
+used by another GBA button swaps, and both keycaps flash. Keyboard waits ignore pad buttons and
+vice versa. The map is stored by button name as `[gamepad]` in settings.toml (gilrs's
+`LeftTrigger` is the bumper, shown as LB; the analog trigger is LT); files without the table
+default, unknown names keep the default button. Narrow pages (below about 0.75 figure scale)
+stack the pad keycap under the keyboard one and lay the arrows out two per row. Tests: `PadMap`
+default/swap/names, settings round trip and bad-name defaulting, the screen's pad rebind flow,
+and the review renders (`04-settings*.png`).
 
 ## Fix log (BIOS sound driver HLE, 2026-10-01)
 

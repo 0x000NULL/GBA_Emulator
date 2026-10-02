@@ -8,6 +8,7 @@
 #![allow(dead_code)]
 
 use gba_core::Keys;
+use gilrs::Button;
 use minifb::Key;
 use std::time::{Duration, Instant};
 
@@ -68,6 +69,102 @@ impl KeyMap {
     }
 }
 
+/// Gamepad binding for the ten GBA buttons: one map shared by every connected pad (their
+/// states are OR-ed). The left stick always acts as the D-pad in addition.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PadMap {
+    /// Ordered as `Keys` bits, like [`KeyMap::keys`].
+    pub buttons: [Button; 10],
+}
+
+impl Default for PadMap {
+    fn default() -> Self {
+        let mut buttons = [Button::Unknown; 10];
+        for (b, bit) in crate::input::GAMEPAD_MAP {
+            buttons[bit.trailing_zeros() as usize] = *b;
+        }
+        PadMap { buttons }
+    }
+}
+
+impl PadMap {
+    pub fn button_for(&self, bit: u16) -> Button {
+        self.buttons[bit.trailing_zeros() as usize]
+    }
+
+    /// Key mask from an "is pressed" predicate.
+    pub fn mask(&self, pressed: impl Fn(Button) -> bool) -> u16 {
+        self.buttons.iter().zip(BUTTON_BITS).filter(|(b, _)| pressed(**b)).fold(0, |m, (_, bit)| m | bit)
+    }
+
+    /// Bind `bit` to `button`; a button already used by another GBA button is swapped. Returns
+    /// the other button's bit when a swap happened.
+    pub fn rebind(&mut self, bit: u16, button: Button) -> Option<u16> {
+        let i = bit.trailing_zeros() as usize;
+        let old = self.buttons[i];
+        let other = self.buttons.iter().position(|b| *b == button && *b != old).filter(|&j| j != i);
+        if let Some(j) = other {
+            self.buttons[j] = old;
+        }
+        self.buttons[i] = button;
+        other.map(|j| BUTTON_BITS[j])
+    }
+}
+
+/// Every gilrs button a binding may land on (all but `Unknown`).
+pub const ALL_PAD_BUTTONS: [Button; 19] = [
+    Button::South,
+    Button::East,
+    Button::West,
+    Button::North,
+    Button::C,
+    Button::Z,
+    Button::LeftTrigger,
+    Button::LeftTrigger2,
+    Button::RightTrigger,
+    Button::RightTrigger2,
+    Button::Select,
+    Button::Start,
+    Button::Mode,
+    Button::LeftThumb,
+    Button::RightThumb,
+    Button::DPadUp,
+    Button::DPadDown,
+    Button::DPadLeft,
+    Button::DPadRight,
+];
+
+/// Human name for a pad button, as the keycaps print it and the settings file stores it
+/// (gilrs's `LeftTrigger` is the bumper, `LeftTrigger2` the analog trigger).
+pub fn pad_button_name(b: Button) -> &'static str {
+    match b {
+        Button::South => "South",
+        Button::East => "East",
+        Button::West => "West",
+        Button::North => "North",
+        Button::C => "C",
+        Button::Z => "Z",
+        Button::LeftTrigger => "LB",
+        Button::LeftTrigger2 => "LT",
+        Button::RightTrigger => "RB",
+        Button::RightTrigger2 => "RT",
+        Button::Select => "Select",
+        Button::Start => "Start",
+        Button::Mode => "Mode",
+        Button::LeftThumb => "L Stick",
+        Button::RightThumb => "R Stick",
+        Button::DPadUp => "D↑",
+        Button::DPadDown => "D↓",
+        Button::DPadLeft => "D←",
+        Button::DPadRight => "D→",
+        Button::Unknown => "?",
+    }
+}
+
+pub fn pad_button_from_name(name: &str) -> Option<Button> {
+    ALL_PAD_BUTTONS.iter().copied().find(|b| pad_button_name(*b) == name)
+}
+
 /// Everything a screen may react to this frame.
 #[derive(Clone, Debug, Default)]
 pub struct UiInput {
@@ -82,6 +179,8 @@ pub struct UiInput {
     pub clicked: bool,
     pub wheel: f32,
     pub actions: Vec<Action>,
+    /// Pad buttons that went down this frame (for rebinding; the mask drives everything else).
+    pub pad_buttons: Vec<Button>,
     /// Combined keyboard + gamepad GBA mask (for the running game).
     pub game_mask: u16,
 }
@@ -289,5 +388,45 @@ mod tests {
         assert_eq!(key_name(Key::F12), "F12");
         assert_eq!(key_name(Key::Key3), "3");
         assert_eq!(key_name(Key::Up), "↑");
+    }
+
+    #[test]
+    fn pad_map_default_matches_gamepad_map() {
+        let m = PadMap::default();
+        assert_eq!(m.button_for(Keys::A), Button::South);
+        assert_eq!(m.button_for(Keys::B), Button::East);
+        assert_eq!(m.button_for(Keys::L), Button::LeftTrigger);
+        assert_eq!(m.button_for(Keys::R), Button::RightTrigger);
+        assert_eq!(m.button_for(Keys::START), Button::Start);
+        assert_eq!(m.button_for(Keys::SELECT), Button::Select);
+        assert_eq!(m.button_for(Keys::UP), Button::DPadUp);
+        assert_eq!(m.button_for(Keys::RIGHT), Button::DPadRight);
+        assert_eq!(m.mask(|b| matches!(b, Button::South | Button::DPadLeft)), Keys::A | Keys::LEFT);
+        assert_eq!(m.mask(|_| false), 0);
+    }
+
+    #[test]
+    fn pad_rebind_swaps_duplicates() {
+        let mut m = PadMap::default();
+        assert_eq!(m.rebind(Keys::A, Button::East), Some(Keys::B), "East was B: B takes A's old button");
+        assert_eq!(m.button_for(Keys::A), Button::East);
+        assert_eq!(m.button_for(Keys::B), Button::South);
+        assert_eq!(m.rebind(Keys::L, Button::LeftTrigger2), None);
+        assert_eq!(m.button_for(Keys::L), Button::LeftTrigger2);
+        assert_eq!(m.rebind(Keys::L, Button::LeftTrigger2), None, "same button again is a no-op");
+    }
+
+    #[test]
+    fn pad_button_names_invert() {
+        for b in ALL_PAD_BUTTONS {
+            assert_eq!(pad_button_from_name(pad_button_name(b)), Some(b), "{b:?}");
+        }
+        let mut names: Vec<&str> = ALL_PAD_BUTTONS.iter().map(|b| pad_button_name(*b)).collect();
+        names.sort();
+        names.dedup();
+        assert_eq!(names.len(), ALL_PAD_BUTTONS.len(), "names are unique");
+        assert_eq!(pad_button_name(Button::Unknown), "?");
+        assert_eq!(pad_button_from_name("?"), None);
+        assert_eq!(pad_button_from_name("Nonsense"), None);
     }
 }

@@ -1,7 +1,11 @@
 //! Keyboard (minifb) and gamepad (gilrs) -> GBA key mask.
+//!
+//! The live layouts are `ui::input::KeyMap` and `ui::input::PadMap` (rebindable in Settings);
+//! the tables here are their defaults.
 
+use crate::ui::input::PadMap;
 use gba_core::Keys;
-use gilrs::{Axis, Button, Gilrs};
+use gilrs::{Axis, Button, EventType, Gilrs};
 use minifb::Key;
 
 /// Default keyboard layout.
@@ -18,7 +22,7 @@ pub const KEYBOARD_MAP: &[(Key, u16)] = &[
     (Key::Right, Keys::RIGHT),
 ];
 
-/// Gamepad button layout.
+/// Default gamepad button layout (gilrs `LeftTrigger`/`RightTrigger` are the bumpers).
 pub const GAMEPAD_MAP: &[(Button, u16)] = &[
     (Button::South, Keys::A),
     (Button::East, Keys::B),
@@ -92,23 +96,36 @@ impl Gamepads {
         Gamepads { gilrs }
     }
 
-    /// Drain pending events and return the OR of every connected pad's key mask.
-    pub fn poll(&mut self) -> u16 {
-        let Some(g) = self.gilrs.as_mut() else { return 0 };
-        while g.next_event().is_some() {}
-        let mut mask = 0;
-        for (_, pad) in g.gamepads() {
-            for (btn, bit) in GAMEPAD_MAP {
-                if pad.is_pressed(*btn) {
-                    mask |= bit;
+    /// Drain pending events, remembering the buttons that went down (for rebinding), and return
+    /// the OR of every connected pad's key mask through `map` (plus the left stick as D-pad).
+    pub fn poll(&mut self, map: &PadMap) -> PadPoll {
+        let Some(g) = self.gilrs.as_mut() else { return PadPoll::default() };
+        let mut pressed = Vec::new();
+        while let Some(ev) = g.next_event() {
+            if let EventType::ButtonPressed(b, _) = ev.event {
+                if b != Button::Unknown && !pressed.contains(&b) {
+                    pressed.push(b);
                 }
             }
+        }
+        let mut mask = 0;
+        for (_, pad) in g.gamepads() {
+            mask |= map.mask(|b| pad.is_pressed(b));
             let x = pad.value(Axis::LeftStickX);
             let y = pad.value(Axis::LeftStickY);
             mask |= stick_to_dpad(x, y, STICK_DEADZONE);
         }
-        mask
+        PadPoll { mask, pressed }
     }
+}
+
+/// One frame of gamepad input.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PadPoll {
+    /// GBA key mask of every connected pad.
+    pub mask: u16,
+    /// Buttons that went down since the last poll.
+    pub pressed: Vec<Button>,
 }
 
 #[cfg(test)]

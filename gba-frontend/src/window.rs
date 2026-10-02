@@ -4,6 +4,7 @@
 
 use crate::config::{SCREEN_H, SCREEN_W};
 use crate::ui::input::{actions, KeyMap, PadRepeat, UiInput};
+use crate::input::PadPoll;
 use crate::ui::{Canvas, Rgb};
 use anyhow::{anyhow, Result};
 use minifb::{InputCallback, Key, KeyRepeat, MouseButton, MouseMode, Scale, ScaleMode, Window, WindowOptions};
@@ -221,7 +222,7 @@ impl Video {
     }
 
     /// Everything that happened since the last update, as the screens want it.
-    pub fn gather_input(&mut self, map: &KeyMap, pad_mask: u16, now: Instant) -> UiInput {
+    pub fn gather_input(&mut self, map: &KeyMap, pad: PadPoll, now: Instant) -> UiInput {
         let pressed = self.window.get_keys_pressed(KeyRepeat::No);
         let repeated = self.window.get_keys_pressed(KeyRepeat::Yes);
         let down = self.window.get_keys();
@@ -231,10 +232,10 @@ impl Video {
         let clicked = mouse_down && !self.mouse_was_down;
         self.mouse_was_down = mouse_down;
         let wheel = self.window.get_scroll_wheel().map(|(_, y)| y).unwrap_or(0.0);
-        let (pad_pressed, pad_repeated) = self.pad_repeat.update(pad_mask, now);
+        let (pad_pressed, pad_repeated) = self.pad_repeat.update(pad.mask, now);
         let acts = actions(map, &pressed, &repeated, pad_pressed, pad_repeated);
-        let game_mask = crate::input::sanitize(map.mask(|k| down.contains(&k)) | pad_mask);
-        UiInput { pressed, repeated, down, chars, mouse, mouse_down, clicked, wheel, actions: acts, game_mask }
+        let game_mask = crate::input::sanitize(map.mask(|k| down.contains(&k)) | pad.mask);
+        UiInput { pressed, repeated, down, chars, mouse, mouse_down, clicked, wheel, actions: acts, pad_buttons: pad.pressed, game_mask }
     }
 
     pub fn is_key_down(&self, k: Key) -> bool {
