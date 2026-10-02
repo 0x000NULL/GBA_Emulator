@@ -18,6 +18,13 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   **v1.1.0 (2026-10-01)**: the BIOS sound driver release; savestate format 4; the workflow now
   runs entirely on self-hosted runners (PR #2) after the hosted jobs hit the account's spending limit.
   **v1.2.0 (2026-10-02)**: gamepad rebinding and the reference audio comparison tooling.
+- **Rebrand (2026-10-02)**: the player is **Strawberry** (`docs/branding/`, Fruit Basket No. 2).
+  Window title, binary and archives (`strawberry`), `strawberry/` config and cache folders with a
+  one-time move from `gba-advance/` (`app.rs migrate_dir`), the mark parsed from the SVG
+  (`ui/brand.rs`), window icon (`icon.rs`: Windows via a `.ico` written to the cache folder, X11
+  via `_NET_WM_ICON`; minifb's `set_icon` panics on Wayland and macOS so both are skipped), exe
+  icon and version block (`build.rs` + `winresource`, warns without `rc.exe`), and the empty
+  Library built from board 05. Crate names stay `gba-*`. Unreleased; next tag absorbs it.
 - **BIOS sound driver HLE (2026-10-01)**: SWI 1Ah-1Eh, 28h, 29h and the SoundGetJumpList
   routines are emulated (`gba-core/src/bios/sound/`, guest callbacks in `bios/call.rs`); the six
   titles the sweep left silent play music, pinned by seven `tests/compat.toml` rows with
@@ -422,7 +429,12 @@ the window close button, or Esc on the Library); the Bench in full including cor
   needs `/`, Tab or a click to take letters that are bound to GBA buttons; the Bench's layer
   thumbnails are exact 1/3 samples (80x53) instead of the mockup's fractional size; the pause
   bar reads `A OVERWRITE  B BACK` with the GBA button names; Settings adds the F2 row to the
-  emulator-keys list; the Data face has no `▸`, so the film edge print draws the triangle as a path.
+  emulator-keys list; the Data face has no `▸`, so the film edge print draws the triangle as a path;
+  the empty Library is the Strawberry brand screen (`docs/branding/boards/05-…`, 2026-10-02)
+  instead of SCREENS.md's "No games found" paragraph, with `Open <folder>` / `Settings` buttons
+  (Settings was reachable only from the pause menu before) and the whole `Settings` button when
+  no folder exists; the board's handheld screen is composed at native 240x160 in BGR555, so its
+  cream is the Pixel cream, not the Night chrome cream.
 - **Not done.** The window has no
   minimum size enforcement (layouts clip below 960x640); thread priority for the capture thread
   (std has none; it runs one game at a time with pauses).

@@ -11,6 +11,16 @@ The interface is the printed matter that came with a game in 2001: the cartridge
 manual, the photos of your save points. It never competes with the game. **Colour belongs to the
 games.**
 
+## Brand
+
+The player is **Strawberry**, Fruit Basket No. 2 (`docs/branding/`, 2026-10-02). The mark is a
+16x16 sprite in the Pixel palette (cream, shade, ink, red: fifteen seeds), drawn at whole-number
+scales only and never smoothed; `-night` variants (outline in cream, seeds in red, body clear)
+go on dark backgrounds. `logo/strawberry-mark.svg` is the source `ui/brand.rs` parses; the
+wordmark is outlined Archivo ExtraBold at 72 % width, and over a game the pixel font. The mark
+appears on the window and the exe, in the empty Library (board 05) and nowhere else in the
+chrome. The `00-system` mockup's "ADVANCE" header predates the name.
+
 ## Rules
 
 1. **Chrome uses paper, ink and the spot red only.** All other colour comes from a game: its pixels

@@ -46,8 +46,13 @@ the red ring and the Z keycap; that ring is the screen's one red selection mark.
 **Keys.** Arrows choose a cart · Z play · X eject (clears the selection) · F3 resume the latest state
 · typing goes to Find (Find filters by title or code; Esc clears it) · Esc quit (when Find is empty).
 
-**States.** Empty library: the case shows one empty slot and the right side shows
-"No games found in <folder>" (Reading) with a `Choose folder…` button. Unreadable ROM: the cart
+**States.** Empty library (`docs/branding/boards/05-strawberry-empty-library.png`): the case
+shows three rows of dashed placeholders, the console slot reading `STRAWBERRY` and the next cell
+`EMPTY · PUT .GBA FILES IN <folder>/`; the handheld holds a Strawberry cartridge with the mark,
+the wordmark and `NO GAMES YET` on its screen (composed at 240x160 in the Pixel palette); the
+right column is the product card (`STRAWBERRY`, `Fruit Basket · No. 2`, GAMES / SYSTEM PROGRAM /
+SAVES rows) with `Open <folder>  Z` and `Settings`. With no folder at all the one button is
+`Settings  Z` and the hints say to add one; while scanning they say so. Unreadable ROM: the cart
 gets a plain grey label with the file name and `UNREADABLE`; selecting it shows the error. Scan in
 progress: carts appear as they are found; never block the window.
 

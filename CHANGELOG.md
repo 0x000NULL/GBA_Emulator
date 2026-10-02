@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+**Strawberry.** The player has a name and a mark (`docs/branding/`: a 16x16 four-colour
+sprite, Fruit Basket No. 2).
+- The window is titled Strawberry and carries the mark as its icon on Windows and X11; the
+  Windows exe has the icon and a version block too (macOS and Wayland take no runtime icon).
+- The binary and the release archives are `strawberry` / `strawberry-vX.Y.Z-<os>`.
+- Settings and the library cache live in `strawberry/` under the user's config and cache
+  folders; an existing `gba-advance/` is moved there once on first start.
+- The empty Library is the brand screen from board 05: three rows of placeholders, the
+  Strawberry cartridge in the handheld with the mark on its screen, and `Open <folder>` (Z) /
+  `Settings` buttons. Settings is now reachable from the Library.
+
 ## v1.2.0 — 2026-10-02
 
 **Player**

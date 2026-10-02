@@ -8,6 +8,7 @@ developer bench. No BIOS file is needed: the system functions are built in.
 - **Windows**: unzip and double-click `strawberry.exe`, or run it from a terminal.
 - **macOS**: `tar xzf strawberry-*.tar.gz`, then `./strawberry`. The first launch may need
   *System Settings › Privacy & Security › Open Anyway* because the binary is not notarised.
+  There is no app bundle, so the Dock shows a generic icon.
 - **Linux**: `tar xzf strawberry-*.tar.gz`, then `./strawberry`. Needs ALSA (`libasound2`) and an X11 or
   XWayland display.
 
@@ -50,7 +51,8 @@ button has a keyboard keycap and a gamepad keycap; click one and press the new k
 - **Settings**: `%APPDATA%\strawberry\settings.toml` (Windows),
   `~/Library/Application Support/strawberry/settings.toml` (macOS),
   `~/.config/strawberry/settings.toml` (Linux). Plain TOML; safe to edit.
-- **Library index and title pictures**: the user cache folder, `strawberry/`.
+- **Library index and title pictures**: the user cache folder, `strawberry/`. Releases before
+  the name used `gba-advance/` for both; the first start moves those folders over.
 
 ## A real BIOS
 

@@ -37,7 +37,9 @@ gba-frontend/  bin `strawberry`: app.rs (screens + game session), ui/ (software 
                screens/ (library, states, settings, bench), library/ (scan, names, index, captures),
                slots.rs (8 state slots per game), settings.rs (TOML in the config dir), window.rs
                (resizable minifb, letterbox fast path, filters), audio.rs (cpal, gain), pacing.rs,
-               saves.rs, debug_ui.rs (hotkey map); assets/fonts/ (OFL faces, embedded)
+               saves.rs, debug_ui.rs (hotkey map), icon.rs (window icon per platform), ui/brand.rs
+               (the mark parsed from docs/branding), build.rs (exe icon + version block on
+               Windows via winresource); assets/fonts/ (OFL faces, embedded)
 docs/gui/      DESIGN.md, SCREENS.md, tokens.json, mockups/*.png, drawings/*.svg
 docs/branding/ the Strawberry mark (SVG sprite, source of truth for ui/brand.rs), wordmark, lockups, .ico,
                PNG icons, boards (02 mark rules, 05 empty library); README.txt is the designer's note
