@@ -150,6 +150,21 @@ The GUI follows `docs/gui/` (DESIGN.md is the design language, SCREENS.md the pe
 contract, tokens.json the constants, mockups/ the reference renders). It is a software renderer on
 the minifb window: no widget toolkit.
 
+**Generic and GBA halves.** The frontend is being split so its console-independent half can move
+into the shared `fruit-basket` crates (`basket-ui`, `basket-app`; also used by the crabapple NES
+emulator). Generic modules know no GBA type and no app module: `ui/`, `audio.rs`, `pacing.rs`,
+`saves.rs`, `prefs.rs`, `slots.rs`, `icon.rs`, `library/` (they reach `saves::write_atomic` and
+each other only). The app hands them the console through small types and traits:
+`ui::Screen` (picture size), a colour table for `Canvas::blit_indexed` (`pixels::bgr555_lut`),
+`ui::input::ButtonSet` (button names, mask bits, `MenuRoles` for the menus; `input::GBA_BUTTONS`),
+`audio::Buffering`, `saves::SaveRam`, `library::Platform` (ROM extensions, `probe -> RomInfo`,
+slot art, title capture; `glue::GbaPlatform`), `slots::SlotFormat` + `slots::Snapshot`
+(`glue::GBA_SLOTS`), `icon::Icon` (`brand::ICON`), and the app name and folder for `prefs`.
+`glue.rs` implements the traits for `gba_core`; `gba_copy.rs` holds the GBA save type names and
+ids; `brand.rs` the Strawberry mark, icons and handheld drawings. `src/pinned.rs` pins the
+frontend's output (render hashes, slot bytes, settings and index text) so the split is checked
+byte for byte.
+
 - `app.rs`: the state machine. `Screen` is Library (01), Game (02, with the pixel pause overlay),
   SaveStates (03), Settings (04) or Bench (D). `Session` owns the running `Gba`, its `.sav`
   manager, slot set, audio, pacer and overlay state. Only Game (unpaused) and Bench (running)
@@ -158,13 +173,13 @@ the minifb window: no widget toolkit.
   for vector shapes, direct pixel writes for text and framebuffer blits, clip rect, conversion to
   minifb's 0RGB), `text` (seven embedded OFL faces rasterised by fontdue, glyph cache, ellipsis
   and wrapping), `widgets` (keycap, tick, buttons, head/foot frame, tabs, numbered items, ruler),
-  `drawings` (a parser for the SVG subset of the three line drawings), `brand` (the Strawberry
-  mark parsed from `docs/branding/logo/strawberry-mark.svg` with that parser into a 16x16
-  four-colour sprite, paper and night BGR555 textures, the embedded `.ico` and PNG icons, and the
-  name strings; the empty Library draws it), `fmt` (copy rules),
-  `input` (per-frame snapshot; `KeyMap` and `PadMap`, the rebindable keyboard and gamepad
-  layouts; menu navigation derives from the GBA key bindings so a rebinding moves the menus too;
-  gamepad edge/repeat).
+  `drawings` (a parser for the SVG subset of the line drawings), `mark` (a pixel mark parsed with
+  that parser into a 16x16 four-colour sprite, paper and night BGR555 textures; `brand.rs` holds
+  the Strawberry mark from `docs/branding/logo/strawberry-mark.svg`, the embedded `.ico` and PNG
+  icons, the name strings and the handheld drawings; the empty Library draws the mark), `fmt`
+  (copy rules), `input` (per-frame snapshot; `KeyMap` and `PadMap`, the rebindable keyboard and
+  gamepad layouts over a `ButtonSet`; menu navigation derives from the bindings through
+  `MenuRoles` so a rebinding moves the menus too; gamepad edge/repeat).
 - `overlay/`: everything drawn over a running game is drawn at native 240x160 into a *copy* of
   the frame in the Pixel palette (5x5 bitmap font, windows, dim = BLDY maths with EVY 9, 48x32
   thumbnails = exact 1/5 samples, toasts) and scaled with it. `overlay::pause` is the pause menu
@@ -172,10 +187,12 @@ the minifb window: no widget toolkit.
 - `slots.rs`: eight save-state slots per game, `<rom stem>.s<N>.state` beside the ROM. One file
   per slot: little-endian header (`GBSL`, header version, header length, frame count, saved-at
   unix seconds, play seconds, core `STATE_VERSION`, emulator version string, 240x160 BGR555
-  thumbnail) followed by `Gba::save_state()` bytes. Headers and thumbnails are read without the
-  body; a core-version mismatch marks the slot `CAN'T LOAD` (deletable, never loaded). The legacy
-  single `<rom>.state` is imported into slot 1 on first scan when slot 1 is empty (a scratch
-  machine supplies the thumbnail); the original is left alone. Writes go through
+  picture) followed by `Gba::save_state()` bytes; the magic, versions and picture size are
+  `glue::GBA_SLOTS` (a `SlotFormat`). Headers and pictures are read without the body; a
+  core-version mismatch marks the slot `CAN'T LOAD` (deletable, never loaded); the pause menu
+  derives its 48x32 thumbnails from the pictures (`pause::slot_infos`). The legacy single
+  `<rom>.state` is imported into slot 1 on first scan when slot 1 is empty (`glue::scan_slots`;
+  a scratch machine supplies the picture); the original is left alone. Writes go through
   `saves::write_atomic`.
 - `screens/`: `library` (01), `states` (03), `settings` (04), `bench` (D), each a struct with
   `update(&UiInput, ctx) -> Outcome` and `render(&mut Canvas, ctx)`; the app owns the wiring.
@@ -189,12 +206,13 @@ the minifb window: no widget toolkit.
   stream, underrun counter, a gain stage in the callback for the volume setting), `pacing.rs`
   (1/59.7275 s frame clock, adaptive sleep margin, +-2% audio-fill correction), `saves.rs`
   (atomic `<rom>.sav` writes every 60 frames/F5/exit), `debug_ui.rs` (hotkey map, IO dump,
-  screenshots, title bar), `settings.rs` (TOML settings file at `<config dir>/strawberry/`,
-  unknown keys preserved; keyboard, gamepad and hotkey bindings stored by name; CLI flags
+  screenshots, title bar), `settings.rs` (Strawberry's fields of the TOML settings file at
+  `<config dir>/strawberry/`; `prefs.rs` reads and writes it: a malformed value costs only its
+  key, unknown keys preserved; keyboard, gamepad and hotkey bindings stored by name; CLI flags
   override for the run only; `App::new` first moves a pre-1.3.0 `gba-advance/` config or cache
   folder to `strawberry/` when the new one is absent), `library/` (folder scan thread, display
   names from file names, index cache under `<cache dir>/strawberry/`, background title captures
-  for the cartridge labels), `icon.rs` (the window icon: Windows loads the embedded `.ico` after
+  for the cartridge labels; the GBA parts behind `library::Platform`), `icon.rs` (the window icon: Windows loads the embedded `.ico` after
   it is written to the cache folder, X11 gets `_NET_WM_ICON` from the icon PNGs; Wayland and
   macOS are skipped because minifb's `set_icon` panics there), and `build.rs` (on Windows only,
   the exe's icon and version block through `winresource`; a missing `rc.exe` warns, never fails).

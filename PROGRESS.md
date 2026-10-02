@@ -11,7 +11,7 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   plus the two KH goldens in `tests/compat.toml` (title at frame 1800, gameplay at frame 27400).
 - **All jsmolka ROMs pass** (arm, thumb, memory, bios, nes, save/none, sram, flash64, flash128;
   ppu hello/shades/stripes by golden hash). `cargo test --workspace` is green: 382 core unit
-  tests, 170 frontend tests, 2 ROM-driver tests (~11 min with all 66 commercial goldens present).
+  tests, 181 frontend tests, 2 ROM-driver tests (~11 min with all 66 commercial goldens present).
 - **v1.0.0 released (2026-10-01)**: tag `v1.0.0`; `.github/workflows/release.yml` builds the
   player for Windows x64, Linux x64, macOS x64/arm64 with `--profile dist` and attaches the
   archives to the GitHub release (`CHANGELOG.md` is the release body). Procedure in CLAUDE.md.
@@ -497,6 +497,25 @@ container (`rust:1`, TZ=America/New_York) like the CI test job. A failing pin pr
 `STRAWBERRY_PIN_RECORD=1 cargo test -p gba-frontend pinned_ -- --nocapture` prints every row and
 writes the pinned canvases to `target/ui-renders/pinned/*.png` for review. Re-pin only after
 looking at them.
+
+## Generic frontend, in place (2026-10-02)
+
+Step 1 of the fruit-basket move, one subsystem per commit with every pin in `pinned.rs` green
+throughout (no pin changed): canvas blits through a colour table; `ui::Screen`; frame rate as a
+parameter of `frames_to_secs`; `audio::Buffering`; `saves::SaveRam`; `library::Platform` (one trait
+for probe, slot art and title capture, since the art thread needs the console too); `ButtonSet`
+key and pad maps; `prefs.rs` (settings-file mechanics, name-based bindings); `slots::SlotFormat` +
+`Snapshot`; `brand.rs` and `icon::Icon`. The generic modules (see ARCHITECTURE "Generic and GBA
+halves") now reference no GBA crate and no app module. Agreed with crabapple: button masks stay
+`u16` (8 buttons per NES port), `RomInfo.code` carries the NES CRC32, so no separate hash field.
+Behaviour changes, all invisible to Strawberry's files: `names` drops any 1-4 character
+alphanumeric extension (was `.gba`/`.zip` only; the scan lists only those, so titles are
+unchanged); a panicking ROM probe now lists the file as unreadable instead of ending the scan
+(before, only the archive read was guarded); the slot-path fallback stem for a ROM without one is
+`game`. Still to do for step 2: a `build.rs` helper for the exe icon (a build-dependency cannot
+come from the app crate), pad-to-port assignment for two-port consoles (basket-app), and the
+`tokens` items sized for the GBA (`FILM_FRAME_W/H`, `pixel::THUMB_W/H`), which NES screens will
+need to override.
 
 ## Gamepad rebinding (2026-10-02)
 
