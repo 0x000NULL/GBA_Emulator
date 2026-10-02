@@ -24,7 +24,6 @@
 
 use crate::library::{Art, Library, LibraryEntry};
 use crate::overlay::Overlay;
-use crate::slots::SlotSet;
 use crate::ui::brand;
 use crate::ui::canvas::{Clip, Canvas};
 use crate::ui::drawings::{self, Drawing};
@@ -402,7 +401,7 @@ impl LibraryScreen {
     }
 
     fn load_slot_info(&mut self, path: &Path) {
-        let set = SlotSet::scan(path, None);
+        let set = crate::glue::GBA_SLOTS.scan(path);
         let latest = set.latest().map(|m| LatestState { frame: m.frame, play_secs: m.play_secs, saved_at: m.saved_at });
         self.slot_info = Some(SlotInfo { path: path.to_path_buf(), latest });
     }
@@ -1395,7 +1394,7 @@ mod tests {
         s.select(&dir.join("Delta.gba"));
         assert_eq!(s.update(&key(Key::F3), &lib), LibraryOutcome::None, "no state yet");
         let fb = vec![0x001Fu16; gba_core::SCREEN_W * gba_core::SCREEN_H];
-        std::fs::write(crate::slots::slot_path(&dir.join("Delta.gba"), 2), crate::slots::encode(27_400, 1_790_000_000, 458, &fb, b"body")).unwrap();
+        std::fs::write(crate::slots::slot_path(&dir.join("Delta.gba"), 2), crate::glue::GBA_SLOTS.encode(27_400, 1_790_000_000, 458, &fb, b"body")).unwrap();
         s.refresh_slots();
         assert_eq!(s.update(&key(Key::F3), &lib), LibraryOutcome::ResumeLatest(dir.join("Delta.gba")));
         assert_eq!(s.latest_for_selected().unwrap().frame, 27_400);
@@ -1629,7 +1628,7 @@ mod tests {
         lib.mark_played_at(&dir.join("Echo.gba"), 100);
         // Delta has a save state
         let fb: Vec<u16> = (0..gba_core::SCREEN_W * gba_core::SCREEN_H).map(|i| ((i / 240) as u16 * 3) & 0x7FFF).collect();
-        std::fs::write(crate::slots::slot_path(&dir.join("Delta.gba"), 3), crate::slots::encode(27_400, 1_790_000_000, 458, &fb, b"body")).unwrap();
+        std::fs::write(crate::slots::slot_path(&dir.join("Delta.gba"), 3), crate::glue::GBA_SLOTS.encode(27_400, 1_790_000_000, 458, &fb, b"body")).unwrap();
         let mut s = screen();
         s.update(&UiInput::default(), &lib);
         s.select(&dir.join("Delta.gba"));

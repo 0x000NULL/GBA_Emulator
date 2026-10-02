@@ -19,6 +19,7 @@ use crate::screens::settings::{SettingsCtx, SettingsOutcome, SettingsScreen};
 use crate::screens::states::{StatesCtx, StatesOutcome, StatesScreen};
 use crate::settings::{AudioMode, Bios, PictureSize, Settings};
 use crate::window::Filter;
+use crate::glue::GBA_SLOTS;
 use crate::slots::{self, SlotSet};
 use crate::ui::fmt::frames_to_secs;
 use crate::ui::input::{KeyMap, PadMap, UiInput};
@@ -97,7 +98,7 @@ impl Session {
             Ok(false) => {}
             Err(e) => eprintln!("warning: {e:#}"),
         }
-        let slots = SlotSet::scan(rom, Some(gba.bus.cart.rom()));
+        let slots = crate::glue::scan_slots(rom, Some(gba.bus.cart.rom()));
         let audio = if audio_mode == AudioMode::Off {
             None
         } else {
@@ -215,13 +216,13 @@ impl Session {
 
     /// Save the machine into `slot`; reports through the pause bar or a toast.
     pub fn save_slot(&mut self, slot: u8) -> Result<()> {
-        let meta = slots::save(&self.gba, &self.rom, slot, self.play_secs())?;
+        let meta = GBA_SLOTS.save(&self.gba, &self.rom, slot, self.play_secs())?;
         self.slots.set(meta);
         Ok(())
     }
 
     pub fn load_slot(&mut self, slot: u8) -> Result<(), slots::SlotError> {
-        let meta = slots::load(&mut self.gba, &self.rom, slot)?;
+        let meta = GBA_SLOTS.load(&mut self.gba, &self.rom, slot)?;
         self.slots.set(meta);
         self.resync();
         Ok(())
@@ -252,7 +253,7 @@ impl Session {
         let mut o = Overlay::new(&mut self.scratch);
         if let Some(menu) = &self.menu {
             o.dim(DIM_EVY);
-            let infos = self.slots.infos();
+            let infos = crate::overlay::pause::slot_infos(&self.slots);
             menu.draw(&mut o, &infos, now);
         } else if let Some((text, _)) = &self.toast {
             o.toast(text);
@@ -634,7 +635,7 @@ impl App {
             self.states_rom = None;
         } else if let Some(rom) = rom {
             let name = rom.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-            self.states_rom = Some((rom.to_path_buf(), name, SlotSet::scan(rom, None)));
+            self.states_rom = Some((rom.to_path_buf(), name, GBA_SLOTS.scan(rom)));
         } else {
             return;
         }
@@ -827,7 +828,7 @@ impl App {
             if hotkeys.contains(&Hotkey::FrameStep) {
                 self.step = true;
             }
-            let infos = s.slots.infos();
+            let infos = crate::overlay::pause::slot_infos(&s.slots);
             match menu.handle(input, &infos, now) {
                 Outcome::None => {}
                 Outcome::Resume => keep = false,

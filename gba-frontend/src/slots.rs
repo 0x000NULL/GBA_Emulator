@@ -2,32 +2,51 @@
 //!
 //! File format (little-endian; documented in `docs/ARCHITECTURE.md`):
 //! ```text
-//! "GBSL"            magic
+//! magic             4 bytes, the app's SlotFormat::magic ("GBSL" for Strawberry)
 //! u32  header_ver   1
 //! u32  header_len   bytes from the start of the file to the core state
-//! u64  frame        ppu.frame_count at save time
+//! u64  frame        the core's frame counter at save time
 //! i64  saved_at     unix seconds
 //! u32  play_secs    play time at save time
-//! u32  core_ver     gba_core::state::STATE_VERSION the body was written with
-//! u16  name_len + name bytes (emulator version string)
-//! u16[240*160]      thumbnail, BGR555
-//! ...               Gba::save_state() bytes
+//! u32  core_ver     SlotFormat::core_version, the state format the body was written with
+//! u16  name_len + name bytes (SlotFormat::emulator, the app's version string)
+//! u16[w*h]          the picture at save time, in the app's pixel format (bit 15 cleared)
+//! ...               the core's state bytes
 //! ```
-//! One file keeps writes atomic (`saves::write_atomic`) and deletes simple; `read_meta` reads the
-//! header and thumbnail without touching the body. The legacy single `<rom>.state` written by
-//! earlier builds is imported into slot 1 the first time the slots are scanned, if slot 1 is empty.
+//! The picture's size is the format's, not the file's: a file whose header length disagrees is
+//! corrupt. One file keeps writes atomic (`saves::write_atomic`) and deletes simple; `read_meta`
+//! reads the header and picture without touching the body.
 
-use crate::overlay::{thumb_from_frame, Thumb};
 use crate::saves::write_atomic;
 use anyhow::{anyhow, Result};
-use gba_core::{Gba, FrameBuffer, SCREEN_H, SCREEN_W};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const SLOTS: usize = 8;
-const MAGIC: &[u8; 4] = b"GBSL";
 const HEADER_VER: u32 = 1;
-const FRAME_LEN: usize = SCREEN_W * SCREEN_H;
+
+/// What the app fixes about its slot files.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SlotFormat {
+    pub magic: [u8; 4],
+    /// The core's state format version; a slot written with another one is listed but not loaded.
+    pub core_version: u32,
+    /// The app's version string, written into every file.
+    pub emulator: &'static str,
+    /// Picture size in dots.
+    pub frame_w: usize,
+    pub frame_h: usize,
+}
+
+/// A machine that can be saved into a slot and loaded from one.
+pub trait Snapshot {
+    fn save_state(&self) -> Vec<u8>;
+    fn load_state(&mut self, body: &[u8]) -> Result<(), String>;
+    /// The frame counter stored in the header.
+    fn frame_count(&self) -> u64;
+    /// The current picture, `frame_w * frame_h` texels.
+    fn picture(&self) -> &[u16];
+}
 
 /// Slot metadata read from a slot file's header.
 #[derive(Clone, Debug, PartialEq)]
@@ -40,8 +59,8 @@ pub struct SlotMeta {
     pub core_ver: u32,
     pub emulator: String,
     pub size: u64,
-    pub thumb: Box<Thumb>,
-    pub frame_full: Box<FrameBuffer>,
+    /// The picture at save time, `frame_w * frame_h` texels (zeros for an unreadable file).
+    pub frame_full: Vec<u16>,
     /// `Some(reason)` when the body cannot be loaded by this build.
     pub broken: Option<String>,
 }
@@ -76,38 +95,12 @@ impl From<std::io::Error> for SlotError {
 
 /// `<rom stem>.s<N>.state` beside the ROM.
 pub fn slot_path(rom: &Path, slot: u8) -> PathBuf {
-    let stem = rom.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "gba".into());
+    let stem = rom.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "game".into());
     rom.with_file_name(format!("{stem}.s{slot}.state"))
 }
 
-/// The legacy single-state path written by earlier builds.
-pub fn legacy_path(rom: &Path) -> PathBuf {
-    rom.with_extension("state")
-}
-
-fn now_secs() -> i64 {
+pub fn now_secs() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
-}
-
-/// Serialise a slot file.
-pub fn encode(frame: u64, saved_at: i64, play_secs: u32, fb: &[u16], body: &[u8]) -> Vec<u8> {
-    let name = env!("CARGO_PKG_VERSION").as_bytes();
-    let header_len = 4 + 4 + 4 + 8 + 8 + 4 + 4 + 2 + name.len() + FRAME_LEN * 2;
-    let mut out = Vec::with_capacity(header_len + body.len());
-    out.extend_from_slice(MAGIC);
-    out.extend_from_slice(&HEADER_VER.to_le_bytes());
-    out.extend_from_slice(&(header_len as u32).to_le_bytes());
-    out.extend_from_slice(&frame.to_le_bytes());
-    out.extend_from_slice(&saved_at.to_le_bytes());
-    out.extend_from_slice(&play_secs.to_le_bytes());
-    out.extend_from_slice(&gba_core::state::STATE_VERSION.to_le_bytes());
-    out.extend_from_slice(&(name.len() as u16).to_le_bytes());
-    out.extend_from_slice(name);
-    for p in fb.iter().take(FRAME_LEN) {
-        out.extend_from_slice(&(p & 0x7FFF).to_le_bytes());
-    }
-    out.extend_from_slice(body);
-    out
 }
 
 struct Parsed {
@@ -116,103 +109,152 @@ struct Parsed {
     play_secs: u32,
     core_ver: u32,
     emulator: String,
-    fb: Box<FrameBuffer>,
+    fb: Vec<u16>,
     body_at: usize,
 }
 
-fn parse_header(bytes: &[u8]) -> Result<Parsed, SlotError> {
-    let need = |n: usize| -> Result<(), SlotError> {
-        if bytes.len() < n {
-            Err(SlotError::Corrupt(format!("file is {} bytes, header needs {n}", bytes.len())))
-        } else {
-            Ok(())
+fn read_file(path: &Path) -> Result<Vec<u8>, SlotError> {
+    match std::fs::read(path) {
+        Ok(b) => Ok(b),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(SlotError::Missing),
+        Err(e) => Err(e.into()),
+    }
+}
+
+impl SlotFormat {
+    fn frame_len(&self) -> usize {
+        self.frame_w * self.frame_h
+    }
+
+    /// Serialise a slot file.
+    pub fn encode(&self, frame: u64, saved_at: i64, play_secs: u32, fb: &[u16], body: &[u8]) -> Vec<u8> {
+        let name = self.emulator.as_bytes();
+        let header_len = 4 + 4 + 4 + 8 + 8 + 4 + 4 + 2 + name.len() + self.frame_len() * 2;
+        let mut out = Vec::with_capacity(header_len + body.len());
+        out.extend_from_slice(&self.magic);
+        out.extend_from_slice(&HEADER_VER.to_le_bytes());
+        out.extend_from_slice(&(header_len as u32).to_le_bytes());
+        out.extend_from_slice(&frame.to_le_bytes());
+        out.extend_from_slice(&saved_at.to_le_bytes());
+        out.extend_from_slice(&play_secs.to_le_bytes());
+        out.extend_from_slice(&self.core_version.to_le_bytes());
+        out.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        out.extend_from_slice(name);
+        for p in fb.iter().take(self.frame_len()) {
+            out.extend_from_slice(&(p & 0x7FFF).to_le_bytes());
         }
-    };
-    need(12)?;
-    if &bytes[0..4] != MAGIC {
-        return Err(SlotError::Corrupt("bad magic".into()));
+        out.extend_from_slice(body);
+        out
     }
-    let u32_at = |i: usize| u32::from_le_bytes(bytes[i..i + 4].try_into().unwrap());
-    let ver = u32_at(4);
-    if ver != HEADER_VER {
-        return Err(SlotError::Corrupt(format!("header version {ver}")));
-    }
-    let header_len = u32_at(8) as usize;
-    need(header_len)?;
-    let frame = u64::from_le_bytes(bytes[12..20].try_into().unwrap());
-    let saved_at = i64::from_le_bytes(bytes[20..28].try_into().unwrap());
-    let play_secs = u32_at(28);
-    let core_ver = u32_at(32);
-    let name_len = u16::from_le_bytes(bytes[36..38].try_into().unwrap()) as usize;
-    let name_end = 38 + name_len;
-    let fb_end = name_end + FRAME_LEN * 2;
-    if fb_end != header_len {
-        return Err(SlotError::Corrupt("header length mismatch".into()));
-    }
-    let emulator = String::from_utf8_lossy(&bytes[38..name_end]).into_owned();
-    let mut fb: Box<FrameBuffer> = vec![0u16; FRAME_LEN].into_boxed_slice().try_into().map_err(|_| SlotError::Corrupt("fb".into()))?;
-    for (i, p) in fb.iter_mut().enumerate() {
-        let o = name_end + i * 2;
-        *p = u16::from_le_bytes([bytes[o], bytes[o + 1]]);
-    }
-    Ok(Parsed { frame, saved_at, play_secs, core_ver, emulator, fb, body_at: header_len })
-}
 
-/// Read a slot's header and thumbnail (not its body).
-pub fn read_meta(rom: &Path, slot: u8) -> Result<SlotMeta, SlotError> {
-    let path = slot_path(rom, slot);
-    let bytes = match std::fs::read(&path) {
-        Ok(b) => b,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(SlotError::Missing),
-        Err(e) => return Err(e.into()),
-    };
-    let size = bytes.len() as u64;
-    let p = parse_header(&bytes)?;
-    let broken = if p.core_ver != gba_core::state::STATE_VERSION {
-        Some(format!("saved with state format {}, this build reads {}", p.core_ver, gba_core::state::STATE_VERSION))
-    } else if bytes.len() <= p.body_at {
-        Some("no state body".into())
-    } else {
-        None
-    };
-    Ok(SlotMeta {
-        slot,
-        path,
-        frame: p.frame,
-        saved_at: UNIX_EPOCH + std::time::Duration::from_secs(p.saved_at.max(0) as u64),
-        play_secs: p.play_secs as u64,
-        core_ver: p.core_ver,
-        emulator: p.emulator,
-        size,
-        thumb: Box::new(thumb_from_frame(&p.fb[..])),
-        frame_full: p.fb,
-        broken,
-    })
-}
-
-/// Write the running machine into `slot`.
-pub fn save(gba: &Gba, rom: &Path, slot: u8, play_secs: u64) -> Result<SlotMeta> {
-    let path = slot_path(rom, slot);
-    let body = gba.save_state();
-    let bytes = encode(gba.bus.ppu.frame_count, now_secs(), play_secs.min(u32::MAX as u64) as u32, &gba.framebuffer()[..], &body);
-    write_atomic(&path, &bytes)?;
-    read_meta(rom, slot).map_err(|e| anyhow!("{e}"))
-}
-
-/// Load `slot` into the running machine.
-pub fn load(gba: &mut Gba, rom: &Path, slot: u8) -> Result<SlotMeta, SlotError> {
-    let path = slot_path(rom, slot);
-    let bytes = match std::fs::read(&path) {
-        Ok(b) => b,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(SlotError::Missing),
-        Err(e) => return Err(e.into()),
-    };
-    let p = parse_header(&bytes)?;
-    if bytes.len() <= p.body_at {
-        return Err(SlotError::CantLoad("no state body".into()));
+    fn parse_header(&self, bytes: &[u8]) -> Result<Parsed, SlotError> {
+        let need = |n: usize| -> Result<(), SlotError> {
+            if bytes.len() < n {
+                Err(SlotError::Corrupt(format!("file is {} bytes, header needs {n}", bytes.len())))
+            } else {
+                Ok(())
+            }
+        };
+        need(12)?;
+        if bytes[0..4] != self.magic {
+            return Err(SlotError::Corrupt("bad magic".into()));
+        }
+        let u32_at = |i: usize| u32::from_le_bytes(bytes[i..i + 4].try_into().unwrap());
+        let ver = u32_at(4);
+        if ver != HEADER_VER {
+            return Err(SlotError::Corrupt(format!("header version {ver}")));
+        }
+        let header_len = u32_at(8) as usize;
+        need(header_len)?;
+        let frame = u64::from_le_bytes(bytes[12..20].try_into().unwrap());
+        let saved_at = i64::from_le_bytes(bytes[20..28].try_into().unwrap());
+        let play_secs = u32_at(28);
+        let core_ver = u32_at(32);
+        let name_len = u16::from_le_bytes(bytes[36..38].try_into().unwrap()) as usize;
+        let name_end = 38 + name_len;
+        let fb_end = name_end + self.frame_len() * 2;
+        if fb_end != header_len {
+            return Err(SlotError::Corrupt("header length mismatch".into()));
+        }
+        let emulator = String::from_utf8_lossy(&bytes[38..name_end]).into_owned();
+        let fb = bytes[name_end..fb_end].chunks_exact(2).map(|b| u16::from_le_bytes([b[0], b[1]])).collect();
+        Ok(Parsed { frame, saved_at, play_secs, core_ver, emulator, fb, body_at: header_len })
     }
-    gba.load_state(&bytes[p.body_at..]).map_err(|e| SlotError::CantLoad(e.to_string()))?;
-    read_meta(rom, slot)
+
+    /// Read a slot's header and picture (not its body).
+    pub fn read_meta(&self, rom: &Path, slot: u8) -> Result<SlotMeta, SlotError> {
+        let path = slot_path(rom, slot);
+        let bytes = read_file(&path)?;
+        let size = bytes.len() as u64;
+        let p = self.parse_header(&bytes)?;
+        let broken = if p.core_ver != self.core_version {
+            Some(format!("saved with state format {}, this build reads {}", p.core_ver, self.core_version))
+        } else if bytes.len() <= p.body_at {
+            Some("no state body".into())
+        } else {
+            None
+        };
+        Ok(SlotMeta {
+            slot,
+            path,
+            frame: p.frame,
+            saved_at: UNIX_EPOCH + std::time::Duration::from_secs(p.saved_at.max(0) as u64),
+            play_secs: p.play_secs as u64,
+            core_ver: p.core_ver,
+            emulator: p.emulator,
+            size,
+            frame_full: p.fb,
+            broken,
+        })
+    }
+
+    /// Write the running machine into `slot`.
+    pub fn save(&self, machine: &impl Snapshot, rom: &Path, slot: u8, play_secs: u64) -> Result<SlotMeta> {
+        let path = slot_path(rom, slot);
+        let body = machine.save_state();
+        let bytes = self.encode(machine.frame_count(), now_secs(), play_secs.min(u32::MAX as u64) as u32, machine.picture(), &body);
+        write_atomic(&path, &bytes)?;
+        self.read_meta(rom, slot).map_err(|e| anyhow!("{e}"))
+    }
+
+    /// Load `slot` into the running machine.
+    pub fn load(&self, machine: &mut impl Snapshot, rom: &Path, slot: u8) -> Result<SlotMeta, SlotError> {
+        let bytes = read_file(&slot_path(rom, slot))?;
+        let p = self.parse_header(&bytes)?;
+        if bytes.len() <= p.body_at {
+            return Err(SlotError::CantLoad("no state body".into()));
+        }
+        machine.load_state(&bytes[p.body_at..]).map_err(SlotError::CantLoad)?;
+        self.read_meta(rom, slot)
+    }
+
+    /// Read all eight slots of a game.
+    pub fn scan(&self, rom: &Path) -> SlotSet {
+        let mut slots = Vec::with_capacity(SLOTS);
+        for n in 1..=SLOTS as u8 {
+            slots.push(match self.read_meta(rom, n) {
+                Ok(m) => Some(m),
+                Err(SlotError::Missing) => None,
+                Err(e) => {
+                    eprintln!("warning: slot {n}: {e}");
+                    // keep a stub so the file still shows up as unloadable
+                    Some(SlotMeta {
+                        slot: n,
+                        path: slot_path(rom, n),
+                        frame: 0,
+                        saved_at: UNIX_EPOCH,
+                        play_secs: 0,
+                        core_ver: 0,
+                        emulator: String::new(),
+                        size: std::fs::metadata(slot_path(rom, n)).map(|m| m.len()).unwrap_or(0),
+                        frame_full: vec![0u16; self.frame_len()],
+                        broken: Some(e.to_string()),
+                    })
+                }
+            });
+        }
+        SlotSet { slots }
+    }
 }
 
 pub fn delete(rom: &Path, slot: u8) -> Result<()> {
@@ -231,41 +273,6 @@ pub struct SlotSet {
 }
 
 impl SlotSet {
-    /// Scan the slot files; import the legacy `<rom>.state` into slot 1 first if that is empty.
-    /// `rom_bytes` is needed only for the import (to build a scratch machine for the thumbnail).
-    pub fn scan(rom: &Path, rom_bytes: Option<&[u8]>) -> Self {
-        if let Some(bytes) = rom_bytes {
-            if let Err(e) = import_legacy(rom, bytes) {
-                eprintln!("warning: legacy state import: {e:#}");
-            }
-        }
-        let mut slots = Vec::with_capacity(SLOTS);
-        for n in 1..=SLOTS as u8 {
-            slots.push(match read_meta(rom, n) {
-                Ok(m) => Some(m),
-                Err(SlotError::Missing) => None,
-                Err(e) => {
-                    eprintln!("warning: slot {n}: {e}");
-                    // keep a stub so the file still shows up as unloadable
-                    Some(SlotMeta {
-                        slot: n,
-                        path: slot_path(rom, n),
-                        frame: 0,
-                        saved_at: UNIX_EPOCH,
-                        play_secs: 0,
-                        core_ver: 0,
-                        emulator: String::new(),
-                        size: std::fs::metadata(slot_path(rom, n)).map(|m| m.len()).unwrap_or(0),
-                        thumb: Box::new([0; crate::ui::tokens::pixel::THUMB_W * crate::ui::tokens::pixel::THUMB_H]),
-                        frame_full: vec![0u16; FRAME_LEN].into_boxed_slice().try_into().unwrap(),
-                        broken: Some(e.to_string()),
-                    })
-                }
-            });
-        }
-        SlotSet { slots }
-    }
-
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn get(&self, slot: u8) -> Option<&SlotMeta> {
         self.slots.get(slot as usize - 1).and_then(|s| s.as_ref())
@@ -296,106 +303,70 @@ impl SlotSet {
     pub fn latest(&self) -> Option<&SlotMeta> {
         self.slots.iter().flatten().filter(|s| s.broken.is_none()).max_by_key(|s| s.saved_at)
     }
-
-    /// The pause menu's view of the slots.
-    pub fn infos(&self) -> [Option<crate::overlay::pause::SlotInfo>; 8] {
-        let mut out: [Option<crate::overlay::pause::SlotInfo>; 8] = Default::default();
-        for (i, s) in self.slots.iter().enumerate().take(8) {
-            out[i] = s.as_ref().map(|m| crate::overlay::pause::SlotInfo {
-                thumb: m.thumb.clone(),
-                play_secs: m.play_secs,
-                frame: m.frame,
-                broken: m.broken.clone(),
-            });
-        }
-        out
-    }
-}
-
-/// Copy `<rom>.state` into slot 1 when slot 1 is empty; the original is left untouched.
-pub fn import_legacy(rom: &Path, rom_bytes: &[u8]) -> Result<bool> {
-    let legacy = legacy_path(rom);
-    if !legacy.is_file() || slot_path(rom, 1).exists() {
-        return Ok(false);
-    }
-    let body = std::fs::read(&legacy)?;
-    // a scratch machine supplies the thumbnail and frame count
-    let mut scratch = Gba::new(rom_bytes.to_vec(), gba_core::Options::default()).map_err(|e| anyhow!("{e}"))?;
-    scratch.load_state(&body).map_err(|e| anyhow!("legacy state: {e}"))?;
-    scratch.run_frame();
-    let saved_at = std::fs::metadata(&legacy)
-        .and_then(|m| m.modified())
-        .ok()
-        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or_else(now_secs);
-    let play = crate::ui::fmt::frames_to_secs(scratch.bus.ppu.frame_count, crate::config::GBA_FPS);
-    let bytes = encode(scratch.bus.ppu.frame_count, saved_at, play as u32, &scratch.framebuffer()[..], &body);
-    write_atomic(&slot_path(rom, 1), &bytes)?;
-    println!("imported {} into slot 1", legacy.display());
-    Ok(true)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gba_core::Options;
 
-    fn test_rom() -> Vec<u8> {
-        // a minimal cart: header + an infinite loop at the entry point
-        let mut rom = vec![0u8; 0x1000];
-        rom[0..4].copy_from_slice(&0xEAFF_FFFEu32.to_le_bytes()); // b .
-        rom[0xA0..0xAC].copy_from_slice(b"SLOTTEST\0\0\0\0");
-        rom[0xAC..0xB0].copy_from_slice(b"TSTE");
-        rom[0xB2] = 0x96;
-        rom
+    const FMT: SlotFormat = SlotFormat { magic: *b"TSSL", core_version: 7, emulator: "test 0.1", frame_w: 4, frame_h: 2 };
+
+    /// A machine whose state is a counter.
+    struct Counter {
+        n: u64,
+        pic: Vec<u16>,
+    }
+
+    impl Snapshot for Counter {
+        fn save_state(&self) -> Vec<u8> {
+            self.n.to_le_bytes().to_vec()
+        }
+        fn load_state(&mut self, body: &[u8]) -> Result<(), String> {
+            self.n = u64::from_le_bytes(body.try_into().map_err(|_| "bad body".to_string())?);
+            Ok(())
+        }
+        fn frame_count(&self) -> u64 {
+            self.n
+        }
+        fn picture(&self) -> &[u16] {
+            &self.pic
+        }
     }
 
     fn temp_rom(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("gba-slots-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        dir.join("game.gba")
+        dir.join("game.rom")
     }
 
     #[test]
     fn paths_beside_the_rom() {
         let p = slot_path(Path::new("C:/Games/Kingdom Hearts (USA).zip"), 4);
         assert_eq!(p, PathBuf::from("C:/Games/Kingdom Hearts (USA).s4.state"));
-        assert_eq!(legacy_path(Path::new("C:/Games/x.gba")), PathBuf::from("C:/Games/x.state"));
     }
 
     #[test]
     fn round_trip_save_load_delete() {
         let rom = temp_rom("rt");
-        let mut gba = Gba::new(test_rom(), Options::default()).unwrap();
-        for _ in 0..3 {
-            gba.run_frame();
-        }
-        let frame = gba.bus.ppu.frame_count;
-        let meta = save(&gba, &rom, 2, 458).unwrap();
-        assert_eq!((meta.slot, meta.frame, meta.play_secs), (2, frame, 458));
+        let mut m = Counter { n: 3, pic: vec![1, 2, 3, 4, 5, 6, 7, 0x8008] };
+        let meta = FMT.save(&m, &rom, 2, 458).unwrap();
+        assert_eq!((meta.slot, meta.frame, meta.play_secs, meta.core_ver), (2, 3, 458, 7));
+        assert_eq!(meta.emulator, "test 0.1");
+        assert_eq!(meta.frame_full, vec![1, 2, 3, 4, 5, 6, 7, 8], "bit 15 is not stored");
         assert!(meta.broken.is_none());
-        assert_eq!(meta.core_ver, gba_core::state::STATE_VERSION);
-        assert_eq!(meta.emulator, env!("CARGO_PKG_VERSION"));
-        assert!(meta.size > 76_800);
-        let set = SlotSet::scan(&rom, None);
+        let set = FMT.scan(&rom);
         assert_eq!(set.used(), 1);
-        assert_eq!(set.get(2).unwrap().frame, frame);
+        assert_eq!(set.get(2).unwrap().frame, 3);
         assert!(set.get(1).is_none());
         assert_eq!(set.latest().unwrap().slot, 2);
         assert_eq!(set.total_bytes(), meta.size);
-        // run on, then load back
-        for _ in 0..5 {
-            gba.run_frame();
-        }
-        assert_ne!(gba.bus.ppu.frame_count, frame);
-        let m2 = load(&mut gba, &rom, 2).unwrap();
-        assert_eq!(gba.bus.ppu.frame_count, frame);
-        assert_eq!(m2.frame, frame);
-        assert!(matches!(load(&mut gba, &rom, 3), Err(SlotError::Missing)));
+        m.n = 9;
+        let m2 = FMT.load(&mut m, &rom, 2).unwrap();
+        assert_eq!((m.n, m2.frame), (3, 3));
+        assert!(matches!(FMT.load(&mut m, &rom, 3), Err(SlotError::Missing)));
         delete(&rom, 2).unwrap();
-        assert!(matches!(read_meta(&rom, 2), Err(SlotError::Missing)));
+        assert!(matches!(FMT.read_meta(&rom, 2), Err(SlotError::Missing)));
         delete(&rom, 2).unwrap();
     }
 
@@ -403,53 +374,36 @@ mod tests {
     fn corrupt_and_mismatched_files_are_reported_not_loaded() {
         let rom = temp_rom("bad");
         std::fs::write(slot_path(&rom, 1), b"nonsense").unwrap();
-        assert!(matches!(read_meta(&rom, 1), Err(SlotError::Corrupt(_))));
-        let set = SlotSet::scan(&rom, None);
+        assert!(matches!(FMT.read_meta(&rom, 1), Err(SlotError::Corrupt(_))));
+        let set = FMT.scan(&rom);
         let m = set.get(1).unwrap();
         assert!(m.broken.is_some());
+        assert_eq!(m.frame_full.len(), 8);
         assert!(set.latest().is_none());
-        let infos = set.infos();
-        assert!(infos[0].as_ref().unwrap().broken.is_some());
         // a future core version
-        let fb = vec![0u16; FRAME_LEN];
-        let mut bytes = encode(10, 0, 1, &fb, b"body");
-        bytes[32..36].copy_from_slice(&(gba_core::state::STATE_VERSION + 1).to_le_bytes());
+        let mut bytes = FMT.encode(10, 0, 1, &[0; 8], &[0; 8]);
+        bytes[32..36].copy_from_slice(&8u32.to_le_bytes());
         std::fs::write(slot_path(&rom, 3), &bytes).unwrap();
-        let m = read_meta(&rom, 3).unwrap();
-        assert!(m.broken.unwrap().contains("state format"));
-        let mut gba = Gba::new(test_rom(), Options::default()).unwrap();
-        assert!(matches!(load(&mut gba, &rom, 3), Err(SlotError::CantLoad(_))));
-    }
-
-    #[test]
-    fn legacy_state_is_imported_into_slot_one_once() {
-        let rom = temp_rom("legacy");
-        let bytes = test_rom();
-        let mut gba = Gba::new(bytes.clone(), Options::default()).unwrap();
-        for _ in 0..4 {
-            gba.run_frame();
-        }
-        let legacy = legacy_path(&rom);
-        std::fs::write(&legacy, gba.save_state()).unwrap();
-        let set = SlotSet::scan(&rom, Some(&bytes));
-        let m = set.get(1).expect("imported");
-        assert_eq!(m.frame, gba.bus.ppu.frame_count + 1, "one frame run for the thumbnail");
-        assert!(legacy.is_file(), "original untouched");
-        // second scan does not overwrite slot 1
-        let before = std::fs::metadata(slot_path(&rom, 1)).unwrap().len();
-        save(&gba, &rom, 1, 7).unwrap();
-        let set2 = SlotSet::scan(&rom, Some(&bytes));
-        assert_eq!(set2.get(1).unwrap().play_secs, 7);
-        assert_ne!(std::fs::metadata(slot_path(&rom, 1)).unwrap().len(), before + 1);
+        assert!(FMT.read_meta(&rom, 3).unwrap().broken.unwrap().contains("state format 8, this build reads 7"));
+        // another app's file, and a body the machine rejects
+        let other = SlotFormat { magic: *b"XXSL", ..FMT };
+        std::fs::write(slot_path(&rom, 4), other.encode(1, 0, 1, &[0; 8], &[0; 8])).unwrap();
+        assert!(matches!(FMT.read_meta(&rom, 4), Err(SlotError::Corrupt(_))));
+        std::fs::write(slot_path(&rom, 5), FMT.encode(1, 0, 1, &[0; 8], b"short")).unwrap();
+        let mut m = Counter { n: 0, pic: vec![0; 8] };
+        assert!(matches!(FMT.load(&mut m, &rom, 5), Err(SlotError::CantLoad(_))));
+        // a different picture size is a different format
+        let big = SlotFormat { frame_w: 8, ..FMT };
+        std::fs::write(slot_path(&rom, 6), big.encode(1, 0, 1, &[0; 16], &[0; 8])).unwrap();
+        assert!(matches!(FMT.read_meta(&rom, 6), Err(SlotError::Corrupt(_))));
     }
 
     #[test]
     fn header_rejects_truncation() {
-        let fb = vec![0u16; FRAME_LEN];
-        let bytes = encode(1, 2, 3, &fb, b"xyz");
-        let p = parse_header(&bytes).unwrap();
+        let bytes = FMT.encode(1, 2, 3, &[0; 8], b"xyz");
+        let p = FMT.parse_header(&bytes).unwrap();
         assert_eq!((p.frame, p.saved_at, p.play_secs), (1, 2, 3));
         assert_eq!(&bytes[p.body_at..], b"xyz");
-        assert!(matches!(parse_header(&bytes[..100]), Err(SlotError::Corrupt(_))));
+        assert!(matches!(FMT.parse_header(&bytes[..40]), Err(SlotError::Corrupt(_))));
     }
 }

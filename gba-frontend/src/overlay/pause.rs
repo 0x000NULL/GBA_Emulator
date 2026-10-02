@@ -233,6 +233,20 @@ impl PauseMenu {
     }
 }
 
+/// The pause menu's view of a game's slots.
+pub fn slot_infos(set: &crate::slots::SlotSet) -> [Option<SlotInfo>; 8] {
+    let mut out: [Option<SlotInfo>; 8] = Default::default();
+    for (i, s) in set.slots.iter().enumerate().take(8) {
+        out[i] = s.as_ref().map(|m| SlotInfo {
+            thumb: Box::new(crate::overlay::thumb_from_frame(&m.frame_full[..])),
+            play_secs: m.play_secs,
+            frame: m.frame,
+            broken: m.broken.clone(),
+        });
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

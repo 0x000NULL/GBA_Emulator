@@ -660,7 +660,6 @@ fn draw_strip(cv: &mut Canvas, ctx: &StatesCtx, row: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::tokens::pixel::{THUMB_H, THUMB_W};
     use std::path::PathBuf;
     use std::time::{Duration, UNIX_EPOCH};
 
@@ -674,8 +673,7 @@ mod tests {
             core_ver: 1,
             emulator: "test".into(),
             size: 429 * 1024,
-            thumb: Box::new([0; THUMB_W * THUMB_H]),
-            frame_full: fb,
+            frame_full: fb.to_vec(),
             broken: broken.map(str::to_string),
         }
     }

@@ -159,7 +159,7 @@ fn pinned_window_blits() {
 #[test]
 fn pinned_slot_file() {
     let fb = test_frame(5);
-    let bytes = crate::slots::encode(27_400, 1_790_000_000, 458, &fb[..], b"core state body");
+    let bytes = crate::glue::GBA_SLOTS.encode(27_400, 1_790_000_000, 458, &fb[..], b"core state body");
     // The emulator version string sits at byte 38 and moves header_len (bytes 8..12) with its
     // length; both follow the release, so they are checked here and left out of the hash.
     let name = env!("CARGO_PKG_VERSION").as_bytes();
