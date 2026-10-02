@@ -17,6 +17,7 @@ pub const GBA_FPS: f64 = CPU_HZ / CYCLES_PER_FRAME;
 /// Screen dimensions.
 pub const SCREEN_W: usize = gba_core::SCREEN_W;
 pub const SCREEN_H: usize = gba_core::SCREEN_H;
+pub const SCREEN: crate::ui::Screen = crate::ui::Screen { w: SCREEN_W as u32, h: SCREEN_H as u32 };
 
 /// One emulated frame of wall time.
 pub fn frame_period() -> Duration {

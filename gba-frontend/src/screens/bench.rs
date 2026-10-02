@@ -5,7 +5,8 @@
 //! Data comes from `gba.bench()` (the core's capture, switched on only while this screen is
 //! open) plus the always-available registers, DISPCNT, VCOUNT and side-effect-free peeks.
 
-use crate::ui::fmt::{abbrev_save, fmt_frames};
+use crate::gba_copy::abbrev_save;
+use crate::ui::fmt::fmt_frames;
 use crate::ui::input::{Action, UiInput};
 use crate::ui::text::Style;
 use crate::ui::tokens::{font as f, layout as l, Palette, NIGHT};

@@ -16,6 +16,7 @@ mod app;
 mod audio;
 mod config;
 mod debug_ui;
+mod gba_copy;
 mod icon;
 mod input;
 mod library;

@@ -1,7 +1,6 @@
 //! Number, time and size formatting rules from `docs/gui/DESIGN.md` ("Copy").
 
 use chrono::{DateTime, Datelike, Local, TimeZone};
-use gba_core::SaveType;
 use std::time::SystemTime;
 
 /// Frame numbers are grouped in threes with a space and padded to six digits: `027 400`.
@@ -34,9 +33,9 @@ pub fn fmt_played(secs: u64) -> String {
     format!("{}:{:02}", secs / 3600, (secs / 60) % 60)
 }
 
-/// Frames to seconds of play at the GBA frame rate.
-pub fn frames_to_secs(frames: u64) -> u64 {
-    (frames as f64 / crate::config::GBA_FPS).round() as u64
+/// Frames to seconds of play at `fps` frames per second.
+pub fn frames_to_secs(frames: u64, fps: f64) -> u64 {
+    (frames as f64 / fps).round() as u64
 }
 
 /// Dates: `today 14:22`, `yesterday 21:40`, else `Sep 28 21:04`.
@@ -76,28 +75,6 @@ pub fn fmt_size(bytes: u64) -> String {
         format!("{} MB", bytes / MB)
     } else {
         format!("{:.1} MB", bytes as f64 / MB as f64)
-    }
-}
-
-/// Save type abbreviations for the cartridge label and the Bench head.
-pub fn abbrev_save(t: SaveType) -> &'static str {
-    match t {
-        SaveType::None => "NONE",
-        SaveType::Sram32K => "SRAM 32K",
-        SaveType::Flash64K => "FL 64K",
-        SaveType::Flash128K => "FL 128K",
-        SaveType::Eeprom => "EEPROM",
-    }
-}
-
-/// Longer save type names for the library details row.
-pub fn save_name(t: SaveType) -> &'static str {
-    match t {
-        SaveType::None => "no save",
-        SaveType::Sram32K => "SRAM 32K",
-        SaveType::Flash64K => "FLASH 64K",
-        SaveType::Flash128K => "FLASH 128K",
-        SaveType::Eeprom => "EEPROM",
     }
 }
 
@@ -142,7 +119,8 @@ mod tests {
         assert_eq!(fmt_play(3600), "1:00:00");
         assert_eq!(fmt_play(3661), "1:01:01");
         assert_eq!(fmt_played(5400), "1:30");
-        assert_eq!(frames_to_secs(27_400), 459);
+        assert_eq!(frames_to_secs(27_400, 16_777_216.0 / 280_896.0), 459);
+        assert_eq!(frames_to_secs(27_400, 50.0), 548);
     }
 
     #[test]
@@ -165,12 +143,5 @@ mod tests {
         assert_eq!(fmt_size(2_202_009), "2.1 MB");
         assert_eq!(fmt_size(32 * 1024 * 1024), "32 MB");
         assert_eq!(fmt_size(8 * 1024 * 1024), "8 MB");
-    }
-
-    #[test]
-    fn save_abbreviations() {
-        assert_eq!(abbrev_save(SaveType::Flash128K), "FL 128K");
-        assert_eq!(abbrev_save(SaveType::Eeprom), "EEPROM");
-        assert_eq!(abbrev_save(SaveType::None), "NONE");
     }
 }

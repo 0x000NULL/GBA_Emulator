@@ -204,7 +204,7 @@ impl Session {
 
     /// Play time as the design counts it: frames rendered by the machine.
     pub fn play_secs(&self) -> u64 {
-        frames_to_secs(self.gba.bus.ppu.frame_count)
+        frames_to_secs(self.gba.bus.ppu.frame_count, config::GBA_FPS)
     }
 
     pub fn show_toast(&mut self, text: impl Into<String>) {
@@ -490,7 +490,7 @@ impl App {
     pub fn end_game(&mut self) {
         if let Some(mut s) = self.session.take() {
             s.flush_save();
-            let played = frames_to_secs(s.frames);
+            let played = frames_to_secs(s.frames, config::GBA_FPS);
             self.library.record_played(&s.rom, played);
             self.library_screen.select(&s.rom);
             self.library_screen.refresh_slots();
@@ -608,8 +608,8 @@ impl App {
     /// Picture scale for the game on a `w` x `h` window.
     pub fn picture_scale(&self, w: u32, h: u32) -> u32 {
         match self.opts.scale {
-            Some(s) => s.min(ui::fit_scale(w, h)).max(1),
-            None => ui::fit_scale(w, h),
+            Some(s) => s.min(config::SCREEN.fit_scale(w, h)).max(1),
+            None => config::SCREEN.fit_scale(w, h),
         }
     }
 

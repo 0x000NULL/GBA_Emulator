@@ -181,7 +181,7 @@ impl Video {
     pub fn present_game(&mut self, fb: &[u16], scale: u32, bg: Rgb) -> Result<()> {
         let (w, h) = self.ensure_buf();
         let scale = scale.max(1) as usize;
-        let (x, y) = crate::ui::centred_frame(w as u32, h as u32, scale as u32);
+        let (x, y) = crate::config::SCREEN.centred(w as u32, h as u32, scale as u32);
         self.buf.fill(pack(bg));
         scale_into_at(fb, self.lut, scale, &mut self.buf, w, x, y);
         match self.filter {

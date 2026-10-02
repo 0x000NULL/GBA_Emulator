@@ -821,7 +821,7 @@ impl LibraryScreen {
             }
             return;
         }
-        let cart = format!("{} · {} · {}", e.code, fmt::fmt_size(e.rom_len), fmt::save_name(e.save));
+        let cart = format!("{} · {} · {}", e.code, fmt::fmt_size(e.rom_len), crate::gba_copy::save_name(e.save));
         widgets::detail_row(cv, sx, y, col, "CARTRIDGE", &cart, true, pal);
         y += pitch;
         let last = match (&self.slot_info, self.latest_for_selected()) {
@@ -1081,7 +1081,7 @@ fn draw_cart(cv: &mut Canvas, r: Rect, e: &LibraryEntry, strip: Option<&[u8]>, s
         cv.text(tx, y, &sub, &st);
     }
     let code = Style::data(8.4).color(ink);
-    let line = cv.fonts.ellipsize(&code, &format!("{} · {}", e.code, fmt::abbrev_save(e.save)), tw);
+    let line = cv.fonts.ellipsize(&code, &format!("{} · {}", e.code, crate::gba_copy::abbrev_save(e.save)), tw);
     cv.text(tx, lab.y + lab.h - 14.0, &line, &code);
 }
 

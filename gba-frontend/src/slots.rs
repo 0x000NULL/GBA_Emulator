@@ -329,7 +329,7 @@ pub fn import_legacy(rom: &Path, rom_bytes: &[u8]) -> Result<bool> {
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
         .map(|d| d.as_secs() as i64)
         .unwrap_or_else(now_secs);
-    let play = crate::ui::fmt::frames_to_secs(scratch.bus.ppu.frame_count);
+    let play = crate::ui::fmt::frames_to_secs(scratch.bus.ppu.frame_count, crate::config::GBA_FPS);
     let bytes = encode(scratch.bus.ppu.frame_count, saved_at, play as u32, &scratch.framebuffer()[..], &body);
     write_atomic(&slot_path(rom, 1), &bytes)?;
     println!("imported {} into slot 1", legacy.display());
