@@ -54,6 +54,6 @@ Menus use the same bindings: A confirms, B goes back, L/R turn pages.
 ## A real BIOS
 
 Not required. If you own a dump, point `GBA_BIOS` at it or choose *From file…* under
-*Settings › System program (BIOS)*. Six known titles play without music under the built-in
-system functions because their sound driver lives in the BIOS (see `docs/library-compat.md`
+*Settings › System program (BIOS)*. The built-in system functions include the BIOS sound
+driver, so titles whose music goes through it play without a dump (see `docs/library-compat.md`
 in the source repository).

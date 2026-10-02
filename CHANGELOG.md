@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.1.0 — 2026-10-01
 
 **Accuracy**
 - The BIOS sound driver is emulated (SWI 1A-1E, 28, 29, 2A and the 36 SoundGetJumpList
@@ -8,6 +8,10 @@
   Advance, Lizzie McGuire: On the Go!, Pocket Professor: Kwik Notes, Rampage: Puzzle Attack,
   X-Men: Reign of Apocalypse, Saibara Rieko no Dendou Mahjong) now play music; 1,528 of 1,543
   library titles boot with sound. Save states made by 1.0.0 are not loadable (format 4).
+
+**Player**
+- Save-state slots written by an older format are shown as `CAN'T LOAD` and can be deleted;
+  the library, settings and `.sav` files are unaffected.
 
 ## v1.0.0 — 2026-10-01
 
