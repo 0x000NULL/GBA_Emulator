@@ -5,7 +5,6 @@
 //! silence and counts an underrun (once per callback), except before the buffer has been primed
 //! for the first time.
 
-use crate::config::{AUDIO_RING_SECS, AUDIO_TARGET_SECS};
 use anyhow::{anyhow, Context, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, SampleFormat, SizedSample, StreamConfig};
@@ -15,6 +14,15 @@ use std::sync::Arc;
 // ---------------------------------------------------------------------------------------------
 // Ring buffer
 // ---------------------------------------------------------------------------------------------
+
+/// Output buffering, in seconds of device-rate output.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Buffering {
+    /// Ring buffer capacity.
+    pub ring_secs: f64,
+    /// The fill level audio-clocked pacing steers towards.
+    pub target_secs: f64,
+}
 
 /// Single-producer single-consumer ring of stereo i16 frames, packed into `AtomicU32` slots so no
 /// `unsafe` is needed. `head`/`tail` are free-running counters; the slot index is `pos % cap`.
@@ -196,8 +204,9 @@ impl AudioOut {
         }
     }
 
-    /// Open the named output device (`None` or an unknown name = the default device).
-    pub fn open_on(src_rate: f64, muted: bool, name: Option<&str>) -> Result<AudioOut> {
+    /// Open the named output device (`None` or an unknown name = the default device), with a ring
+    /// of `buffering.ring_secs` that audio-clocked pacing keeps near `buffering.target_secs`.
+    pub fn open_on(src_rate: f64, muted: bool, name: Option<&str>, buffering: Buffering) -> Result<AudioOut> {
         let host = cpal::default_host();
         let named = name.and_then(|n| host.output_devices().ok()?.find(|d| d.name().map(|dn| dn == n).unwrap_or(false)));
         if name.is_some() && named.is_none() {
@@ -216,8 +225,8 @@ impl AudioOut {
             return Err(anyhow!("output device reports zero channels"));
         }
 
-        let cap = (device_rate as f64 * AUDIO_RING_SECS) as usize;
-        let target_fill = (device_rate as f64 * AUDIO_TARGET_SECS) as usize;
+        let cap = (device_rate as f64 * buffering.ring_secs) as usize;
+        let target_fill = (device_rate as f64 * buffering.target_secs) as usize;
         let shared = Arc::new(Shared {
             ring: RingBuffer::new(cap),
             underruns: AtomicU64::new(0),

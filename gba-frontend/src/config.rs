@@ -24,10 +24,8 @@ pub fn frame_period() -> Duration {
     Duration::from_secs_f64(1.0 / GBA_FPS)
 }
 
-/// Audio ring buffer capacity, in seconds of device-rate output.
-pub const AUDIO_RING_SECS: f64 = 0.25;
-/// Audio-clocked pacing keeps the ring near this fill level (seconds of device-rate output).
-pub const AUDIO_TARGET_SECS: f64 = 0.05;
+/// Audio ring buffer capacity (0.25 s); audio-clocked pacing keeps it near 0.05 s.
+pub const AUDIO_BUFFERING: crate::audio::Buffering = crate::audio::Buffering { ring_secs: 0.25, target_secs: 0.05 };
 /// Maximum relative speed adjustment applied by audio-clocked pacing (+-2%).
 pub const AUDIO_PACE_MAX_ADJUST: f64 = 0.02;
 
@@ -70,4 +68,16 @@ pub struct Cli {
     /// Quit after N emulated frames (automated smoke tests).
     #[arg(long, hide = true, value_name = "N")]
     pub exit_after: Option<u64>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn frame_period_matches_gba_rate() {
+        assert!((GBA_FPS - 59.7275).abs() < 1e-3);
+        let p = frame_period();
+        assert!((p.as_secs_f64() - 1.0 / 59.7275).abs() < 1e-7);
+    }
 }

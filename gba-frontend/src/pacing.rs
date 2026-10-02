@@ -120,14 +120,6 @@ impl FpsCounter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{frame_period, GBA_FPS};
-
-    #[test]
-    fn frame_period_matches_gba_rate() {
-        assert!((GBA_FPS - 59.7275).abs() < 1e-3);
-        let p = frame_period();
-        assert!((p.as_secs_f64() - 1.0 / 59.7275).abs() < 1e-7);
-    }
 
     #[test]
     fn paced_period_direction_and_clamp() {

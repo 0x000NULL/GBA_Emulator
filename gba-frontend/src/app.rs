@@ -101,7 +101,7 @@ impl Session {
         let audio = if audio_mode == AudioMode::Off {
             None
         } else {
-            match AudioOut::open_on(src_rate(&gba), audio_mode == AudioMode::Muted, device) {
+            match AudioOut::open_on(src_rate(&gba), audio_mode == AudioMode::Muted, device, config::AUDIO_BUFFERING) {
                 Ok(a) => {
                     a.set_gain(crate::audio::volume_gain(volume));
                     Some(a)
@@ -532,7 +532,7 @@ impl App {
                     let want_device = self.settings.audio_device.clone();
                     let reopen = s.audio.is_none() || s.audio.as_ref().map(|a| a.device_name() != want_device.as_deref().unwrap_or("")).unwrap_or(false) && want_device.is_some();
                     if reopen {
-                        match AudioOut::open_on(src_rate(&s.gba), mode == AudioMode::Muted, want_device.as_deref()) {
+                        match AudioOut::open_on(src_rate(&s.gba), mode == AudioMode::Muted, want_device.as_deref(), config::AUDIO_BUFFERING) {
                             Ok(a) => s.audio = Some(a),
                             Err(e) => eprintln!("warning: audio unavailable ({e:#})"),
                         }
