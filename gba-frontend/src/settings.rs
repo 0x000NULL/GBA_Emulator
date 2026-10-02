@@ -16,10 +16,11 @@
 use crate::config::Cli;
 use crate::debug_ui::{Hotkey, HotkeyMap, HOTKEYS};
 use crate::input::{default_keymap, default_padmap};
-use crate::ui::input::{bindable, key_name, pad_button_from_name, pad_button_name, KeyMap, PadMap};
-use anyhow::{Context, Result};
+pub use crate::prefs::{Hidden, KeyBindings, PadBindings};
+use crate::prefs::take;
+use crate::ui::input::{bindable, key_from_name, key_name, KeyMap, PadMap};
+use anyhow::Result;
 use minifb::Key;
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -117,65 +118,6 @@ pub enum Pacing {
     WallClock,
 }
 
-/// GBA button name (`A`, `B`, `SELECT`, `START`, `RIGHT`, `LEFT`, `UP`, `DOWN`, `R`, `L`) -> key name.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct KeyBindings(pub BTreeMap<String, String>);
-
-impl Default for KeyBindings {
-    fn default() -> Self {
-        Self::from_keymap(&default_keymap())
-    }
-}
-
-impl KeyBindings {
-    pub fn from_keymap(km: &KeyMap) -> Self {
-        KeyBindings(km.set().names.iter().zip(&km.keys).map(|(n, k)| (n.to_string(), key_name(*k))).collect())
-    }
-
-    /// The live map; buttons missing from the file (or with a name that is not a key) keep their
-    /// default key.
-    pub fn to_keymap(&self) -> KeyMap {
-        let mut km = default_keymap();
-        let names = km.set().names;
-        for (i, name) in names.iter().enumerate() {
-            if let Some(k) = self.0.get(*name).and_then(|n| key_from_name(n)).filter(|k| bindable(*k)) {
-                km.keys[i] = k;
-            }
-        }
-        km
-    }
-}
-
-/// GBA button name -> gamepad button name (`ui::input::pad_button_name`), one map for every pad.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct PadBindings(pub BTreeMap<String, String>);
-
-impl Default for PadBindings {
-    fn default() -> Self {
-        Self::from_padmap(&default_padmap())
-    }
-}
-
-impl PadBindings {
-    pub fn from_padmap(pm: &PadMap) -> Self {
-        PadBindings(pm.set().names.iter().zip(&pm.buttons).map(|(n, b)| (n.to_string(), pad_button_name(*b).to_string())).collect())
-    }
-
-    /// The live map; buttons missing from the file (or naming no pad button) keep their default.
-    pub fn to_padmap(&self) -> PadMap {
-        let mut pm = default_padmap();
-        let names = pm.set().names;
-        for (i, name) in names.iter().enumerate() {
-            if let Some(b) = self.0.get(*name).and_then(|n| pad_button_from_name(n)) {
-                pm.buttons[i] = b;
-            }
-        }
-        pm
-    }
-}
-
 /// Every [`Hotkey`], in the order the settings file lists them.
 pub const ALL_HOTKEYS: [Hotkey; 9] = [
     Hotkey::Pause,
@@ -247,17 +189,6 @@ impl HotkeyBindings {
     }
 }
 
-/// Wrapper that is invisible to `PartialEq` (raw file contents and CLI bookkeeping are not
-/// "settings" when comparing two `Settings`).
-#[derive(Clone, Debug, Default)]
-pub struct Hidden<T>(pub T);
-
-impl<T> PartialEq for Hidden<T> {
-    fn eq(&self, _: &Self) -> bool {
-        true
-    }
-}
-
 /// What the file held before the command line was overlaid, and the state right after.
 #[derive(Clone, Debug)]
 pub struct CliOverlay {
@@ -310,9 +241,9 @@ impl Default for Settings {
             audio: AudioMode::On,
             pacing: Pacing::AudioClocked,
             autosave_frames: 60,
-            keymap: KeyBindings::default(),
+            keymap: KeyBindings::from_keymap(&default_keymap()),
             hotkeys: HotkeyBindings::default(),
-            gamepad: PadBindings::default(),
+            gamepad: PadBindings::from_padmap(&default_padmap()),
             window: None,
             extra: Hidden::default(),
             cli: Hidden::default(),
@@ -338,14 +269,10 @@ const KNOWN_KEYS: [&str; 14] = [
     "window",
 ];
 
-fn take<T: DeserializeOwned>(t: &toml::Table, key: &str) -> Option<T> {
-    t.get(key).cloned().and_then(|v| v.try_into().ok())
-}
-
 impl Settings {
     /// `<config dir>/strawberry/settings.toml`.
     pub fn default_path() -> Option<PathBuf> {
-        dirs::config_dir().map(|d| d.join("strawberry").join("settings.toml"))
+        crate::prefs::config_path(crate::app::APP_DIR)
     }
 
     /// Load the file. Never fails: a missing file gives the defaults, a missing or malformed key
@@ -353,16 +280,7 @@ impl Settings {
     /// TOML at all is copied to `<name>.bad` and the defaults are used.
     pub fn load(path: &Path) -> Settings {
         let mut s = Settings::default();
-        let Ok(text) = std::fs::read_to_string(path) else { return s };
-        let table = match text.parse::<toml::Table>() {
-            Ok(t) => t,
-            Err(_) => {
-                let mut bad = path.as_os_str().to_owned();
-                bad.push(".bad");
-                let _ = std::fs::copy(path, bad);
-                return s;
-            }
-        };
+        let Some(table) = crate::prefs::read(path) else { return s };
         macro_rules! field {
             ($f:ident) => {
                 if let Some(v) = take(&table, stringify!($f)) {
@@ -387,9 +305,9 @@ impl Settings {
         s.volume = s.volume.min(10);
         s.autosave_frames = s.autosave_frames.max(1);
         // fill gaps (a hand-written file may name only some buttons)
-        s.keymap = KeyBindings::from_keymap(&s.keymap.to_keymap());
+        s.keymap = KeyBindings::from_keymap(&s.to_keymap());
         s.hotkeys = HotkeyBindings::from_hotkeys(&s.hotkeys.to_hotkeys());
-        s.gamepad = PadBindings::from_padmap(&s.gamepad.to_padmap());
+        s.gamepad = PadBindings::from_padmap(&s.to_padmap());
         s.extra = Hidden(table);
         s
     }
@@ -411,17 +329,7 @@ impl Settings {
     /// Write the file atomically (creating its folder). Unknown keys from the loaded file are
     /// kept; comments in it are not.
     pub fn save(&self, path: &Path) -> Result<()> {
-        let mut table = self.extra.0.clone();
-        for k in KNOWN_KEYS {
-            table.remove(k);
-        }
-        let known = toml::Table::try_from(self.persistable()).context("encoding settings")?;
-        table.extend(known);
-        let text = format!("# {} settings. Edited by the Settings screen; unknown keys are kept.\n{}", crate::config::APP_NAME, toml::to_string_pretty(&table).context("encoding settings")?);
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
-        }
-        crate::saves::write_atomic(path, text.as_bytes())
+        crate::prefs::write(path, crate::config::APP_NAME, &self.extra.0, &KNOWN_KEYS, &self.persistable())
     }
 
     /// Overlay `--scale`, `--mute`, `--no-audio`, `--bios`/`--hle` and `--library` for this run
@@ -456,7 +364,7 @@ impl Settings {
     }
 
     pub fn to_keymap(&self) -> KeyMap {
-        self.keymap.to_keymap()
+        self.keymap.to_keymap(default_keymap())
     }
 
     #[allow(clippy::wrong_self_convention)]
@@ -474,129 +382,13 @@ impl Settings {
     }
 
     pub fn to_padmap(&self) -> PadMap {
-        self.gamepad.to_padmap()
+        self.gamepad.to_padmap(default_padmap())
     }
 
     #[allow(clippy::wrong_self_convention)]
     pub fn from_padmap(&mut self, pm: &PadMap) {
         self.gamepad = PadBindings::from_padmap(pm);
     }
-}
-
-/// Every `minifb::Key` variant except `Count`.
-pub const ALL_KEYS: [Key; 107] = [
-    Key::Key0,
-    Key::Key1,
-    Key::Key2,
-    Key::Key3,
-    Key::Key4,
-    Key::Key5,
-    Key::Key6,
-    Key::Key7,
-    Key::Key8,
-    Key::Key9,
-    Key::A,
-    Key::B,
-    Key::C,
-    Key::D,
-    Key::E,
-    Key::F,
-    Key::G,
-    Key::H,
-    Key::I,
-    Key::J,
-    Key::K,
-    Key::L,
-    Key::M,
-    Key::N,
-    Key::O,
-    Key::P,
-    Key::Q,
-    Key::R,
-    Key::S,
-    Key::T,
-    Key::U,
-    Key::V,
-    Key::W,
-    Key::X,
-    Key::Y,
-    Key::Z,
-    Key::F1,
-    Key::F2,
-    Key::F3,
-    Key::F4,
-    Key::F5,
-    Key::F6,
-    Key::F7,
-    Key::F8,
-    Key::F9,
-    Key::F10,
-    Key::F11,
-    Key::F12,
-    Key::F13,
-    Key::F14,
-    Key::F15,
-    Key::Down,
-    Key::Left,
-    Key::Right,
-    Key::Up,
-    Key::Apostrophe,
-    Key::Backquote,
-    Key::Backslash,
-    Key::Comma,
-    Key::Equal,
-    Key::LeftBracket,
-    Key::Minus,
-    Key::Period,
-    Key::RightBracket,
-    Key::Semicolon,
-    Key::Slash,
-    Key::Backspace,
-    Key::Delete,
-    Key::End,
-    Key::Enter,
-    Key::Escape,
-    Key::Home,
-    Key::Insert,
-    Key::Menu,
-    Key::PageDown,
-    Key::PageUp,
-    Key::Pause,
-    Key::Space,
-    Key::Tab,
-    Key::NumLock,
-    Key::CapsLock,
-    Key::ScrollLock,
-    Key::LeftShift,
-    Key::RightShift,
-    Key::LeftCtrl,
-    Key::RightCtrl,
-    Key::NumPad0,
-    Key::NumPad1,
-    Key::NumPad2,
-    Key::NumPad3,
-    Key::NumPad4,
-    Key::NumPad5,
-    Key::NumPad6,
-    Key::NumPad7,
-    Key::NumPad8,
-    Key::NumPad9,
-    Key::NumPadDot,
-    Key::NumPadSlash,
-    Key::NumPadAsterisk,
-    Key::NumPadMinus,
-    Key::NumPadPlus,
-    Key::NumPadEnter,
-    Key::LeftAlt,
-    Key::RightAlt,
-    Key::LeftSuper,
-    Key::RightSuper,
-    Key::Unknown,
-];
-
-/// The key whose [`key_name`] is `name` (the inverse of `key_name`).
-pub fn key_from_name(name: &str) -> Option<Key> {
-    ALL_KEYS.iter().copied().find(|k| key_name(*k) == name)
 }
 
 #[cfg(test)]
@@ -731,19 +523,6 @@ mod tests {
         assert_eq!(Settings::load(&p), Settings::default());
         assert!(d.join("settings.toml.bad").exists(), "unreadable file is kept");
         let _ = std::fs::remove_dir_all(&d);
-    }
-
-    #[test]
-    fn every_key_name_inverts() {
-        assert_eq!(ALL_KEYS.len(), Key::Count as usize, "ALL_KEYS lists every variant");
-        for k in ALL_KEYS {
-            assert_eq!(key_from_name(&key_name(k)), Some(k), "{k:?}");
-        }
-        let mut names: Vec<String> = ALL_KEYS.iter().map(|k| key_name(*k)).collect();
-        names.sort();
-        names.dedup();
-        assert_eq!(names.len(), ALL_KEYS.len(), "names are unique");
-        assert_eq!(key_from_name("Nonsense"), None);
     }
 
     #[test]
