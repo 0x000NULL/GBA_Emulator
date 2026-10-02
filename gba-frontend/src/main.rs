@@ -16,6 +16,7 @@ mod app;
 mod audio;
 mod config;
 mod debug_ui;
+mod icon;
 mod input;
 mod library;
 mod overlay;
@@ -72,6 +73,7 @@ fn run(cli: &Cli) -> Result<()> {
         println!("library: {} folder(s)", app.library.folders().len());
     }
     let mut video = window::Video::new(&title, w, h)?;
+    video.set_brand_icon(app::App::cache_dir().as_deref());
     println!("window: {w}x{h}");
     let mut pads = input::Gamepads::new();
 

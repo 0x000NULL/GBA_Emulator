@@ -167,6 +167,12 @@ impl Video {
         Ok(Video { window, buf: vec![0; w * h], lut: build_lut(), chars, pad_repeat: PadRepeat::new(), mouse_was_down: false, filter: Filter::None, prev: Vec::new() })
     }
 
+    /// The Strawberry icon where the platform allows it (`icon.rs`); `cache_dir` holds the
+    /// `.ico` Windows loads from disk.
+    pub fn set_brand_icon(&mut self, cache_dir: Option<&std::path::Path>) {
+        crate::icon::install(&mut self.window, cache_dir);
+    }
+
     /// Current client size.
     pub fn size(&self) -> (usize, usize) {
         let (w, h) = self.window.get_size();
