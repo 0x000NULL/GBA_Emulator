@@ -1544,6 +1544,65 @@ mod tests {
         }
     }
 
+    #[test]
+    fn pinned_library_renders() {
+        let dir = PathBuf::from("Games");
+        let list = [
+            ("Kingdom Hearts", "Chain of Memories · USA", "B8CE"),
+            ("The Legend of Zelda", "The Minish Cap · USA", "BZME"),
+            ("The Legend of Zelda", "A Link to the Past & Four Swords · USA", "AZLE"),
+            ("Initial D", "Another Stage · Japan", "AINJ"),
+            ("Mario Kart", "Super Circuit · USA", "AMKE"),
+            ("Final Fantasy VI Advance", "USA", "BZ6E"),
+            ("Crash Bandicoot", "The Huge Adventure · USA", "ACQE"),
+            ("Need for Speed Underground 2 Special Collectors Edition", "A very long subtitle that cannot possibly fit · USA, Europe", "BNFE"),
+        ];
+        let mut entries: Vec<LibraryEntry> = list
+            .iter()
+            .map(|(t, s, c)| {
+                let mut e = entry(&dir, t, c);
+                e.subtitle = s.to_string();
+                e.path = dir.join(format!("{t} {c}.zip"));
+                e
+            })
+            .collect();
+        entries[7].save = SaveType::Flash128K;
+        let mut bad = entry(&dir, "Broken Download (USA)", "");
+        bad.unreadable = Some("no .gba entry in Broken Download (USA).zip".into());
+        entries.push(bad);
+        let mut lib = Library::from_entries(vec![dir.clone()], entries);
+        let mut rgb = Vec::new();
+        for y in 0..160usize {
+            for x in 0..240usize {
+                rgb.extend_from_slice(&[x as u8, y as u8, 128]);
+            }
+        }
+        lib.set_art(&dir.join("Mario Kart AMKE.zip"), Art::new(240, 160, rgb.clone()));
+        lib.set_art(&dir.join("Initial D AINJ.zip"), Art::new(240, 160, rgb));
+        lib.mark_played_at(&dir.join("Kingdom Hearts B8CE.zip"), 1_790_000_000);
+        let mut s = screen();
+        for (name, w, h) in [("library", 1280, 800), ("library-960", 960, 640)] {
+            let mut cv = Canvas::new(w, h, Fonts::new());
+            s.update(&UiInput::default(), &lib);
+            s.render(&mut cv, &lib);
+            crate::pinned::check_canvas(name, &cv);
+        }
+        let mut cv = Canvas::new(1280, 800, Fonts::new());
+        s.select(&dir.join("Broken Download (USA).gba"));
+        s.update(&UiInput::default(), &lib);
+        s.render(&mut cv, &lib);
+        crate::pinned::check_canvas("library-unreadable", &cv);
+        let empty = Library::from_entries(vec![PathBuf::from("Games")], Vec::new());
+        let mut s2 = screen();
+        s2.update(&UiInput::default(), &empty);
+        s2.render(&mut cv, &empty);
+        crate::pinned::check_canvas("library-empty", &cv);
+        let no_folder = Library::from_entries(Vec::new(), Vec::new());
+        s2.update(&UiInput::default(), &no_folder);
+        s2.render(&mut cv, &no_folder);
+        crate::pinned::check_canvas("library-empty-nofolder", &cv);
+    }
+
     /// Review render of the unusual states: unreadable and art-less carts, long titles, a selected
     /// game with a save state, an empty library. Writes `01-library-states.png` / `-empty.png`.
     #[test]

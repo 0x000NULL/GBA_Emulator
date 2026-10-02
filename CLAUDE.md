@@ -79,6 +79,7 @@ cargo run --release -p gba-frontend -- <rom|zip>                      # play str
 cargo run --release -p gba-frontend -- <rom> --scale 3                # fixed 3x picture in a 720x480 window
 cargo run --release -p gba-frontend -- <rom> --bench 1200             # headless speed
 cargo test -p gba-frontend --release -- --ignored render_             # review renders of every screen -> target/ui-renders/*.png
+$env:STRAWBERRY_PIN_RECORD=1; cargo test -p gba-frontend pinned_ -- --nocapture   # print pinned hashes (src/pinned.rs) + target/ui-renders/pinned/*.png
 python scripts/triage.py Games --jobs 8                               # library sweep -> tools/triage/{triage.csv,triage.md,png/}
 python scripts/triage.py --report tools/triage/triage.csv --doc docs/library-compat.md --notes tools/triage/notes.csv
 ```

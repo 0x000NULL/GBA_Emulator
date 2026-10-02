@@ -482,6 +482,26 @@ mod tests {
     }
 
     #[test]
+    fn pinned_bench_renders() {
+        let mut gba = machine();
+        gba.run_frame();
+        let mut cv = Canvas::new(1280, 800, Fonts::new());
+        let mut b = BenchScreen::new();
+        let ctx = BenchCtx { gba: &gba, code: "TSTE", save: SaveType::None, hle: true, host_ms: 0.5, paced_ms: 16.7, audio_underruns: None, running: false };
+        b.render(&mut cv, &ctx);
+        crate::pinned::check_canvas("bench-idle", &cv);
+        drop(ctx);
+        gba.set_bench(true);
+        for _ in 0..3 {
+            gba.run_frame();
+        }
+        b.layer_mute = 0;
+        let ctx = BenchCtx { gba: &gba, code: "TSTE", save: SaveType::Sram32K, hle: true, host_ms: 0.53, paced_ms: 16.74, audio_underruns: Some(0), running: true };
+        b.render(&mut cv, &ctx);
+        crate::pinned::check_canvas("bench-running", &cv);
+    }
+
+    #[test]
     #[ignore]
     fn render_bench() {
         let rom = std::env::var("GBA_ROM").expect("set GBA_ROM");

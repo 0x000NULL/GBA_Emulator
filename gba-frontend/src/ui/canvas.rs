@@ -461,6 +461,12 @@ impl Canvas {
         [d[i], d[i + 1], d[i + 2]]
     }
 
+    /// The raw premultiplied RGBA bytes (pinned render hashes).
+    #[cfg(test)]
+    pub fn data(&self) -> &[u8] {
+        self.pix.data()
+    }
+
     /// Write the canvas as a PNG (render tests).
     pub fn save_png(&self, path: &std::path::Path) -> anyhow::Result<()> {
         self.pix.save_png(path).map_err(|e| anyhow::anyhow!("{e}"))

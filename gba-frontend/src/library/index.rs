@@ -213,6 +213,66 @@ mod tests {
     }
 
     #[test]
+    fn pinned_index_file() {
+        let dir = temp_dir("pin");
+        let mut idx = Index::default();
+        idx.upsert(&entry("Kingdom Hearts"));
+        let mut bad = entry("Broken");
+        bad.unreadable = Some("no .gba entry in Broken.zip".into());
+        bad.save = SaveType::None;
+        idx.upsert(&bad);
+        let mut e = entry("Minish Cap");
+        e.save = SaveType::Eeprom;
+        idx.upsert(&e);
+        idx.record_played(&entry("Kingdom Hearts").path, 458, 1_790_000_500);
+        idx.save(&dir).unwrap();
+        let text = std::fs::read_to_string(dir.join("index.toml")).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(text, INDEX_TOML, "index.toml changed:\n{text}");
+    }
+
+    const INDEX_TOML: &str = r#"[[entry]]
+path = "C:/Games/Kingdom Hearts.zip"
+size = 33554432
+mtime = 1790000000
+title = "Kingdom Hearts"
+subtitle = "Chain of Memories · USA"
+code = "B8CE"
+version = 1
+save = "sram32k"
+rom_len = 33554432
+played_secs = 458
+last_played = 1790000500
+
+[[entry]]
+path = "C:/Games/Broken.zip"
+size = 33554432
+mtime = 1790000000
+title = "Broken"
+subtitle = "Chain of Memories · USA"
+code = "B8CE"
+version = 1
+save = "none"
+rom_len = 33554432
+unreadable = "no .gba entry in Broken.zip"
+played_secs = 0
+last_played = 0
+
+[[entry]]
+path = "C:/Games/Minish Cap.zip"
+size = 33554432
+mtime = 1790000000
+title = "Minish Cap"
+subtitle = "Chain of Memories · USA"
+code = "B8CE"
+version = 1
+save = "eeprom"
+rom_len = 33554432
+played_secs = 0
+last_played = 0
+"#;
+
+    #[test]
     fn round_trip_through_toml() {
         let dir = temp_dir("rt");
         let mut idx = Index::default();

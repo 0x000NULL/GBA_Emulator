@@ -1,6 +1,6 @@
 //! Number, time and size formatting rules from `docs/gui/DESIGN.md` ("Copy").
 
-use chrono::{DateTime, Datelike, Local};
+use chrono::{DateTime, Datelike, Local, TimeZone};
 use gba_core::SaveType;
 use std::time::SystemTime;
 
@@ -41,10 +41,17 @@ pub fn frames_to_secs(frames: u64) -> u64 {
 
 /// Dates: `today 14:22`, `yesterday 21:40`, else `Sep 28 21:04`.
 pub fn fmt_when(t: SystemTime) -> String {
+    #[cfg(test)]
+    if let Some(s) = test_clock::fmt_when(t) {
+        return s;
+    }
     fmt_when_at(DateTime::<Local>::from(t), Local::now())
 }
 
-pub fn fmt_when_at(t: DateTime<Local>, now: DateTime<Local>) -> String {
+pub fn fmt_when_at<Tz: TimeZone>(t: DateTime<Tz>, now: DateTime<Tz>) -> String
+where
+    Tz::Offset: std::fmt::Display,
+{
     let day = t.date_naive();
     let today = now.date_naive();
     let time = t.format("%H:%M");
@@ -91,6 +98,27 @@ pub fn save_name(t: SaveType) -> &'static str {
         SaveType::Flash64K => "FLASH 64K",
         SaveType::Flash128K => "FLASH 128K",
         SaveType::Eeprom => "EEPROM",
+    }
+}
+
+/// A frozen clock for pinned renders: [`fmt_when`] on this thread formats in UTC against a
+/// fixed "now", so the text does not depend on the date or the host's time zone.
+#[cfg(test)]
+pub mod test_clock {
+    use chrono::{DateTime, Utc};
+    use std::cell::Cell;
+    use std::time::SystemTime;
+
+    thread_local!(static NOW: Cell<Option<i64>> = const { Cell::new(None) });
+
+    /// Freeze "now" at `unix_secs` (UTC) for the calling thread.
+    pub fn freeze(unix_secs: i64) {
+        NOW.with(|n| n.set(Some(unix_secs)));
+    }
+
+    pub(super) fn fmt_when(t: SystemTime) -> Option<String> {
+        let now = NOW.with(|n| n.get())?;
+        Some(super::fmt_when_at(DateTime::<Utc>::from(t), DateTime::from_timestamp(now, 0)?))
     }
 }
 

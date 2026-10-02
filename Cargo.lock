@@ -653,6 +653,7 @@ dependencies = [
  "tiny-skia",
  "toml 0.8.23",
  "winresource",
+ "xxhash-rust",
 ]
 
 [[package]]

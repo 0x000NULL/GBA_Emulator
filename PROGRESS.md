@@ -11,7 +11,7 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   plus the two KH goldens in `tests/compat.toml` (title at frame 1800, gameplay at frame 27400).
 - **All jsmolka ROMs pass** (arm, thumb, memory, bios, nes, save/none, sram, flash64, flash128;
   ppu hello/shades/stripes by golden hash). `cargo test --workspace` is green: 382 core unit
-  tests, 161 frontend tests, 2 ROM-driver tests (~11 min with all 66 commercial goldens present).
+  tests, 170 frontend tests, 2 ROM-driver tests (~11 min with all 66 commercial goldens present).
 - **v1.0.0 released (2026-10-01)**: tag `v1.0.0`; `.github/workflows/release.yml` builds the
   player for Windows x64, Linux x64, macOS x64/arm64 with `--profile dist` and attaches the
   archives to the GitHub release (`CHANGELOG.md` is the release body). Procedure in CLAUDE.md.
@@ -479,6 +479,24 @@ IRQ phase).
    (see "Reference audio comparison"). A trace of the first frames would show which BIOS routine
    or reset state differs. The BIOS sound driver's own scaling has no reference (mGBA's HLE BIOS
    stubs it).
+
+## Pinned frontend output (2026-10-02)
+
+Step 0 of moving the generic frontend code into the shared `fruit-basket` crates (`basket-ui`,
+`basket-app`; public repo `0x000NULL/fruit-basket`, shared with the crabapple NES emulator). Before
+anything moves, `gba-frontend/src/pinned.rs` pins the frontend's output so the move can be proved
+byte-identical: xxh3-64 hashes of 17 screen renders (library x5, states x4, settings x6, bench x2,
+960x640 variants included), the pause overlay (main/save/load/page 2/message/toast and
+a thumbnail), the window's BGR555 LUT, x4 letterbox, LCD grid and frame blend, and a slot file
+with the version string cut out; plus the full text of `settings.toml` (with an unknown key and
+table kept and a bad value falling back) and `index.toml`. 29 hashes, two texts.
+Every input is synthetic (`pinned::test_frame`, fixed paths, no `GBA_ROM`/`Games/`), and
+`fmt_when` reads a per-thread frozen UTC clock in tests (`ui::fmt::test_clock`), so the pins hold
+on any host and time zone: identical across three debug runs, a release run, and a Linux
+container (`rust:1`, TZ=America/New_York) like the CI test job. A failing pin prints the new hash;
+`STRAWBERRY_PIN_RECORD=1 cargo test -p gba-frontend pinned_ -- --nocapture` prints every row and
+writes the pinned canvases to `target/ui-renders/pinned/*.png` for review. Re-pin only after
+looking at them.
 
 ## Gamepad rebinding (2026-10-02)
 

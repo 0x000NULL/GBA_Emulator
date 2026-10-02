@@ -1758,6 +1758,37 @@ mod tests {
     }
 
     #[test]
+    fn pinned_settings_renders() {
+        let mut fx = Fix::new();
+        sample(&mut fx);
+        for (name, w, h, spread, rebinding) in [
+            ("settings-controls", 1280, 800, 0, false),
+            ("settings-system", 1280, 800, 1, false),
+            ("settings-saves", 1280, 800, 2, false),
+            ("settings-960-controls", 960, 640, 0, false),
+            ("settings-960-system", 960, 640, 1, false),
+            ("settings-rebind", 1280, 800, 0, true),
+        ] {
+            let mut scr = SettingsScreen::new();
+            let mut cv = Canvas::new(w, h, Fonts::new());
+            scr.set_spread(spread);
+            let items = scr.items(&fx.ctx());
+            if rebinding {
+                scr.focus[0] = items.iter().position(|i| *i == Item::Key(Target::Pad(Keys::A))).unwrap();
+                scr.waiting = Some(Target::Pad(Keys::A));
+            } else if spread == 0 {
+                scr.focus[0] = items.iter().position(|i| *i == Item::Picture).unwrap();
+            } else if spread == 1 {
+                scr.focus[1] = 1;
+            }
+            scr.set_game_dir(Some(PathBuf::from("D:\\Emulation\\GBA\\Kingdom Hearts")));
+            scr.render(&mut cv, &fx.ctx());
+            scr.render(&mut cv, &fx.ctx());
+            crate::pinned::check_canvas(name, &cv);
+        }
+    }
+
+    #[test]
     #[ignore]
     fn render_settings() {
         let out = crate::render_tests::out_dir();

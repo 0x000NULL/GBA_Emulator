@@ -896,6 +896,43 @@ mod tests {
         assert_eq!(g[2], 0);
     }
 
+    #[test]
+    fn pinned_states_renders() {
+        crate::ui::fmt::test_clock::freeze(crate::pinned::NOW);
+        let mut slots: Vec<Option<SlotMeta>> = (0..SLOTS).map(|_| None).collect();
+        for (i, frames) in [(0usize, 300u32), (1, 900), (2, 1500), (3, 2400), (4, 3300)] {
+            let broken = if i == 2 { Some("saved with state format 1, this build reads 2") } else { None };
+            let mut m = meta(i as u8 + 1, crate::pinned::test_frame(frames), broken);
+            m.frame = [1800, 12_000, 18_000, 27_400, 34_850][i];
+            m.play_secs = [30, 200, 301, 458, 583][i];
+            // today, yesterday, this year, last year, today
+            let ago = [3600u64, 86_400 + 3600, 86_400 * 30, 86_400 * 400, 7200][i];
+            m.saved_at = UNIX_EPOCH + Duration::from_secs(crate::pinned::NOW as u64 - ago);
+            slots[i] = Some(m);
+        }
+        let set = SlotSet { slots };
+        let cx = StatesCtx { slots: &set, game: "Kingdom Hearts: Chain of Memories", running: true };
+        let mut canvas = Canvas::new(1280, 800, Fonts::new());
+        let mut s = StatesScreen::new(4);
+        s.render(&mut canvas, &cx);
+        crate::pinned::check_canvas("states", &canvas);
+        s.update(&key(Key::Delete), &cx);
+        s.render(&mut canvas, &cx);
+        crate::pinned::check_canvas("states-dialog", &canvas);
+        let mut s = StatesScreen::new(8);
+        let mut hover = UiInput::default();
+        s.render(&mut canvas, &cx);
+        let c = s.layout.frames[7].centre();
+        hover.mouse = (c.0 - 40.0, c.1 + 10.0);
+        s.update(&hover, &cx);
+        s.render(&mut canvas, &cx);
+        crate::pinned::check_canvas("states-scrolled", &canvas);
+        let mut canvas = Canvas::new(960, 640, Fonts::new());
+        let mut s = StatesScreen::new(1);
+        s.render(&mut canvas, &cx);
+        crate::pinned::check_canvas("states-960", &canvas);
+    }
+
     /// Visual review: `GBA_ROM=<rom> cargo test -p gba-frontend --release -- --ignored render_states`.
     #[test]
     #[ignore]
