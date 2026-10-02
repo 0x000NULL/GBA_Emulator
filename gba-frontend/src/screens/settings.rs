@@ -338,6 +338,11 @@ impl SettingsScreen {
         }
     }
 
+    /// Open on spread `n` (0 Controls, 1 System, 2 Saves).
+    pub fn show_spread(&mut self, n: usize) {
+        self.set_spread(n);
+    }
+
     fn set_spread(&mut self, n: usize) {
         let n = n.min(SPREADS - 1);
         if n != self.spread {

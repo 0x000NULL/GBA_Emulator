@@ -74,19 +74,43 @@ impl<'a> Overlay<'a> {
 
     /// One line of 5x5 text; returns the width drawn.
     pub fn text(&mut self, x: i32, y: i32, text: &str, c: u16) -> i32 {
+        self.text_scaled(x, y, text, c, 1)
+    }
+
+    /// One line of 5x5 text with every glyph pixel a `scale` x `scale` block (whole numbers
+    /// only, so the text stays on the 8 px grid); returns the width drawn.
+    pub fn text_scaled(&mut self, x: i32, y: i32, text: &str, c: u16, scale: i32) -> i32 {
         let mut cx = x;
         for ch in text.chars() {
             let g = font5x5::glyph(ch);
             for (row, bits) in g.iter().enumerate() {
                 for col in 0..font5x5::GLYPH_W {
                     if bits & (0b10000 >> col) != 0 {
-                        self.px(cx + col as i32, y + row as i32, c);
+                        self.fill(cx + col as i32 * scale, y + row as i32 * scale, scale, scale, c);
                     }
                 }
             }
-            cx += font5x5::ADVANCE;
+            cx += font5x5::ADVANCE * scale;
         }
-        cx - x - if text.is_empty() { 0 } else { 1 }
+        cx - x - if text.is_empty() { 0 } else { scale }
+    }
+
+    pub fn text_center_scaled(&mut self, cx: i32, y: i32, text: &str, c: u16, scale: i32) {
+        let w = font5x5::width(text) * scale - (scale - 1);
+        self.text_scaled(cx - w / 2, y, text, c, scale);
+    }
+
+    /// Nearest-neighbour blit of a `w` x `h` BGR555 texture at an integer scale; bit 15 set =
+    /// transparent.
+    pub fn sprite(&mut self, x: i32, y: i32, tex: &[u16], w: usize, h: usize, scale: i32) {
+        for ty in 0..h {
+            for tx in 0..w {
+                let t = tex[ty * w + tx];
+                if t & 0x8000 == 0 {
+                    self.fill(x + tx as i32 * scale, y + ty as i32 * scale, scale, scale, t);
+                }
+            }
+        }
     }
 
     pub fn text_right(&mut self, x_right: i32, y: i32, text: &str, c: u16) {
@@ -181,6 +205,25 @@ mod tests {
         assert_eq!(at(8 + 83, 8 + 111), INK_555);
         assert_eq!(at(7, 7), 0x7FFF);
         assert_eq!(at(8 + 84, 8), 0x7FFF);
+    }
+
+    #[test]
+    fn scaled_text_and_sprite_blit() {
+        let mut fb = blank();
+        let mut o = Overlay::new(&mut fb);
+        let w = o.text_scaled(0, 0, "AB", RED_555, 2);
+        assert_eq!(w, 2 * font5x5::ADVANCE * 2 - 2);
+        let tex = crate::ui::brand::mark().night_555();
+        o.sprite(100, 100, &tex, 16, 16, 3);
+        let at = |x: usize, y: usize| fb[y * SCREEN_W + x];
+        // row 0 of 'A' is .###. so column 1 is lit, and at 2x it is a 2x2 block
+        assert_eq!(at(2, 0), RED_555);
+        assert_eq!(at(3, 1), RED_555);
+        assert_eq!(at(0, 0), 0);
+        assert_eq!(at(100 + 7 * 3, 100), CREAM_555, "stem at 3x");
+        assert_eq!(at(100 + 7 * 3 + 2, 100 + 2), CREAM_555);
+        assert_eq!(at(100, 100), 0, "transparent corner untouched");
+        assert_eq!(at(100 + 3 * 3, 100 + 7 * 3), RED_555, "first seed");
     }
 
     #[test]

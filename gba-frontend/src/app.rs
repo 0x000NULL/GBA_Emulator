@@ -447,8 +447,32 @@ impl App {
                 Err(e) => eprintln!("cannot start {}: {e:#}", p.display()),
             },
             LibraryOutcome::OpenStates(p) => self.open_states(Back::Library, Some(&p)),
+            LibraryOutcome::OpenFolder(p) => Self::open_folder(&p),
+            LibraryOutcome::OpenSettings => {
+                self.open_settings(Back::Library);
+                // folders are added on the System spread
+                self.settings_screen.show_spread(1);
+            }
         }
         Ok(())
+    }
+
+    /// Show a folder in the desktop's file manager (explorer / open / xdg-open).
+    fn open_folder(p: &Path) {
+        if !p.is_dir() {
+            eprintln!("open folder: {} does not exist", p.display());
+            return;
+        }
+        let program = if cfg!(windows) {
+            "explorer"
+        } else if cfg!(target_os = "macos") {
+            "open"
+        } else {
+            "xdg-open"
+        };
+        if let Err(e) = std::process::Command::new(program).arg(p).spawn() {
+            eprintln!("open folder: {e}");
+        }
     }
 
     /// Boot `rom` and switch to the Game screen.
@@ -577,16 +601,7 @@ impl App {
                 self.settings_screen.reset();
                 self.go_back(back);
             }
-            SettingsOutcome::OpenFolder(p) => {
-                #[cfg(windows)]
-                {
-                    if let Err(e) = std::process::Command::new("explorer").arg(&p).spawn() {
-                        eprintln!("open folder: {e}");
-                    }
-                }
-                #[cfg(not(windows))]
-                println!("folder: {}", p.display());
-            }
+            SettingsOutcome::OpenFolder(p) => Self::open_folder(&p),
         }
     }
 

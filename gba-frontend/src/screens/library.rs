@@ -14,17 +14,26 @@
 //! Tab focus it explicitly (needed to search for a title that starts with Z, X, A or S, which are
 //! also Play, Eject and the page keys). While Find has focus all characters go to it, and only
 //! Enter plays.
+//!
+//! Empty library (`docs/branding/boards/05-strawberry-empty-library.png`): the case shows three
+//! rows of dashed placeholders (the console slot says STRAWBERRY, the next cell says where to put
+//! games), the handheld holds a Strawberry cartridge with the mark on its screen, and the right
+//! column is the product card with `Open <folder>` (Z) and `Settings`; without any folder the one
+//! button is `Settings`.
 #![allow(dead_code)]
 
 use crate::library::{Art, Library, LibraryEntry};
+use crate::overlay::Overlay;
 use crate::slots::SlotSet;
+use crate::ui::brand;
 use crate::ui::canvas::{Clip, Canvas};
 use crate::ui::drawings::{self, Drawing};
 use crate::ui::fmt;
 use crate::ui::input::{Action, UiInput};
 use crate::ui::text::Style;
-use crate::ui::tokens::{component as comp, font as fnt, label_for, layout as lay, object, Palette, Rgb, PAPER};
+use crate::ui::tokens::{component as comp, font as fnt, label_for, layout as lay, object, pixel, Palette, Rgb, PAPER};
 use crate::ui::widgets::{self, mix};
+use gba_core::{FrameBuffer, SCREEN_H, SCREEN_W};
 use minifb::Key;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -38,8 +47,38 @@ pub enum LibraryOutcome {
     Play(PathBuf),
     ResumeLatest(PathBuf),
     OpenStates(PathBuf),
+    /// Show this library folder in the file manager (empty library).
+    OpenFolder(PathBuf),
+    /// Open the Settings manual (empty library).
+    OpenSettings,
     Quit,
 }
+
+/// Why the library shows no cartridges.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Empty {
+    /// No folder is configured and `./Games` does not exist.
+    NoFolder,
+    /// A scan is running and has found nothing yet.
+    Scanning,
+    /// The folders were scanned and hold no games.
+    NoGames,
+}
+
+fn empty_state(lib: &Library) -> Option<Empty> {
+    if !lib.entries().is_empty() {
+        None
+    } else if lib.folders().is_empty() {
+        Some(Empty::NoFolder)
+    } else if lib.is_scanning() {
+        Some(Empty::Scanning)
+    } else {
+        Some(Empty::NoGames)
+    }
+}
+
+/// Rows of placeholder cells the empty case shows (the board's 3 x 4 at the design size).
+const EMPTY_ROWS: usize = 3;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Rect {
@@ -231,6 +270,9 @@ pub struct LibraryScreen {
     hits: Vec<(Rect, PathBuf)>,
     play_btn: Option<Rect>,
     resume_btn: Option<Rect>,
+    /// Empty library: `Open <folder>` and `Settings`.
+    open_btn: Option<Rect>,
+    settings_btn: Option<Rect>,
     find_rect: Rect,
     case_rect: Rect,
     // render caches
@@ -277,6 +319,8 @@ impl LibraryScreen {
             hits: Vec::new(),
             play_btn: None,
             resume_btn: None,
+            open_btn: None,
+            settings_btn: None,
             find_rect: Rect::default(),
             case_rect: Rect::default(),
             handheld: drawings::parse(drawings::HANDHELD_LIBRARY),
@@ -492,6 +536,9 @@ impl LibraryScreen {
             if let Some(p) = sel_ok.clone() {
                 return LibraryOutcome::Play(p);
             }
+            if let Some(e) = empty_state(lib) {
+                return Self::empty_primary(lib, e);
+            }
         }
         if input.action(Action::Back) && !self.find_focus {
             self.selected = None;
@@ -527,6 +574,12 @@ impl LibraryScreen {
                 if let Some(p) = sel_ok {
                     return LibraryOutcome::ResumeLatest(p);
                 }
+            } else if self.open_btn.is_some_and(|r| r.contains(input.mouse)) {
+                if let Some(f) = lib.folders().first() {
+                    return LibraryOutcome::OpenFolder(f.clone());
+                }
+            } else if self.settings_btn.is_some_and(|r| r.contains(input.mouse)) {
+                return LibraryOutcome::OpenSettings;
             } else if let Some(h) = hovered {
                 if self.selected.as_deref() == Some(h.as_path()) {
                     if lib.entry(&h).is_some_and(|e| e.unreadable.is_none()) {
@@ -540,13 +593,23 @@ impl LibraryScreen {
         LibraryOutcome::None
     }
 
+    /// What Z does with no cartridges: show the first folder, or open Settings to add one.
+    fn empty_primary(lib: &Library, empty: Empty) -> LibraryOutcome {
+        match (empty, lib.folders().first()) {
+            (Empty::NoFolder, _) | (_, None) => LibraryOutcome::OpenSettings,
+            (_, Some(f)) => LibraryOutcome::OpenFolder(f.clone()),
+        }
+    }
+
     // --- render ----------------------------------------------------------------------------
 
     pub fn render(&mut self, cv: &mut Canvas, lib: &Library) {
         let pal = &PAPER;
         let (w, h) = (cv.width(), cv.height());
         let grid = self.grid(lib);
-        let g = geometry(w, h, grid.len());
+        // an empty case keeps the board's three rows of placeholders (columns follow the width)
+        let n_cells = if empty_state(lib).is_some() { geometry(w, h, 1).cols * EMPTY_ROWS } else { grid.len() };
+        let g = geometry(w, h, n_cells);
         self.cols = g.cols;
         self.max_scroll = g.max_scroll;
         self.page_rows = (((g.viewport.h) / ROW_PITCH).floor() as usize).max(1);
@@ -565,17 +628,26 @@ impl LibraryScreen {
         self.hits.clear();
         self.play_btn = None;
         self.resume_btn = None;
+        self.open_btn = None;
+        self.settings_btn = None;
 
         self.draw_head(cv, lib, pal);
         self.draw_case(cv, lib, &grid, &g, pal);
         self.draw_side(cv, lib, &g, pal);
         let back = if self.find.is_empty() { ("Esc", "Quit") } else { ("Esc", "Clear find") };
-        widgets::foot(
-            cv,
-            &[(&["↑", "↓", "←", "→"], "Choose"), (&["Z"], "Play"), (&["X"], "Eject"), (&["F3"], "Resume last state"), (&["F2"], "Save states")],
-            Some(back),
-            pal,
-        );
+        match empty_state(lib) {
+            Some(Empty::NoFolder) => widgets::foot(cv, &[(&["Z"], "Settings")], Some(back), pal),
+            Some(_) => {
+                let open = format!("Open {}", Self::folder_label(lib));
+                widgets::foot(cv, &[(&["Z"], open.as_str())], Some(back), pal);
+            }
+            None => widgets::foot(
+                cv,
+                &[(&["↑", "↓", "←", "→"], "Choose"), (&["Z"], "Play"), (&["X"], "Eject"), (&["F3"], "Resume last state"), (&["F2"], "Save states")],
+                Some(back),
+                pal,
+            ),
+        }
     }
 
     fn folder_label(lib: &Library) -> String {
@@ -623,7 +695,8 @@ impl LibraryScreen {
         // art strips for the cells in view
         let entries = lib.entries();
         let strip_h = (comp::CART_H - comp::CART_LABEL_INSET[0] - comp::CART_LABEL_INSET[2]) as usize;
-        let n = grid.len();
+        let empty = empty_state(lib);
+        let n = if empty.is_some() { g.rows * g.cols } else { grid.len() };
         let mut visible: Vec<usize> = Vec::new();
         for i in 0..n {
             let r = g.cell_rect(i, self.scroll);
@@ -649,13 +722,24 @@ impl LibraryScreen {
             let selected = sel_cell == Some(i);
             let ei = grid.entry_of(i);
             if i == 0 {
-                draw_slot(cv, r, ei.map(|e| &entries[e]), selected, pal);
+                let code = match (empty, ei) {
+                    (Some(_), _) => Some(brand::WORDMARK),
+                    (None, Some(e)) => Some(entries[e].code.as_str()),
+                    (None, None) => None,
+                };
+                draw_slot(cv, r, code, selected, pal);
                 if let (Some(e), Some(vis)) = (ei, r.intersect(&g.viewport)) {
                     hits.push((vis, entries[e].path.clone()));
                 }
                 continue;
             }
-            let Some(ei) = ei else { continue };
+            let Some(ei) = ei else {
+                if let Some(e) = empty {
+                    let hint = (i == 1).then(|| empty_hint(e, &Self::folder_label(lib)));
+                    draw_empty_cell(cv, r, hint.as_deref(), pal);
+                }
+                continue;
+            };
             let e = &entries[ei];
             let lift = self.lifts.get(&e.path).copied().unwrap_or(0.0);
             let ease = 1.0 - (1.0 - lift) * (1.0 - lift);
@@ -682,6 +766,10 @@ impl LibraryScreen {
         let (sx, sy, sw) = (g.side.x, g.side.y, g.side.w);
         let bottom = g.side.y + g.side.h;
         let tight = bottom - sy < 548.0;
+        if let Some(e) = empty_state(lib) {
+            self.draw_side_brand(cv, lib, e, g, pal);
+            return;
+        }
         let sel = self.selected_entry(lib).cloned();
         let art = sel.as_ref().and_then(|e| lib.art_for(&e.path));
 
@@ -760,19 +848,121 @@ impl LibraryScreen {
         }
     }
 
-    fn draw_side_message(&self, cv: &mut Canvas, lib: &Library, sx: f32, y: f32, sw: f32, pal: &Palette) {
+    fn draw_side_message(&self, cv: &mut Canvas, _lib: &Library, sx: f32, y: f32, sw: f32, pal: &Palette) {
+        let st = Style::reading(fnt::READING_INTRO).color(pal.fg2);
+        cv.paragraph(sx, y, sw, "No cartridge in the console. Choose one with the arrow keys.", &st, fnt::READING_LINE_HEIGHT, 3);
+    }
+
+    /// The right column with no cartridges (board 05): the Strawberry cart in the handheld, the
+    /// mark on its screen, the product card and the `Open <folder>` / `Settings` buttons.
+    fn draw_side_brand(&mut self, cv: &mut Canvas, lib: &Library, empty: Empty, g: &Geometry, pal: &Palette) {
+        let (sx, sy, sw) = (g.side.x, g.side.y, g.side.w);
+        let tight = g.side.h < 548.0;
+
+        draw_brand_cart(cv, Rect::new(sx + 143.0, sy, 150.0, 84.0), pal);
+        cv.drawing(&self.handheld, sx, sy);
+        draw_brand_screen(cv, sx + 98.0, sy + 92.0, empty, pal);
+        widgets::keycap(cv, sx + 34.0, sy + 60.0, "A", pal, false);
+        widgets::keycap(cv, sx + 380.0, sy + 60.0, "S", pal, false);
+        widgets::keycap(cv, sx + 387.0, sy + 181.0, "Z", pal, true);
+        widgets::keycap(cv, sx + 355.0, sy + 215.0, "X", pal, false);
+
+        // the card
+        let mut y = sy + 320.0 + if tight { 12.0 } else { 20.0 };
+        let title = Style::display(fnt::DISPLAY_TITLE).color(pal.fg);
+        cv.text(sx, y, brand::WORDMARK, &title);
+        y += fnt::DISPLAY_TITLE * fnt::DISPLAY_LINE_HEIGHT + if tight { 4.0 } else { 8.0 };
+        cv.text(sx, y, brand::SERIES, &Style::reading(fnt::READING_INTRO).color(pal.fg2));
+        y += if tight { 24.0 } else { 33.0 };
+
+        let pitch = if tight { 21.0 } else { 23.0 };
+        let col = 150.0;
         let folder = Self::folder_label(lib);
-        if lib.entries().is_empty() {
-            let head = if lib.is_scanning() { format!("Looking for games in {folder}…") } else { format!("No games found in {folder}") };
-            let st = Style::reading(fnt::READING_INTRO + 3.0).color(pal.fg);
-            let used = cv.paragraph(sx, y, sw, &head, &st, 1.3, 2);
-            if !lib.is_scanning() {
-                let st = Style::reading(fnt::READING_INTRO).color(pal.fg2);
-                cv.paragraph(sx, y + used + 10.0, sw, "Add a folder in Settings › System or start with a ROM path.", &st, fnt::READING_LINE_HEIGHT, 3);
+        let games = match empty {
+            Empty::NoFolder => "no folder yet".to_string(),
+            Empty::Scanning => format!("{folder} · scanning…"),
+            Empty::NoGames => format!("{folder} · empty"),
+        };
+        widgets::detail_row(cv, sx, y, col, "GAMES", &games, true, pal);
+        y += pitch;
+        widgets::detail_row(cv, sx, y, col, "SYSTEM PROGRAM", "Built in. No BIOS dump needed.", false, pal);
+        y += pitch;
+        widgets::detail_row(cv, sx, y, col, "SAVES", "Written beside each game as .sav.", false, pal);
+        y += pitch + if tight { 6.0 } else { 15.0 };
+
+        // the buttons
+        let play_w = 290.0f32.min(sw);
+        match Self::empty_primary(lib, empty) {
+            LibraryOutcome::OpenFolder(_) => {
+                widgets::button_primary(cv, sx, y, play_w, &format!("Open {folder}"), Some("Z"), pal);
+                self.open_btn = Some(Rect::new(sx, y, play_w, comp::BUTTON_H));
+                let rx = sx + play_w + 12.0;
+                widgets::button_secondary(cv, rx, y, sx + sw - rx, "Settings", pal);
+                self.settings_btn = Some(Rect::new(rx, y, sx + sw - rx, comp::BUTTON_H));
             }
-        } else {
-            let st = Style::reading(fnt::READING_INTRO).color(pal.fg2);
-            cv.paragraph(sx, y, sw, "No cartridge in the console. Choose one with the arrow keys.", &st, fnt::READING_LINE_HEIGHT, 3);
+            _ => {
+                widgets::button_primary(cv, sx, y, play_w, "Settings", Some("Z"), pal);
+                self.settings_btn = Some(Rect::new(sx, y, play_w, comp::BUTTON_H));
+            }
+        }
+    }
+}
+
+/// Cell 1's two-line hint with no cartridges.
+fn empty_hint(empty: Empty, folder: &str) -> String {
+    match empty {
+        Empty::NoFolder => "ADD A FOLDER IN SETTINGS".to_string(),
+        Empty::Scanning => "LOOKING FOR GAMES…".to_string(),
+        Empty::NoGames => format!("PUT .GBA FILES IN {folder}"),
+    }
+}
+
+/// The handheld's screen with no cartridges: ink, the night mark at 3x, the wordmark at 2x and
+/// a one-line state, composed at native 240x160 and shown at 1x like a game's picture.
+fn draw_brand_screen(cv: &mut Canvas, x: f32, y: f32, empty: Empty, pal: &Palette) {
+    let mut fb: Box<FrameBuffer> = vec![pixel::INK_555; SCREEN_W * SCREEN_H].into_boxed_slice().try_into().expect("240x160");
+    let mut o = Overlay::new(&mut fb);
+    o.sprite(96, 24, &brand::mark().night_555(), brand::SPRITE, brand::SPRITE, 3);
+    o.text_center_scaled(120, 96, brand::WORDMARK, pixel::CREAM_555, 2);
+    let line = match empty {
+        Empty::NoFolder => "ADD A FOLDER IN SETTINGS",
+        Empty::Scanning => "LOOKING FOR GAMES…",
+        Empty::NoGames => "NO GAMES YET",
+    };
+    o.text_center(120, 124, line, pixel::DIM_555);
+    cv.blit_bgr555(&fb[..], SCREEN_W, SCREEN_H, x as i32, y as i32, 1);
+    cv.stroke_rect(x - 0.75, y - 0.75, SCREEN_W as f32 + 1.5, SCREEN_H as f32 + 1.5, 1.5, pal.fg);
+}
+
+/// The Strawberry cartridge standing in the handheld: a grey shell with the mark and the
+/// wordmark on a light label.
+fn draw_brand_cart(cv: &mut Canvas, r: Rect, pal: &Palette) {
+    cv.round_rect(r.x, r.y, r.w, r.h, comp::CART_RADIUS, object::CART_SHELL);
+    cv.fill_rect(r.x + 6.0, r.y, r.w - 12.0, 1.5, object::CART_SHELL_HIGHLIGHT);
+    draw_grip(cv, r);
+    let lab = Rect::new(r.x + 9.0, r.y + 21.0, r.w - 18.0, 40.0);
+    cv.round_rect(lab.x, lab.y, lab.w, lab.h, [comp::CART_LABEL_RADIUS; 4], object::CART_SHELL_HIGHLIGHT);
+    let st = Style::display(14.0).color(pal.fg);
+    let tw = cv.fonts.measure(&st, brand::WORDMARK);
+    let sprite = brand::SPRITE as f32;
+    let x0 = lab.x + (lab.w - (sprite + 6.0 + tw)) / 2.0;
+    cv.blit_bgr555(&brand::mark().paper_555(), brand::SPRITE, brand::SPRITE, x0.round() as i32, (lab.y + 12.0) as i32, 1);
+    cv.text(x0 + sprite + 6.0, lab.y + 11.0, brand::WORDMARK, &st);
+}
+
+/// A dashed placeholder cell of the empty case; cell 1 carries "EMPTY" and the hint.
+fn draw_empty_cell(cv: &mut Canvas, cell: Rect, hint: Option<&str>, pal: &Palette) {
+    let _ = pal;
+    let r = Rect::new(cell.x + 7.0, cell.y - 7.0, cell.w - 14.0, cell.h + 4.0);
+    cv.dashed_rect(r.x, r.y, r.w, r.h, 1.5, 4.0, SLOT_DASH);
+    if let Some(hint) = hint {
+        let cx = r.x + r.w / 2.0;
+        let cy = r.y + r.h / 2.0;
+        let label = Style::label().color(SLOT_TEXT);
+        cv.text_center(cx, cy - 24.0, "EMPTY", &label);
+        let lines = cv.fonts.wrap(&label, hint, r.w - 24.0, 2);
+        for (i, l) in lines.iter().enumerate() {
+            cv.text_center(cx, cy - 4.0 + i as f32 * 15.0, l, &label);
         }
     }
 }
@@ -827,7 +1017,9 @@ fn build_case(w: f32, h: f32, pad: f32) -> Pixmap {
     pix
 }
 
-fn draw_slot(cv: &mut Canvas, cell: Rect, e: Option<&LibraryEntry>, selected: bool, pal: &Palette) {
+/// The "in the console" slot; `code` is the game's code, or the product name when the library
+/// is empty (the system program is what is in the console).
+fn draw_slot(cv: &mut Canvas, cell: Rect, code: Option<&str>, selected: bool, pal: &Palette) {
     let r = Rect::new(cell.x + 7.0, cell.y - 7.0, cell.w - 14.0, cell.h + 4.0);
     cv.fill_rect(r.x, r.y, r.w, r.h, mix(object::FOAM, [0, 0, 0], 0.22));
     cv.dashed_rect(r.x, r.y, r.w, r.h, 1.5, 4.0, if selected { pal.spot } else { SLOT_DASH });
@@ -835,8 +1027,8 @@ fn draw_slot(cv: &mut Canvas, cell: Rect, e: Option<&LibraryEntry>, selected: bo
     let label = Style::label().color(SLOT_TEXT);
     let cy = r.y + r.h / 2.0;
     cv.text_center(cx, cy - 14.0, "IN THE CONSOLE", &label);
-    if let Some(e) = e {
-        cv.text_center(cx, cy + 4.0, &e.code, &Style::data(fnt::DATA_SMALL).color(SLOT_CODE));
+    if let Some(code) = code {
+        cv.text_center(cx, cy + 4.0, code, &Style::data(fnt::DATA_SMALL).color(SLOT_CODE));
     }
 }
 
@@ -1246,16 +1438,46 @@ mod tests {
     }
 
     #[test]
-    fn empty_library_renders_the_message_without_panicking() {
+    fn empty_library_shows_the_brand_and_offers_the_folder_and_settings() {
         let dir = temp("empty");
         let lib = Library::from_entries(vec![dir.clone()], Vec::new());
         let mut cv = Canvas::new(1280, 800, Fonts::new());
         let mut s = screen();
-        assert_eq!(s.update(&act(&[Action::Right, Action::Confirm]), &lib), LibraryOutcome::None);
+        // Z opens the folder even before the first render
+        assert_eq!(s.update(&act(&[Action::Right, Action::Confirm]), &lib), LibraryOutcome::OpenFolder(dir.clone()));
         s.render(&mut cv, &lib);
         assert!(s.hits.is_empty());
         assert!(s.play_btn.is_none());
+        let (open, settings) = (s.open_btn.expect("Open button"), s.settings_btn.expect("Settings button"));
+        let mut click = UiInput { mouse: (settings.x + 6.0, settings.y + 6.0), clicked: true, ..UiInput::default() };
+        assert_eq!(s.update(&click, &lib), LibraryOutcome::OpenSettings);
+        click.mouse = (open.x + 6.0, open.y + 6.0);
+        assert_eq!(s.update(&click, &lib), LibraryOutcome::OpenFolder(dir.clone()));
+        // three rows of placeholders keep the mockup's case height
+        assert_eq!((s.case_rect.x, s.case_rect.y, s.case_rect.w, s.case_rect.h), (40.0, 82.0, 720.0, 522.0));
+        // the handheld's screen is ink with the night mark at 3x: its stem is cream
+        let g = geometry(1280.0, 800.0, 12);
+        let (px, py) = (g.side.x as u32 + 98, g.side.y as u32 + 92);
+        assert_eq!(cv.pixel(px + 1, py + 1), gba_test::bgr555_to_rgb(pixel::INK_555));
+        assert_eq!(cv.pixel(px + 96 + 7 * 3 + 1, py + 24 + 1), gba_test::bgr555_to_rgb(pixel::CREAM_555));
+        assert_eq!(cv.pixel(px + 96 + 3 * 3 + 1, py + 24 + 7 * 3 + 1), gba_test::bgr555_to_rgb(pixel::RED_555));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn empty_library_without_a_folder_offers_settings_only() {
+        let lib = Library::from_entries(Vec::new(), Vec::new());
+        let mut cv = Canvas::new(1280, 800, Fonts::new());
+        let mut s = screen();
+        assert_eq!(s.update(&act(&[Action::Confirm]), &lib), LibraryOutcome::OpenSettings);
+        s.render(&mut cv, &lib);
+        assert!(s.open_btn.is_none());
+        assert!(s.settings_btn.is_some());
+        assert_eq!(s.update(&key(Key::Enter), &lib), LibraryOutcome::OpenSettings);
+        // and the narrow window still lays out
+        let mut small = Canvas::new(960, 640, Fonts::new());
+        s.render(&mut small, &lib);
+        assert_eq!(s.columns(), 2);
     }
 
     /// Review render: `cargo test -p gba-frontend --release -- --ignored render_library`.
@@ -1366,6 +1588,10 @@ mod tests {
         s2.update(&UiInput::default(), &empty);
         s2.render(&mut cv, &empty);
         cv.save_png(&crate::render_tests::out_dir().join("01-library-empty.png")).unwrap();
+        let no_folder = Library::from_entries(Vec::new(), Vec::new());
+        s2.update(&UiInput::default(), &no_folder);
+        s2.render(&mut cv, &no_folder);
+        cv.save_png(&crate::render_tests::out_dir().join("01-library-empty-nofolder.png")).unwrap();
         let _ = std::fs::remove_dir_all(&dir);
     }
 

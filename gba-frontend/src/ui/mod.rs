@@ -1,10 +1,11 @@
 //! Window-resolution rendering layer for the GUI ("paper, ink, one red", `docs/gui/`).
 //!
-//! `tokens` holds the design constants, `canvas` draws (tiny-skia + direct pixel writes), `text`
+//! `tokens` holds the design constants, `brand` the Strawberry mark, `canvas` draws (tiny-skia + direct pixel writes), `text`
 //! rasterises the bundled faces, `widgets` are the shared components, `drawings` parses the SVG
 //! line art, `fmt` applies the copy rules, `input` is the per-frame input snapshot and the
 //! GBA-button-driven navigation actions.
 
+pub mod brand;
 pub mod canvas;
 pub mod drawings;
 pub mod fmt;
