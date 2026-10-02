@@ -154,7 +154,7 @@ impl Video {
         window.set_target_fps(0);
         let chars = Arc::new(Mutex::new(Vec::new()));
         window.set_input_callback(Box::new(CharSink(chars.clone())));
-        Ok(Video { window, buf: vec![0; w * h], lut: crate::pixels::bgr555_lut(), chars, pad_repeat: PadRepeat::new(), mouse_was_down: false, filter: Filter::None, prev: Vec::new() })
+        Ok(Video { window, buf: vec![0; w * h], lut: crate::pixels::bgr555_lut(), chars, pad_repeat: PadRepeat::new(&crate::input::GBA_BUTTONS), mouse_was_down: false, filter: Filter::None, prev: Vec::new() })
     }
 
     /// The Strawberry icon where the platform allows it (`icon.rs`); `cache_dir` holds the

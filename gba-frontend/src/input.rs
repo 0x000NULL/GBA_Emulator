@@ -1,12 +1,38 @@
 //! Keyboard (minifb) and gamepad (gilrs) -> GBA key mask.
 //!
-//! The live layouts are `ui::input::KeyMap` and `ui::input::PadMap` (rebindable in Settings);
-//! the tables here are their defaults.
+//! [`GBA_BUTTONS`] describes the ten buttons to the generic input code. The live layouts are
+//! `ui::input::KeyMap` and `ui::input::PadMap` (rebindable in Settings); the tables here are their
+//! defaults.
 
-use crate::ui::input::PadMap;
+use crate::ui::input::{ButtonSet, KeyMap, MenuRoles, PadMap};
 use gba_core::Keys;
 use gilrs::{Axis, Button, EventType, Gilrs};
 use minifb::Key;
+
+/// The GBA's buttons, ordered as `Keys` bits, and the ones the menus use.
+pub const GBA_BUTTONS: ButtonSet = ButtonSet {
+    names: &["A", "B", "SELECT", "START", "RIGHT", "LEFT", "UP", "DOWN", "R", "L"],
+    bits: &[Keys::A, Keys::B, Keys::SELECT, Keys::START, Keys::RIGHT, Keys::LEFT, Keys::UP, Keys::DOWN, Keys::R, Keys::L],
+    roles: MenuRoles {
+        up: Keys::UP,
+        down: Keys::DOWN,
+        left: Keys::LEFT,
+        right: Keys::RIGHT,
+        confirm: Keys::A,
+        back: Keys::B,
+        prev_page: Keys::L,
+        next_page: Keys::R,
+        start: Keys::START,
+    },
+};
+
+pub fn default_keymap() -> KeyMap {
+    KeyMap::new(GBA_BUTTONS, KEYBOARD_MAP)
+}
+
+pub fn default_padmap() -> PadMap {
+    PadMap::new(GBA_BUTTONS, GAMEPAD_MAP)
+}
 
 /// Default keyboard layout.
 pub const KEYBOARD_MAP: &[(Key, u16)] = &[
@@ -46,18 +72,18 @@ pub fn keyboard_keys(down: impl Fn(Key) -> bool) -> u16 {
     KEYBOARD_MAP.iter().filter(|(k, _)| down(*k)).fold(0, |m, (_, bit)| m | bit)
 }
 
-/// Map an analog stick (gilrs convention: +x right, +y up) to D-pad bits.
-pub fn stick_to_dpad(x: f32, y: f32, deadzone: f32) -> u16 {
+/// Map an analog stick (gilrs convention: +x right, +y up) to the arrow bits of `roles`.
+pub fn stick_to_dpad(x: f32, y: f32, deadzone: f32, roles: &MenuRoles) -> u16 {
     let mut m = 0;
     if x >= deadzone {
-        m |= Keys::RIGHT;
+        m |= roles.right;
     } else if x <= -deadzone {
-        m |= Keys::LEFT;
+        m |= roles.left;
     }
     if y >= deadzone {
-        m |= Keys::UP;
+        m |= roles.up;
     } else if y <= -deadzone {
-        m |= Keys::DOWN;
+        m |= roles.down;
     }
     m
 }
@@ -113,7 +139,7 @@ impl Gamepads {
             mask |= map.mask(|b| pad.is_pressed(b));
             let x = pad.value(Axis::LeftStickX);
             let y = pad.value(Axis::LeftStickY);
-            mask |= stick_to_dpad(x, y, STICK_DEADZONE);
+            mask |= stick_to_dpad(x, y, STICK_DEADZONE, &map.set().roles);
         }
         PadPoll { mask, pressed }
     }
@@ -122,7 +148,7 @@ impl Gamepads {
 /// One frame of gamepad input.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PadPoll {
-    /// GBA key mask of every connected pad.
+    /// Button mask of every connected pad.
     pub mask: u16,
     /// Buttons that went down since the last poll.
     pub pressed: Vec<Button>,
@@ -140,13 +166,43 @@ mod tests {
         assert_eq!(keyboard_keys(|_| true), Keys::ALL);
     }
 
+    const R: &MenuRoles = &GBA_BUTTONS.roles;
+
+    #[test]
+    fn default_maps_match_the_tables() {
+        let m = default_keymap();
+        assert_eq!(m.key_for(Keys::A), Key::Z);
+        assert_eq!(m.key_for(Keys::B), Key::X);
+        assert_eq!(m.key_for(Keys::L), Key::A);
+        assert_eq!(m.key_for(Keys::R), Key::S);
+        assert_eq!(m.key_for(Keys::START), Key::Enter);
+        assert_eq!(m.key_for(Keys::SELECT), Key::RightShift);
+        assert_eq!(m.mask(|k| matches!(k, Key::Z | Key::Left)), Keys::A | Keys::LEFT);
+        let p = default_padmap();
+        assert_eq!(p.button_for(Keys::A), Button::South);
+        assert_eq!(p.button_for(Keys::B), Button::East);
+        assert_eq!(p.button_for(Keys::L), Button::LeftTrigger);
+        assert_eq!(p.button_for(Keys::R), Button::RightTrigger);
+        assert_eq!(p.button_for(Keys::START), Button::Start);
+        assert_eq!(p.button_for(Keys::SELECT), Button::Select);
+        assert_eq!(p.button_for(Keys::UP), Button::DPadUp);
+        assert_eq!(p.button_for(Keys::RIGHT), Button::DPadRight);
+        assert_eq!(p.mask(|b| matches!(b, Button::South | Button::DPadLeft)), Keys::A | Keys::LEFT);
+        // GBA bits are 1 << position, as the generic maps index them
+        assert!(GBA_BUTTONS.bits.iter().enumerate().all(|(i, b)| *b == 1 << i));
+        // the menus: A confirms, B backs out, L/R page, Start starts
+        let acts = crate::ui::input::actions(&m, &[Key::Z, Key::X, Key::A, Key::S, Key::Enter], &[Key::Up], 0, 0);
+        use crate::ui::input::Action::*;
+        assert_eq!(acts, vec![Up, Confirm, Back, PrevPage, NextPage, Start]);
+    }
+
     #[test]
     fn stick_mapping() {
-        assert_eq!(stick_to_dpad(0.0, 0.0, 0.5), 0);
-        assert_eq!(stick_to_dpad(0.3, -0.3, 0.5), 0);
-        assert_eq!(stick_to_dpad(1.0, 0.0, 0.5), Keys::RIGHT);
-        assert_eq!(stick_to_dpad(-0.6, 0.9, 0.5), Keys::LEFT | Keys::UP);
-        assert_eq!(stick_to_dpad(0.0, -1.0, 0.5), Keys::DOWN);
+        assert_eq!(stick_to_dpad(0.0, 0.0, 0.5, R), 0);
+        assert_eq!(stick_to_dpad(0.3, -0.3, 0.5, R), 0);
+        assert_eq!(stick_to_dpad(1.0, 0.0, 0.5, R), Keys::RIGHT);
+        assert_eq!(stick_to_dpad(-0.6, 0.9, 0.5, R), Keys::LEFT | Keys::UP);
+        assert_eq!(stick_to_dpad(0.0, -1.0, 0.5, R), Keys::DOWN);
     }
 
     #[test]

@@ -1,13 +1,13 @@
 //! Per-frame input snapshot for the screens: edge-triggered keys, typed characters, mouse,
-//! and the navigation actions derived from the GBA key bindings and the gamepad.
+//! and the navigation actions derived from the console's key bindings and the gamepad.
 //!
-//! Menus navigate with the keys bound to the GBA buttons (confirm = A, back = B, pages = L/R,
+//! The app describes its console's buttons with a [`ButtonSet`]: names, bits in the button mask,
+//! and which buttons drive the menus ([`MenuRoles`]; on the GBA confirm = A, back = B, pages = L/R,
 //! arrows = D-pad), so a rebinding in Settings moves the menus too.
 
 // Toolkit surface: the screens use a subset of these helpers.
 #![allow(dead_code)]
 
-use gba_core::Keys;
 use gilrs::Button;
 use minifb::Key;
 use std::time::{Duration, Instant};
@@ -25,89 +25,125 @@ pub enum Action {
     Start,
 }
 
-/// Keyboard binding for the ten GBA buttons.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct KeyMap {
-    /// Ordered as `Keys` bits: A, B, SELECT, START, RIGHT, LEFT, UP, DOWN, R, L.
-    pub keys: [Key; 10],
+/// Which buttons drive the menus: each a bit of the console's button mask, 0 = none.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MenuRoles {
+    pub up: u16,
+    pub down: u16,
+    pub left: u16,
+    pub right: u16,
+    pub confirm: u16,
+    pub back: u16,
+    pub prev_page: u16,
+    pub next_page: u16,
+    pub start: u16,
 }
 
-pub const BUTTON_BITS: [u16; 10] = [Keys::A, Keys::B, Keys::SELECT, Keys::START, Keys::RIGHT, Keys::LEFT, Keys::UP, Keys::DOWN, Keys::R, Keys::L];
-pub const BUTTON_NAMES: [&str; 10] = ["A", "B", "SELECT", "START", "RIGHT", "LEFT", "UP", "DOWN", "R", "L"];
+/// A console's buttons, in the order the settings file and the keycaps list them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ButtonSet {
+    /// Settings-file names, e.g. `"A"`, `"SELECT"`.
+    pub names: &'static [&'static str],
+    /// Each button's bit in the button mask, parallel to `names`.
+    pub bits: &'static [u16],
+    pub roles: MenuRoles,
+}
 
-impl Default for KeyMap {
-    fn default() -> Self {
-        let mut keys = [Key::Unknown; 10];
-        for (k, bit) in crate::input::KEYBOARD_MAP {
-            keys[bit.trailing_zeros() as usize] = *k;
-        }
-        KeyMap { keys }
+impl ButtonSet {
+    /// Position of `bit` in the set. Panics on a bit the set does not have.
+    pub fn index(&self, bit: u16) -> usize {
+        self.bits.iter().position(|b| *b == bit).unwrap_or_else(|| panic!("button bit {bit:#x} is not in the set"))
     }
 }
 
+/// Keyboard binding for one port's buttons.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KeyMap {
+    set: ButtonSet,
+    /// Parallel to `set.bits`.
+    pub keys: Vec<Key>,
+}
+
 impl KeyMap {
+    /// A map for `set` with `defaults` (key, bit); buttons without one get `Key::Unknown`.
+    pub fn new(set: ButtonSet, defaults: &[(Key, u16)]) -> Self {
+        let mut keys = vec![Key::Unknown; set.bits.len()];
+        for (k, bit) in defaults {
+            keys[set.index(*bit)] = *k;
+        }
+        KeyMap { set, keys }
+    }
+
+    pub fn set(&self) -> &ButtonSet {
+        &self.set
+    }
+
     pub fn key_for(&self, bit: u16) -> Key {
-        self.keys[bit.trailing_zeros() as usize]
+        self.keys[self.set.index(bit)]
     }
 
     /// Key mask from an "is down" predicate.
     pub fn mask(&self, down: impl Fn(Key) -> bool) -> u16 {
-        self.keys.iter().zip(BUTTON_BITS).filter(|(k, _)| down(**k)).fold(0, |m, (_, bit)| m | bit)
+        self.keys.iter().zip(self.set.bits).filter(|(k, _)| down(**k)).fold(0, |m, (_, bit)| m | bit)
     }
 
     /// Bind `bit` to `key`; a key already used by another button is swapped. Returns the other
     /// button's bit when a swap happened.
     pub fn rebind(&mut self, bit: u16, key: Key) -> Option<u16> {
-        let i = bit.trailing_zeros() as usize;
+        let i = self.set.index(bit);
         let old = self.keys[i];
         let other = self.keys.iter().position(|k| *k == key && *k != old).filter(|&j| j != i);
         if let Some(j) = other {
             self.keys[j] = old;
         }
         self.keys[i] = key;
-        other.map(|j| BUTTON_BITS[j])
+        other.map(|j| self.set.bits[j])
     }
 }
 
-/// Gamepad binding for the ten GBA buttons: one map shared by every connected pad (their
-/// states are OR-ed). The left stick always acts as the D-pad in addition.
+/// Gamepad binding for one port's buttons. Strawberry shares one map between every connected pad
+/// (their states are OR-ed); the left stick always acts as the D-pad in addition.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PadMap {
-    /// Ordered as `Keys` bits, like [`KeyMap::keys`].
-    pub buttons: [Button; 10],
-}
-
-impl Default for PadMap {
-    fn default() -> Self {
-        let mut buttons = [Button::Unknown; 10];
-        for (b, bit) in crate::input::GAMEPAD_MAP {
-            buttons[bit.trailing_zeros() as usize] = *b;
-        }
-        PadMap { buttons }
-    }
+    set: ButtonSet,
+    /// Parallel to `set.bits`, like [`KeyMap::keys`].
+    pub buttons: Vec<Button>,
 }
 
 impl PadMap {
+    /// A map for `set` with `defaults` (button, bit); the rest get `Button::Unknown`.
+    pub fn new(set: ButtonSet, defaults: &[(Button, u16)]) -> Self {
+        let mut buttons = vec![Button::Unknown; set.bits.len()];
+        for (b, bit) in defaults {
+            buttons[set.index(*bit)] = *b;
+        }
+        PadMap { set, buttons }
+    }
+
+    pub fn set(&self) -> &ButtonSet {
+        &self.set
+    }
+
     pub fn button_for(&self, bit: u16) -> Button {
-        self.buttons[bit.trailing_zeros() as usize]
+        self.buttons[self.set.index(bit)]
     }
 
     /// Key mask from an "is pressed" predicate.
     pub fn mask(&self, pressed: impl Fn(Button) -> bool) -> u16 {
-        self.buttons.iter().zip(BUTTON_BITS).filter(|(b, _)| pressed(**b)).fold(0, |m, (_, bit)| m | bit)
+        self.buttons.iter().zip(self.set.bits).filter(|(b, _)| pressed(**b)).fold(0, |m, (_, bit)| m | bit)
     }
 
-    /// Bind `bit` to `button`; a button already used by another GBA button is swapped. Returns
-    /// the other button's bit when a swap happened.
+    /// Bind `bit` to `button`; a button already used by another console button is swapped.
+    /// Returns the other button's bit when a swap happened.
     pub fn rebind(&mut self, bit: u16, button: Button) -> Option<u16> {
-        let i = bit.trailing_zeros() as usize;
+        let i = self.set.index(bit);
         let old = self.buttons[i];
         let other = self.buttons.iter().position(|b| *b == button && *b != old).filter(|&j| j != i);
         if let Some(j) = other {
             self.buttons[j] = old;
         }
         self.buttons[i] = button;
-        other.map(|j| BUTTON_BITS[j])
+        other.map(|j| self.set.bits[j])
     }
 }
 
@@ -181,7 +217,7 @@ pub struct UiInput {
     pub actions: Vec<Action>,
     /// Pad buttons that went down this frame (for rebinding; the mask drives everything else).
     pub pad_buttons: Vec<Button>,
-    /// Combined keyboard + gamepad GBA mask (for the running game).
+    /// Combined keyboard + gamepad button mask (for the running game).
     pub game_mask: u16,
 }
 
@@ -208,30 +244,26 @@ impl UiInput {
 
 /// Edge detection and auto-repeat for the gamepad mask, mirroring the keyboard's repeat.
 pub struct PadRepeat {
+    bits: &'static [u16],
     prev: u16,
-    held_since: [Option<Instant>; 10],
-    last_fire: [Option<Instant>; 10],
+    held_since: Vec<Option<Instant>>,
+    last_fire: Vec<Option<Instant>>,
 }
 
 pub const PAD_REPEAT_DELAY: Duration = Duration::from_millis(350);
 pub const PAD_REPEAT_RATE: Duration = Duration::from_millis(60);
 
-impl Default for PadRepeat {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl PadRepeat {
-    pub fn new() -> Self {
-        PadRepeat { prev: 0, held_since: [None; 10], last_fire: [None; 10] }
+    pub fn new(set: &ButtonSet) -> Self {
+        let n = set.bits.len();
+        PadRepeat { bits: set.bits, prev: 0, held_since: vec![None; n], last_fire: vec![None; n] }
     }
 
     /// Returns `(pressed_mask, repeated_mask)` for this frame.
     pub fn update(&mut self, mask: u16, now: Instant) -> (u16, u16) {
         let pressed = mask & !self.prev;
         let mut repeated = pressed;
-        for (i, bit) in BUTTON_BITS.iter().enumerate() {
+        for (i, bit) in self.bits.iter().enumerate() {
             if mask & bit == 0 {
                 self.held_since[i] = None;
                 self.last_fire[i] = None;
@@ -254,39 +286,24 @@ impl PadRepeat {
     }
 }
 
-/// Derive navigation actions from this frame's key events and the pad edge masks.
+/// Derive navigation actions from this frame's key events and the pad edge masks, through the
+/// map's [`MenuRoles`]. Arrows auto-repeat; the rest fire once per press.
 pub fn actions(map: &KeyMap, pressed: &[Key], repeated: &[Key], pad_pressed: u16, pad_repeated: u16) -> Vec<Action> {
-    let mut out = Vec::new();
-    let key_rep = |bit: u16| repeated.contains(&map.key_for(bit)) || pad_repeated & bit != 0;
-    let key_edge = |bit: u16| pressed.contains(&map.key_for(bit)) || pad_pressed & bit != 0;
-    if key_rep(Keys::UP) {
-        out.push(Action::Up);
-    }
-    if key_rep(Keys::DOWN) {
-        out.push(Action::Down);
-    }
-    if key_rep(Keys::LEFT) {
-        out.push(Action::Left);
-    }
-    if key_rep(Keys::RIGHT) {
-        out.push(Action::Right);
-    }
-    if key_edge(Keys::A) {
-        out.push(Action::Confirm);
-    }
-    if key_edge(Keys::B) {
-        out.push(Action::Back);
-    }
-    if key_edge(Keys::L) {
-        out.push(Action::PrevPage);
-    }
-    if key_edge(Keys::R) {
-        out.push(Action::NextPage);
-    }
-    if key_edge(Keys::START) {
-        out.push(Action::Start);
-    }
-    out
+    let r = map.set().roles;
+    let key_rep = |bit: u16| bit != 0 && (repeated.contains(&map.key_for(bit)) || pad_repeated & bit != 0);
+    let key_edge = |bit: u16| bit != 0 && (pressed.contains(&map.key_for(bit)) || pad_pressed & bit != 0);
+    let table = [
+        (r.up, true, Action::Up),
+        (r.down, true, Action::Down),
+        (r.left, true, Action::Left),
+        (r.right, true, Action::Right),
+        (r.confirm, false, Action::Confirm),
+        (r.back, false, Action::Back),
+        (r.prev_page, false, Action::PrevPage),
+        (r.next_page, false, Action::NextPage),
+        (r.start, false, Action::Start),
+    ];
+    table.iter().filter(|(bit, rep, _)| if *rep { key_rep(*bit) } else { key_edge(*bit) }).map(|(_, _, a)| *a).collect()
 }
 
 /// Human name for a key, as the keycaps print it.
@@ -332,52 +349,89 @@ pub fn bindable(k: Key) -> bool {
 mod tests {
     use super::*;
 
+    /// A ten-button set shaped like the GBA's, with literal bits.
+    mod k {
+        pub const A: u16 = 1;
+        pub const B: u16 = 2;
+        pub const SELECT: u16 = 4;
+        pub const START: u16 = 8;
+        pub const RIGHT: u16 = 16;
+        pub const LEFT: u16 = 32;
+        pub const UP: u16 = 64;
+        pub const DOWN: u16 = 128;
+        pub const R: u16 = 256;
+        pub const L: u16 = 512;
+    }
+
+    const SET: ButtonSet = ButtonSet {
+        names: &["A", "B", "SELECT", "START", "RIGHT", "LEFT", "UP", "DOWN", "R", "L"],
+        bits: &[k::A, k::B, k::SELECT, k::START, k::RIGHT, k::LEFT, k::UP, k::DOWN, k::R, k::L],
+        roles: MenuRoles { up: k::UP, down: k::DOWN, left: k::LEFT, right: k::RIGHT, confirm: k::A, back: k::B, prev_page: k::L, next_page: k::R, start: k::START },
+    };
+
+    fn km() -> KeyMap {
+        KeyMap::new(SET, &[(Key::Z, k::A), (Key::X, k::B), (Key::A, k::L), (Key::S, k::R), (Key::Enter, k::START), (Key::Up, k::UP), (Key::Down, k::DOWN)])
+    }
+
+    fn pm() -> PadMap {
+        PadMap::new(SET, &[(Button::South, k::A), (Button::East, k::B), (Button::LeftTrigger, k::L), (Button::DPadLeft, k::LEFT)])
+    }
+
     #[test]
-    fn default_map_matches_keyboard_map() {
-        let m = KeyMap::default();
-        assert_eq!(m.key_for(Keys::A), Key::Z);
-        assert_eq!(m.key_for(Keys::B), Key::X);
-        assert_eq!(m.key_for(Keys::L), Key::A);
-        assert_eq!(m.key_for(Keys::R), Key::S);
-        assert_eq!(m.key_for(Keys::START), Key::Enter);
-        assert_eq!(m.key_for(Keys::SELECT), Key::RightShift);
-        assert_eq!(m.mask(|k| matches!(k, Key::Z | Key::Left)), Keys::A | Keys::LEFT);
+    fn maps_follow_the_set() {
+        let m = km();
+        assert_eq!((m.key_for(k::A), m.key_for(k::SELECT)), (Key::Z, Key::Unknown), "no default: unknown");
+        assert_eq!(m.mask(|k| matches!(k, Key::Z | Key::Up)), k::A | k::UP);
+        let p = pm();
+        assert_eq!(p.button_for(k::L), Button::LeftTrigger);
+        assert_eq!(p.mask(|b| matches!(b, Button::South | Button::DPadLeft)), k::A | k::LEFT);
+        assert_eq!(p.mask(|_| false), 0);
+        // a two-button set with sparse bits
+        const TWO: ButtonSet = ButtonSet {
+            names: &["FIRE", "JUMP"],
+            bits: &[0x10, 0x80],
+            roles: MenuRoles { up: 0, down: 0, left: 0, right: 0, confirm: 0x10, back: 0x80, prev_page: 0, next_page: 0, start: 0 },
+        };
+        let mut two = KeyMap::new(TWO, &[(Key::Space, 0x10)]);
+        assert_eq!(two.mask(|k| k == Key::Space), 0x10);
+        assert_eq!(two.rebind(0x80, Key::Space), Some(0x10));
+        assert_eq!(actions(&two, &[Key::Unknown], &[], 0x80, 0), vec![Action::Confirm, Action::Back], "Unknown is FIRE's key now");
     }
 
     #[test]
     fn rebind_swaps_duplicates() {
-        let mut m = KeyMap::default();
-        assert_eq!(m.rebind(Keys::A, Key::X), Some(Keys::B), "X was B: B takes A's old key");
-        assert_eq!(m.key_for(Keys::A), Key::X);
-        assert_eq!(m.key_for(Keys::B), Key::Z);
-        assert_eq!(m.rebind(Keys::L, Key::Q), None);
-        assert_eq!(m.key_for(Keys::L), Key::Q);
-        assert_eq!(m.rebind(Keys::L, Key::Q), None, "same key again is a no-op");
+        let mut m = km();
+        assert_eq!(m.rebind(k::A, Key::X), Some(k::B), "X was B: B takes A's old key");
+        assert_eq!(m.key_for(k::A), Key::X);
+        assert_eq!(m.key_for(k::B), Key::Z);
+        assert_eq!(m.rebind(k::L, Key::Q), None);
+        assert_eq!(m.key_for(k::L), Key::Q);
+        assert_eq!(m.rebind(k::L, Key::Q), None, "same key again is a no-op");
     }
 
     #[test]
     fn actions_from_keys_and_pad() {
-        let m = KeyMap::default();
+        let m = km();
         let a = actions(&m, &[Key::Z], &[Key::Down, Key::Z], 0, 0);
         assert_eq!(a, vec![Action::Down, Action::Confirm]);
-        let a = actions(&m, &[], &[], Keys::B | Keys::R, Keys::B | Keys::R | Keys::UP);
+        let a = actions(&m, &[], &[], k::B | k::R, k::B | k::R | k::UP);
         assert_eq!(a, vec![Action::Up, Action::Back, Action::NextPage]);
     }
 
     #[test]
     fn pad_repeat_timing() {
-        let mut p = PadRepeat::new();
+        let mut p = PadRepeat::new(&SET);
         let t0 = Instant::now();
-        let (pr, rp) = p.update(Keys::DOWN, t0);
-        assert_eq!((pr, rp), (Keys::DOWN, Keys::DOWN));
-        let (pr, rp) = p.update(Keys::DOWN, t0 + Duration::from_millis(100));
+        let (pr, rp) = p.update(k::DOWN, t0);
+        assert_eq!((pr, rp), (k::DOWN, k::DOWN));
+        let (pr, rp) = p.update(k::DOWN, t0 + Duration::from_millis(100));
         assert_eq!((pr, rp), (0, 0));
-        let (pr, rp) = p.update(Keys::DOWN, t0 + Duration::from_millis(400));
-        assert_eq!((pr, rp), (0, Keys::DOWN));
-        let (_, rp) = p.update(Keys::DOWN, t0 + Duration::from_millis(420));
+        let (pr, rp) = p.update(k::DOWN, t0 + Duration::from_millis(400));
+        assert_eq!((pr, rp), (0, k::DOWN));
+        let (_, rp) = p.update(k::DOWN, t0 + Duration::from_millis(420));
         assert_eq!(rp, 0, "rate limited");
-        let (_, rp) = p.update(Keys::DOWN, t0 + Duration::from_millis(470));
-        assert_eq!(rp, Keys::DOWN);
+        let (_, rp) = p.update(k::DOWN, t0 + Duration::from_millis(470));
+        assert_eq!(rp, k::DOWN);
         let (pr, rp) = p.update(0, t0 + Duration::from_millis(500));
         assert_eq!((pr, rp), (0, 0));
     }
@@ -391,29 +445,14 @@ mod tests {
     }
 
     #[test]
-    fn pad_map_default_matches_gamepad_map() {
-        let m = PadMap::default();
-        assert_eq!(m.button_for(Keys::A), Button::South);
-        assert_eq!(m.button_for(Keys::B), Button::East);
-        assert_eq!(m.button_for(Keys::L), Button::LeftTrigger);
-        assert_eq!(m.button_for(Keys::R), Button::RightTrigger);
-        assert_eq!(m.button_for(Keys::START), Button::Start);
-        assert_eq!(m.button_for(Keys::SELECT), Button::Select);
-        assert_eq!(m.button_for(Keys::UP), Button::DPadUp);
-        assert_eq!(m.button_for(Keys::RIGHT), Button::DPadRight);
-        assert_eq!(m.mask(|b| matches!(b, Button::South | Button::DPadLeft)), Keys::A | Keys::LEFT);
-        assert_eq!(m.mask(|_| false), 0);
-    }
-
-    #[test]
     fn pad_rebind_swaps_duplicates() {
-        let mut m = PadMap::default();
-        assert_eq!(m.rebind(Keys::A, Button::East), Some(Keys::B), "East was B: B takes A's old button");
-        assert_eq!(m.button_for(Keys::A), Button::East);
-        assert_eq!(m.button_for(Keys::B), Button::South);
-        assert_eq!(m.rebind(Keys::L, Button::LeftTrigger2), None);
-        assert_eq!(m.button_for(Keys::L), Button::LeftTrigger2);
-        assert_eq!(m.rebind(Keys::L, Button::LeftTrigger2), None, "same button again is a no-op");
+        let mut m = pm();
+        assert_eq!(m.rebind(k::A, Button::East), Some(k::B), "East was B: B takes A's old button");
+        assert_eq!(m.button_for(k::A), Button::East);
+        assert_eq!(m.button_for(k::B), Button::South);
+        assert_eq!(m.rebind(k::L, Button::LeftTrigger2), None);
+        assert_eq!(m.button_for(k::L), Button::LeftTrigger2);
+        assert_eq!(m.rebind(k::L, Button::LeftTrigger2), None, "same button again is a no-op");
     }
 
     #[test]

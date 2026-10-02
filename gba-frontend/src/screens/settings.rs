@@ -1301,7 +1301,7 @@ mod tests {
 
     impl Fix {
         fn new() -> Self {
-            Fix { s: Settings::default(), km: KeyMap::default(), pm: PadMap::default(), hk: HotkeyMap::default(), devices: vec!["Speakers".into(), "Headphones".into()] }
+            Fix { s: Settings::default(), km: crate::input::default_keymap(), pm: crate::input::default_padmap(), hk: HotkeyMap::default(), devices: vec!["Speakers".into(), "Headphones".into()] }
         }
         fn ctx(&mut self) -> SettingsCtx<'_> {
             SettingsCtx { settings: &mut self.s, keymap: &mut self.km, padmap: &mut self.pm, hotkeys: &mut self.hk, audio_devices: &self.devices, rebinding: false }

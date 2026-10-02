@@ -15,7 +15,8 @@
 
 use crate::config::Cli;
 use crate::debug_ui::{Hotkey, HotkeyMap, HOTKEYS};
-use crate::ui::input::{bindable, key_name, KeyMap, BUTTON_NAMES, pad_button_from_name, pad_button_name, PadMap};
+use crate::input::{default_keymap, default_padmap};
+use crate::ui::input::{bindable, key_name, pad_button_from_name, pad_button_name, KeyMap, PadMap};
 use anyhow::{Context, Result};
 use minifb::Key;
 use serde::de::DeserializeOwned;
@@ -123,20 +124,21 @@ pub struct KeyBindings(pub BTreeMap<String, String>);
 
 impl Default for KeyBindings {
     fn default() -> Self {
-        Self::from_keymap(&KeyMap::default())
+        Self::from_keymap(&default_keymap())
     }
 }
 
 impl KeyBindings {
     pub fn from_keymap(km: &KeyMap) -> Self {
-        KeyBindings(BUTTON_NAMES.iter().zip(km.keys).map(|(n, k)| (n.to_string(), key_name(k))).collect())
+        KeyBindings(km.set().names.iter().zip(&km.keys).map(|(n, k)| (n.to_string(), key_name(*k))).collect())
     }
 
     /// The live map; buttons missing from the file (or with a name that is not a key) keep their
     /// default key.
     pub fn to_keymap(&self) -> KeyMap {
-        let mut km = KeyMap::default();
-        for (i, name) in BUTTON_NAMES.iter().enumerate() {
+        let mut km = default_keymap();
+        let names = km.set().names;
+        for (i, name) in names.iter().enumerate() {
             if let Some(k) = self.0.get(*name).and_then(|n| key_from_name(n)).filter(|k| bindable(*k)) {
                 km.keys[i] = k;
             }
@@ -152,19 +154,20 @@ pub struct PadBindings(pub BTreeMap<String, String>);
 
 impl Default for PadBindings {
     fn default() -> Self {
-        Self::from_padmap(&PadMap::default())
+        Self::from_padmap(&default_padmap())
     }
 }
 
 impl PadBindings {
     pub fn from_padmap(pm: &PadMap) -> Self {
-        PadBindings(BUTTON_NAMES.iter().zip(pm.buttons).map(|(n, b)| (n.to_string(), pad_button_name(b).to_string())).collect())
+        PadBindings(pm.set().names.iter().zip(&pm.buttons).map(|(n, b)| (n.to_string(), pad_button_name(*b).to_string())).collect())
     }
 
     /// The live map; buttons missing from the file (or naming no pad button) keep their default.
     pub fn to_padmap(&self) -> PadMap {
-        let mut pm = PadMap::default();
-        for (i, name) in BUTTON_NAMES.iter().enumerate() {
+        let mut pm = default_padmap();
+        let names = pm.set().names;
+        for (i, name) in names.iter().enumerate() {
             if let Some(b) = self.0.get(*name).and_then(|n| pad_button_from_name(n)) {
                 pm.buttons[i] = b;
             }
@@ -651,7 +654,7 @@ mod tests {
         s.pacing = Pacing::WallClock;
         s.autosave_frames = 600;
         s.window = Some((1024, 700));
-        let mut km = KeyMap::default();
+        let mut km = default_keymap();
         km.rebind(Keys::A, Key::X);
         s.from_keymap(&km);
         let mut hk = HotkeyMap::default();
@@ -746,16 +749,16 @@ mod tests {
     #[test]
     fn keymap_and_hotkey_conversions() {
         let mut s = Settings::default();
-        assert_eq!(s.to_keymap(), KeyMap::default());
+        assert_eq!(s.to_keymap(), default_keymap());
         let hk = s.to_hotkeys();
         assert_eq!(hk, HotkeyMap::default(), "defaults convert to the live defaults");
-        assert_eq!(s.to_padmap(), PadMap::default());
-        let mut pm = PadMap::default();
+        assert_eq!(s.to_padmap(), default_padmap());
+        let mut pm = default_padmap();
         pm.rebind(Keys::A, Button::West);
         s.from_padmap(&pm);
         assert_eq!(s.gamepad.0["A"], "West");
         assert_eq!(s.to_padmap(), pm);
-        let mut km = KeyMap::default();
+        let mut km = default_keymap();
         km.rebind(Keys::START, Key::Space);
         s.from_keymap(&km);
         assert_eq!(s.keymap.0["START"], "Space");
