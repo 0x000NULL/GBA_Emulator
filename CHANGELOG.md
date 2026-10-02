@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v1.3.1 — 2026-10-02
+
+**fruit-basket.** The frontend's console-independent half (renderer and design tokens, fonts,
+audio, pacing, saves, save-state slots, settings file, library, gamepads, window icon) moved to
+the shared crates of the new public repo `0x000NULL/fruit-basket` (v0.1.0), which the Crabapple
+NES emulator uses too. Nothing a player sees changes: every screen, the slot files, settings.toml
+and the library index are byte-identical to v1.3.0 (pinned by `gba-frontend/src/pinned.rs`).
 - README: the lockup follows the reader's light or dark theme, a Screens section shows every
   screen (`docs/screenshots/`), and a Name and mark section describes the brand; stale status
   text brought up to v1.2.0.
