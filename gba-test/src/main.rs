@@ -2,7 +2,7 @@
 //!
 //! gba-test <rom|zip> --frames N [--golden HEX] [--check jsmolka|mgba-suite] [--reg r12]
 //!          [--input script.toml] [--trace [file]] [--trace-hash] [--break PC] [--watch LO..HI]
-//!          [--watch-read LO..HI] [--watch-log] [--dump-mem LO..HI] [--log-swi] [--exit-on-swi N] [--dump-io] [--png out.png] [--png-every N] [--pcm out.wav] [--record]
+//!          [--watch-read LO..HI] [--watch-log] [--dump-mem LO..HI] [--log-swi] [--exit-on-swi N] [--dump-io] [--png out.png] [--png-every N] [--pcm out.wav] [--mute-channels MASK] [--record]
 //!          [--bios file] [--hle] [--stats-from F] [--fifo-stats F] [--save-state f] [--load-state f]
 //!          [--triage]
 //! Exit code: 0 pass, 1 fail, 2 error.
@@ -86,6 +86,10 @@ struct Cli {
     /// Write captured audio as WAV (stereo at the SOUNDBIAS sample rate).
     #[arg(long)]
     pcm: Option<PathBuf>,
+    /// Silence APU channels in the mix (hex mask: 1 SQ1, 2 SQ2, 4 WAVE, 8 NOISE, 10 FIFO A, 20 FIFO B);
+    /// attaches the bench capture, which does not change emulation.
+    #[arg(long, value_parser = parse_hex)]
+    mute_channels: Option<u32>,
     /// Print a golden.toml stanza for this run.
     #[arg(long)]
     record: bool,
@@ -187,6 +191,10 @@ fn run() -> Result<bool> {
         cli.bios.as_ref().map(|p| std::fs::read(p).map(BiosMode::Lle)).transpose()?
     };
     let mut gba = build_gba(&cli.rom, bios, None)?;
+    if let Some(mask) = cli.mute_channels {
+        gba.set_bench(true);
+        gba.set_channel_mute(mask as u8);
+    }
     {
         let h = &gba.bus.cart.header;
         println!(

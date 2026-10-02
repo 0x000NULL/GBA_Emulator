@@ -11,3 +11,4 @@
 *.png
 !docs/**/*.png
 .env
+__pycache__/

@@ -44,7 +44,10 @@ tests/compat.toml   commercial ROM goldens (skipped when Games/ is absent); `aud
 tests/inputs/       scripted input logs (khcom-newgame.toml, minish-newgame.toml, ...; triage.toml = the sweep's schedule)
 scripts/fetch-tests.ps1   clones jsmolka/gba-tests + mgba suite, downloads portable mGBA, GBATEK
 scripts/gbatek-split.py   regenerates docs/gbatek from tools/gbatek.htm
-scripts/compare-wav.py    aligns and compares a --pcm capture with a reference WAV
+scripts/compare-wav.py    aligns and compares a --pcm capture with a reference WAV (numpy/scipy)
+scripts/build-mgba.ps1    clones mGBA 0.10.5 into tools/mgba-src and builds tools/mgba-wav.exe (headless libmgba audio capture)
+scripts/mgba-wav/         the capture tool's CMakeLists.txt + main.c (public libmgba API only)
+scripts/compare-audio.py  records a title set with gba-test (full / PSG-only / FIFO-only) and mgba-wav, fits gains, writes tools/audio-ref/report.md
 tools/         gitignored: tests/, mgba/, gbatek.htm
 ```
 
@@ -61,6 +64,8 @@ cargo run -p gba-test -- <rom> --frames N --watch-read 0x04000000..0x040003FE --
 cargo run -p gba-test -- <rom> --frames N --dump-mem 0x03007D80..0x03007E40   # word dump of guest memory at the end
 cargo run -p gba-test -- <rom> --frames 1800 --pcm out.wav --stats-from 1200   # audio capture + underruns
 cargo run -p gba-test -- <rom> --frames 1900 --fifo-stats 1800                # per-frame FIFO pushed/popped/underruns
+cargo run -p gba-test -- <rom> --frames 1800 --pcm psg.wav --mute-channels 30 # PSG only (mask: 1 SQ1 2 SQ2 4 WAVE 8 NOISE 10 FIFO A 20 FIFO B)
+scripts/build-mgba.ps1; python scripts/compare-audio.py --titles kh,minish    # reference audio comparison -> tools/audio-ref/report.md
 cargo run -p gba-test -- <rom> --frames 300 --log-swi                         # every HLE SWI call (and sound-driver jump-list call) as a guest: line
 cargo run -p gba-test -- <rom> --frames 27400 --input tests/inputs/khcom-newgame.toml --save-state kh.state
 cargo run -p gba-test -- <rom> --frames 300 --load-state kh.state    # resume a savestate headless
@@ -113,7 +118,12 @@ headless with `gba-test`, narrow with `--break`/`--watch`/`--trace`, add a unit 
 behaviour, then fix. Log non-obvious findings in `PROGRESS.md`.
 
 ## Reference emulator
-`tools/mgba/mGBA-0.10.5-win64/mGBA.exe` (portable). This Windows build has no CLI debugger and no
-headless audio dump: trace diffing needs a build with the CLI debugger (`-d`, then
-`trace N file`); our `--trace` prints the same sixteen-`%08X` + `cpsr:` prefix so the files diff
-directly once such a build exists. Audio comparison is manual (see `scripts/compare-wav.py`).
+`tools/mgba/mGBA-0.10.5-win64/mGBA.exe` (portable, from `fetch-tests.ps1`) for playing by hand, and
+`tools/mgba-wav.exe` (from `scripts/build-mgba.ps1`: libmgba 0.10.5 built from source with MinGW
+gcc, static, no dependencies) for headless audio captures: `tools/mgba-wav.exe rom.gba out.wav
+<frames> <rate> [inputs.txt]`, driven by `scripts/compare-audio.py`. mGBA's HLE BIOS stubs the
+sound driver SWIs, so the six BIOS-driver titles are silent there; compare ROM-mixer titles only.
+No CLI debugger on Windows (`USE_EDITLINE` is non-Windows only): trace diffing still needs a Linux
+build with `-d`; our `--trace` prints the same sixteen-`%08X` + `cpsr:` prefix so the files would
+diff directly. Clean-room rule for the capture tool: read only mGBA's `include/`, CMake files and
+`src/platform/`, never `src/gba/`.

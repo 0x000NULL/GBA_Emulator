@@ -8,6 +8,15 @@
   stored as `[gamepad]` in settings.toml; the left stick stays a D-pad. The default shoulder
   buttons are the bumpers (LB/RB; earlier docs called them LT/RT).
 
+**Tooling**
+- `scripts/build-mgba.ps1` builds `tools/mgba-wav.exe`, a headless libmgba audio capture, and
+  `scripts/compare-audio.py` records a title set with both emulators and reports level, balance
+  and alignment figures (`tools/audio-ref/report.md`); `scripts/compare-wav.py` now uses the
+  same analysis. `gba-test --mute-channels MASK` silences PSG or FIFO channels in a capture.
+- Finding, no change: our FIFO and PSG levels follow GBATEK's stated maxima; mGBA 0.10.5 mixes
+  about 3 dB lower overall and its PSG another 3.5 dB lower relative to FIFO (PROGRESS.md
+  "Reference audio comparison").
+
 ## v1.1.0 — 2026-10-01
 
 **Accuracy**

@@ -129,7 +129,8 @@ with a sample above +-64 that the run must reach: `gba_test::audio_active`, the 
 `tests/inputs/triage.toml` is the sweep's schedule). `tests/roms.rs` runs every entry under
 `cargo test`; compat entries skip when the ROM is absent.
 CLI extras: `--stats-from F` (underruns/samples counted from frame F), `--pcm` (WAV at the
-SOUNDBIAS rate), `--fifo-stats F` (per-frame FIFO pushed/popped/underruns), `--save-state/--load-state`,
+SOUNDBIAS rate), `--mute-channels MASK` (silence PSG/FIFO channels in the mix through the bench
+capture hooks; emulation is unchanged), `--fifo-stats F` (per-frame FIFO pushed/popped/underruns), `--save-state/--load-state`,
 `--record` (prints a manifest stanza), `--triage` (the sweep's input schedule and one-line
 classification summary), `--log-swi` (every HLE SWI, sound-driver Init/Mode and jump-list call as
 a `guest:` line), `--dump-mem LO..HI`, `--watch-read LO..HI`.
@@ -200,7 +201,10 @@ instruction; `--trace-hash` writes `cycle pc hash`. `--break PC`, `--watch LO..H
 `enabled` flag so the hot path pays one branch. Guest `mgba` debug prints, HLE SWI calls and the
 sound driver's `sound init/mode` and `jl slot=` lines are collected and echoed as `guest:` lines.
 The BIOS-region PC traps (0x18, 0x138, 0x140, 0x150, 0x200+4i) are listed under the CPU/HLE
-contract.
+contract. Reference audio: `scripts/build-mgba.ps1` builds `tools/mgba-wav.exe` (libmgba, public
+core API only) and `scripts/compare-audio.py` records a title set with it and with `gba-test
+--pcm` (full, PSG-only, FIFO-only via `--mute-channels`), then reports alignment, correlation and
+per-component gain fits; findings live in PROGRESS.md.
 
 Bench capture (the developer "Bench" view: per-layer pictures, channel levels, scanline event log,
 layer/channel mutes) follows an ownership rule. The PPU and APU cannot reach `DebugHooks`

@@ -43,7 +43,7 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
 - **Frontend verified windowed (2026-09-30, after the GUI)**: KH:CoM, 300 frames, 59.8 fps
   average, 3 late frames, 0 audio underruns on a 48 kHz WASAPI device (`--exit-after 300`), at
   the 1280x800 design size with the 4x letterboxed picture and at `--scale 3`.
-- **Open**: reference-emulator audio comparison manual; Misc edge 6/12 (see "Misc edge attempt"); KH:CoM's whole 27400-frame
+- **Open**: Misc edge 6/12 (see "Misc edge attempt"); KH:CoM's whole 27400-frame
   new-game run is FIFO-underrun-free apart from a handful at scene changes (was ~427k before
   the HLE service hook, see the 2026-09-30 fix log).
 
@@ -58,7 +58,7 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
 | M4 | BIOS HLE, every listed SWI | `bios.gba` under HLE; per-SWI unit tests | **DONE 2026-09-29**: `bios.gba` passes; all listed SWIs + IRQ vector/return emulation; 14 unit tests incl. LZ77/RL/Huffman encoder round trips. Sound driver (1A-1E, 28, 29, 2A and its 36 routines) added 2026-10-01 with 45 tests. LLE differential deferred (no BIOS image) |
 | M5 | Save detection, SRAM/Flash/EEPROM, `<rom>.sav` | jsmolka save/*; round trip | **DONE 2026-09-29**: none/sram/flash64/flash128 pass (flash entries need 400 frames: tests 10/11 program 64K bytes one command sequence each); 8 cart unit tests incl. EEPROM protocol; `.sav` persistence in the frontend |
 | M6 | KH:CoM title -> new game -> first room | title golden + input script | **DONE 2026-09-29**: see "Where things stand". Other priority titles reach title/file screens; Minish Cap reaches gameplay (golden + script) |
-| M7 | APU PSG + FIFO + mixing | PCM capture vs mGBA | **DONE (underrun half) 2026-09-29**: 70 APU unit tests; KH title capture (`--pcm`, 65536 Hz) has 0 underruns over frames 1200-1800, clean stereo music, no clipping. **Reference comparison deferred** (manual: `scripts/compare-wav.py`) |
+| M7 | APU PSG + FIFO + mixing | PCM capture vs mGBA | **DONE (underrun half) 2026-09-29**: 70 APU unit tests; KH title capture (`--pcm`, 65536 Hz) has 0 underruns over frames 1200-1800, clean stereo music, no clipping. **Reference comparison done 2026-10-02** against libmgba with `scripts/compare-audio.py`: our FIFO and PSG scales follow GBATEK's maxima, mGBA sits about 3 dB lower (see "Reference audio comparison") |
 | M9 | GUI: library, pause overlay, save-state slots, settings, bench (`docs/gui/`) | `cargo test --workspace` green with the core hooks off; goldens unchanged; KH `--bench 1200` within 2 % | **DONE 2026-09-30**: all five screens built from the design package and wired; 149 frontend tests incl. review renders; core capture hooks (22 new tests) with the speed gate met (see the M9 section) |
 | M8 | Prefetch, timing polish, savestates, fast-forward | mgba-suite timing improves | **PARTIAL 2026-09-29**: savestates (feature `savestate`, ~429 KB, KH resume bit-exact vs straight run; F1/F3; harness `--save-state/--load-state`), Tab fast-forward, audio-clocked pacing, ~1900 fps headless release on KH. game-pak prefetch buffer landed 2026-09-30 (`bus/prefetch.rs`). **Deferred**: per-instruction timing refinement (no runnable gate) |
 
@@ -105,9 +105,13 @@ log). Every other title in the 1,543-title library has a boot verdict in `docs/l
 ## Environment facts
 - Rust 1.95 stable-msvc; no devkitARM; no BIOS dump. HLE is the only boot path.
 - Frontend stack: pure Rust `minifb` + `cpal` + `gilrs` (user decision).
-- Reference emulator: portable mGBA 0.10.5 at `tools/mgba/mGBA-0.10.5-win64/`. Its Windows build has
-  **no CLI debugger** (`-d`), only GDB (`-g`), and no headless audio dump, so trace diffing and audio
-  comparison need a different build or a manual GUI session.
+- Reference emulator: portable mGBA 0.10.5 at `tools/mgba/mGBA-0.10.5-win64/` (no CLI debugger,
+  only GDB `-g`, no headless audio dump) plus `tools/mgba-wav.exe`, libmgba 0.10.5 built from
+  source by `scripts/build-mgba.ps1` (MinGW gcc, static, no dependencies; `scripts/mgba-wav/main.c`
+  uses the public core API only) for headless audio captures. Trace diffing still needs a Linux
+  build with the CLI debugger (`USE_EDITLINE` is non-Windows only).
+- `tools/` was found empty on 2026-10-02 (wiped with the 2026-10-01 worktree incident); re-run
+  `scripts/fetch-tests.ps1` and set `GBA_TESTS_DIR` or the golden ROM tests silently skip.
 - Test ROMs: `tools/tests/gba-tests` (jsmolka, prebuilt). `tools/tests/suite` is mgba's suite source
   plus `suite.gba` built with its `docker-build.sh` (devkitARM in Docker). Without that file the
   13 suite entries in `tests/golden.toml` fail; rebuild it with the script if `tools/` is wiped.
@@ -138,7 +142,9 @@ log). Every other title in the 1,543-title library has a boot verdict in `docs/l
   registering a name (frame 2000) an extra "O" appears one row below the "A"; unverified.
 - PPU: no per-scanline OBJ cycle budget; OAM evaluated on the rendered line; forced blank does not
   advance affine references (mGBA-like); window `x1 > 240 && x1 > x2` covers the whole line (mGBA).
-- APU: PSG mix scale derived from GBATEK maxima, not measured against hardware; wave RAM
+- APU: PSG and FIFO scales follow GBATEK's "Max Output Levels" (FIFO +-200h, each PSG +-80h);
+  not measured against hardware. mGBA 0.10.5 mixes about 3 dB lower overall and its PSG another
+  3.5 dB lower relative to FIFO (see "Reference audio comparison"); kept ours. Wave RAM
   shift-register read-back quirk not modelled; duty position not reset on restart.
 - CPU: MUL/MLA leave C unchanged (GBATEK says "destroyed"); only Div/DivArm/Sqrt/ArcTan/ArcTan2/
   CpuSet/CpuFastSet have real BIOS cycle counts (other HLE SWIs still pay a flat 10, and the
@@ -451,8 +457,11 @@ IRQ phase).
 3. Initial D garage screens (phone, driving technique) render blank content areas: verify and fix
    (see Known gaps). Mario Tennis: the first match is behind the story's center-court cutscene;
    not scripted.
-4. Reference-emulator audio comparison (needs an mGBA build with headless audio dump); would also
-   settle the sound driver's output scaling, reverb and fixed-rate rules (see its fix log).
+4. Boot-path timing against mGBA: the same ROM and inputs start their music 0.02-0.43 s earlier
+   under mGBA's HLE BIOS on several titles, and sounds triggered by an input land one frame apart
+   (see "Reference audio comparison"). A trace of the first frames would show which BIOS routine
+   or reset state differs. The BIOS sound driver's own scaling has no reference (mGBA's HLE BIOS
+   stubs it).
 
 ## Gamepad rebinding (2026-10-02)
 
@@ -467,6 +476,41 @@ default, unknown names keep the default button. Narrow pages (below about 0.75 f
 stack the pad keycap under the keyboard one and lay the arrows out two per row. Tests: `PadMap`
 default/swap/names, settings round trip and bad-name defaulting, the screen's pad rebind flow,
 and the review renders (`04-settings*.png`).
+
+## Reference audio comparison (2026-10-02)
+
+Tooling: `scripts/build-mgba.ps1` builds `tools/mgba-wav.exe` (libmgba 0.10.5, `scripts/mgba-wav/`
+is ours and uses the public core API: `mCoreFind`, `setKeys`, `runFrame`, `blip_read_samples`);
+`scripts/compare-audio.py` records each title three times with `gba-test --pcm` (full mix, PSG
+only and FIFO only through the new `--mute-channels` flag) and once with `mgba-wav` at the same
+rate and inputs (`tests/inputs/*.toml` converted to a `frame mask` schedule), aligns by
+cross-correlation and fits the reference against our two components. Report:
+`tools/audio-ref/report.md`. Both sides run their HLE BIOS, so the six BIOS-sound-driver titles are
+silent under mGBA (Cyberdrive Zoids is the sanity row) and cannot be compared.
+
+Results (11 captures, 1500-4000 frames, 8 kHz low-pass for the level figures):
+- **FIFO**: mGBA's level is 0.70-0.75 of ours on every title with a ROM-side mixer (Castlevania
+  Circle of the Moon correlates 1.00 with residual 0.01 at 0.74; the m4a titles 0.72; Kingdom
+  Hearts 0.62-0.68, its stream has more content near the top of the band where our zero-order
+  hold and blip_buf's band-limiting differ). GBATEK: "each of the two FIFOs can span the FULL
+  output range (+/-200h)", which is what we do (sample x4 at 100 %); mGBA leaves headroom.
+- **PSG**: phase-insensitive power fits give 0.40-0.52 of ours (Golden Sun's PSG-only seconds:
+  0.51), i.e. relative to FIFO mGBA's PSG is 0.69x ours, about 3.5 dB quieter. GBATEK: "each of the
+  four PSGs can span one QUARTER of the output range (+/-80h)", which is our `level*(vol+1)*2`
+  (max 240 of 1024 p-p); mGBA's figure corresponds to one eighth. Without a hardware measurement
+  the spec wins: no change. Sample-exact PSG fits are low (0.05-0.24) because the square waves'
+  phase differs between the emulators; the envelopes agree (power residual 0.05-0.07 on Mario
+  Kart and F-Zero).
+- **Clocks agree**: once aligned, the per-2-second lag is 0-2 samples on every title (no drift).
+- **Start offsets**: the music begins earlier under mGBA by 965 samples (KH title), 5148 (F-Zero),
+  9392 (Classic NES Zelda), 11926 (Minish Cap), 16500 (ALttP) and 28033 (Advance Wars) at
+  65536 Hz, i.e. 15-430 ms, while Circle of the Moon and Golden Sun start 9-15 ms earlier in
+  ours. Not an audio effect: the games' boot paths take different emulated time under the two
+  HLE BIOSes (next steps). Where an input triggers a sound (KH new game, Advance Wars) windows
+  flip by exactly one frame (1097 samples), so the two harnesses also apply a frame's keys at
+  different points.
+- **Clipping**: ours clips 32 samples in 4000 frames of the KH new-game run, mGBA none; the
+  hardware clips the summed range to 0..3FFh as well (GBATEK), so expected at our level.
 
 ## Fix log (BIOS sound driver HLE, 2026-10-01)
 
