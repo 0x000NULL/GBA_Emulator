@@ -19,7 +19,7 @@ use crate::screens::settings::{SettingsCtx, SettingsOutcome, SettingsScreen};
 use crate::screens::states::{StatesCtx, StatesOutcome, StatesScreen};
 use crate::settings::{AudioMode, Bios, PictureSize, Settings};
 use crate::window::Filter;
-use crate::glue::GBA_SLOTS;
+use crate::glue::{Machine, GBA_SLOTS};
 use crate::slots::{self, SlotSet};
 use crate::ui::fmt::frames_to_secs;
 use crate::ui::input::{KeyMap, PadMap, UiInput};
@@ -93,7 +93,7 @@ impl Session {
         println!("rom: {} [{code}] v{} save {:?}", game, header.version, gba.bus.cart.save_type);
         let mut gba = gba;
         let saves = SaveManager::new(gba_test::save_path_for(rom));
-        match saves.load(&mut gba) {
+        match saves.load(&mut Machine(&mut gba)) {
             Ok(true) => println!("loaded save {}", saves.path().display()),
             Ok(false) => {}
             Err(e) => eprintln!("warning: {e:#}"),
@@ -161,7 +161,7 @@ impl Session {
         }
         self.samples.clear();
         debug_ui::drain_debug_log(&mut self.gba);
-        self.saves.poll(&mut self.gba);
+        self.saves.poll(&mut Machine(&mut self.gba));
         if self.frames.is_multiple_of(self.autosave_frames.max(1)) {
             self.flush_save();
         }
@@ -169,7 +169,7 @@ impl Session {
     }
 
     pub fn flush_save(&mut self) {
-        match self.saves.flush(&mut self.gba) {
+        match self.saves.flush(&mut Machine(&mut self.gba)) {
             Ok(true) => println!("save written: {}", self.saves.path().display()),
             Ok(false) => {}
             Err(e) => eprintln!("save failed: {e:#}"),
@@ -216,13 +216,14 @@ impl Session {
 
     /// Save the machine into `slot`; reports through the pause bar or a toast.
     pub fn save_slot(&mut self, slot: u8) -> Result<()> {
-        let meta = GBA_SLOTS.save(&self.gba, &self.rom, slot, self.play_secs())?;
+        let play = self.play_secs();
+        let meta = GBA_SLOTS.save(&Machine(&mut self.gba), &self.rom, slot, play)?;
         self.slots.set(meta);
         Ok(())
     }
 
     pub fn load_slot(&mut self, slot: u8) -> Result<(), slots::SlotError> {
-        let meta = GBA_SLOTS.load(&mut self.gba, &self.rom, slot)?;
+        let meta = GBA_SLOTS.load(&mut Machine(&mut self.gba), &self.rom, slot)?;
         self.slots.set(meta);
         self.resync();
         Ok(())
@@ -896,7 +897,7 @@ impl App {
                     }
                     Err(e) => eprintln!("screenshot failed: {e:#}"),
                 },
-                Hotkey::SaveNow => match s.saves.force_write(&mut s.gba) {
+                Hotkey::SaveNow => match s.saves.force_write(&mut Machine(&mut s.gba)) {
                     Ok(true) => s.show_toast(".SAV WRITTEN"),
                     Ok(false) => s.show_toast("NO SAVE MEMORY"),
                     Err(e) => eprintln!("save failed: {e:#}"),

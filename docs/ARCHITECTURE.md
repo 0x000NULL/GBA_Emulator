@@ -150,17 +150,22 @@ The GUI follows `docs/gui/` (DESIGN.md is the design language, SCREENS.md the pe
 contract, tokens.json the constants, mockups/ the reference renders). It is a software renderer on
 the minifb window: no widget toolkit.
 
-**Generic and GBA halves.** The frontend is being split so its console-independent half can move
-into the shared `fruit-basket` crates (`basket-ui`, `basket-app`; also used by the crabapple NES
-emulator). Generic modules know no GBA type and no app module: `ui/`, `audio.rs`, `pacing.rs`,
-`saves.rs`, `prefs.rs`, `slots.rs`, `icon.rs`, `library/` (they reach `saves::write_atomic` and
-each other only). The app hands them the console through small types and traits:
+**Generic and GBA halves.** The console-independent half of the frontend lives in the shared
+`fruit-basket` crates (public repo `0x000NULL/fruit-basket`, also used by the crabapple NES
+emulator): `basket-ui` is `ui` (tokens with `tokens.json`, canvas, text and the fonts, widgets,
+drawings, mark, fmt, input) and `basket-app` is `audio`, `pacing`, `saves`, `prefs`, `slots`,
+`icon`, `library` and `pads` (gamepads to per-port masks; Strawberry uses `Ports::Shared`);
+`basket-build` embeds the exe icon from `build.rs`. `main.rs` imports them under the old module
+names, so app code still says `crate::ui::...`. The app hands them the console through small
+types and traits:
 `ui::Screen` (picture size), a colour table for `Canvas::blit_indexed` (`pixels::bgr555_lut`),
 `ui::input::ButtonSet` (button names, mask bits, `MenuRoles` for the menus; `input::GBA_BUTTONS`),
 `audio::Buffering`, `saves::SaveRam`, `library::Platform` (ROM extensions, `probe -> RomInfo`,
 slot art, title capture; `glue::GbaPlatform`), `slots::SlotFormat` + `slots::Snapshot`
-(`glue::GBA_SLOTS`), `icon::Icon` (`brand::ICON`), and the app name and folder for `prefs`.
-`glue.rs` implements the traits for `gba_core`; `gba_copy.rs` holds the GBA save type names and
+(`glue::GBA_SLOTS`), `icon::Icon` (`brand::ICON`), the app name and folder for `prefs`, and the
+GBA-sized tokens as functions of the picture (`component::film_frame(screen, 1)`,
+`pixel::thumb_size(screen, 5)`). `glue.rs` implements the traits for `gba_core` through the
+`glue::Machine` wrapper (both trait and type are foreign to the app crate); `gba_copy.rs` holds the GBA save type names and
 ids; `brand.rs` the Strawberry mark, icons and handheld drawings. `src/pinned.rs` pins the
 frontend's output (render hashes, slot bytes, settings and index text) so the split is checked
 byte for byte.
@@ -169,7 +174,7 @@ byte for byte.
   SaveStates (03), Settings (04) or Bench (D). `Session` owns the running `Gba`, its `.sav`
   manager, slot set, audio, pacer and overlay state. Only Game (unpaused) and Bench (running)
   call `Session::step`. `App::update` reacts to the frame's `UiInput`, `App::render` presents.
-- `ui/`: `tokens` (constants, checked against tokens.json by a test), `canvas` (tiny-skia pixmap
+- `ui/` (basket-ui): `tokens` (constants, checked against tokens.json by a test), `canvas` (tiny-skia pixmap
   for vector shapes, direct pixel writes for text and framebuffer blits, clip rect, conversion to
   minifb's 0RGB), `text` (seven embedded OFL faces rasterised by fontdue, glyph cache, ellipsis
   and wrapping), `widgets` (keycap, tick, buttons, head/foot frame, tabs, numbered items, ruler),

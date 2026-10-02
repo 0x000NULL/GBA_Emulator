@@ -32,19 +32,22 @@ gba-core/      no deps by default (feature `savestate` adds serde + bincode). cp
                state.rs (savestates)
 gba-test/      lib: load_rom (.gba/.zip), fb_hash (xxh3-64), checks (jsmolka / mgba-suite), manifest
                schema, input scripts; bin: headless CLI; tests/roms.rs: cargo test driver
-gba-frontend/  bin `strawberry`: app.rs (screens + game session), ui/ (software renderer: tiny-skia + fontdue,
-               tokens, widgets, SVG drawings, input), overlay/ (native 240x160 pause menu + toasts),
-               screens/ (library, states, settings, bench), library/ (scan, names, index, captures),
-               slots.rs (8 state slots per game), settings.rs (TOML in the config dir), window.rs
-               (resizable minifb, letterbox fast path, filters), audio.rs (cpal, gain), pacing.rs,
-               saves.rs, prefs.rs (settings-file mechanics), debug_ui.rs (hotkey map), icon.rs
-               (window icon per platform), brand.rs (the mark parsed from docs/branding, icons,
-               handheld drawings), glue.rs (gba_core behind the generic traits: Platform, SaveRam,
-               Snapshot, GBA_SLOTS), build.rs (exe icon + version block on Windows via
-               winresource); assets/fonts/ (OFL faces, embedded). The generic half (ui/, audio,
-               pacing, saves, prefs, slots, icon, library/) is bound for the shared fruit-basket
-               crates; see ARCHITECTURE "Generic and GBA halves"
-docs/gui/      DESIGN.md, SCREENS.md, tokens.json, mockups/*.png, drawings/*.svg
+gba-frontend/  bin `strawberry`: app.rs (screens + game session), overlay/ (native 240x160 pause menu +
+               toasts), screens/ (library, states, settings, bench), settings.rs (Strawberry's
+               settings fields), window.rs (resizable minifb, letterbox fast path, filters),
+               input.rs (GBA button set + default layouts), debug_ui.rs (hotkey map), brand.rs (the
+               mark parsed from docs/branding, icons, handheld drawings), glue.rs (gba_core behind
+               the generic traits: GbaPlatform, Machine for SaveRam/Snapshot, GBA_SLOTS, legacy
+               state import), gba_copy.rs (save type names), pixels.rs (BGR555 table), pinned.rs
+               (pinned render hashes and file texts), build.rs (exe icon + version block via
+               basket-build). The generic half comes from fruit-basket (below) and keeps its old
+               module names: `use basket_ui as ui; use basket_app::{audio, icon, library, pacing,
+               prefs, saves, slots};` in main.rs
+../fruit-basket/  sibling checkout of the PUBLIC repo 0x000NULL/fruit-basket (MIT): basket-ui (tokens +
+               tokens.json, canvas, text + the OFL fonts, widgets, drawings, mark, fmt, input),
+               basket-app (audio, pacing, saves, prefs, slots, library/, pads, icon), basket-build.
+               gba-frontend depends on it by git tag; shared with the crabapple NES emulator
+docs/gui/      DESIGN.md, SCREENS.md, mockups/*.png, drawings/handheld-*.svg
 docs/branding/ the Strawberry mark (SVG sprite, source of truth for brand.rs), wordmark, lockups, .ico,
                PNG icons, boards (02 mark rules, 05 empty library); README.txt is the designer's note
 tests/golden.toml   test-suite ROMs: check strategy + golden hashes
@@ -116,6 +119,16 @@ release. Watch it with `gh run watch`; on a matrix failure fix the workflow, del
 and remotely, and push it again. Every job runs on the user's self-hosted runners (since v1.1.0:
 a root Linux container without `sudo`, the Windows box BULV-BULV, and the Mac); GitHub-hosted
 runners are blocked by the account's spending limit, so do not switch jobs back to them.
+
+## fruit-basket (the shared frontend crates)
+Changes to anything under `basket-ui`/`basket-app` happen in `../fruit-basket`, never by
+vendoring. To work on both at once, point gba-frontend's three basket entries at
+`path = "../../fruit-basket/..."` (local only, do not commit), keep `src/pinned.rs` green, then
+commit and push fruit-basket, tag it (`git tag -a vX.Y.Z`, push the tag), and move gba-frontend's
+`tag = "..."` to it. The repo is public: its CI runs on GitHub-hosted runners only, never on the
+BULV self-hosted ones, and nothing from Games/, tools/ or this machine's paths goes into it.
+A pin that moves after a basket change is a regression unless the change was meant to alter
+pixels (then re-pin both apps after reviewing the renders).
 
 ## Working on a subsystem
 The initial build split the code among parallel agents by directory (`cpu/`, `ppu/`, `apu/`,

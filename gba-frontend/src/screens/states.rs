@@ -23,9 +23,12 @@ use minifb::Key;
 use tiny_skia::{Color, Paint, PathBuilder, Pixmap, Point, Rect as SkRect, Transform};
 
 const PER_STRIP: usize = 3;
-const STRIP_W: f32 = c::FILM_STRIP_PAD_X * 2.0 + 3.0 * c::FILM_FRAME_W + 2.0 * c::FILM_FRAME_GAP;
+/// A film frame is the picture at 1x.
+const FILM_FRAME_W: f32 = c::film_frame(crate::config::SCREEN, 1).0;
+const FILM_FRAME_H: f32 = c::film_frame(crate::config::SCREEN, 1).1;
+const STRIP_W: f32 = c::FILM_STRIP_PAD_X * 2.0 + 3.0 * FILM_FRAME_W + 2.0 * c::FILM_FRAME_GAP;
 const EDGE_H: f32 = 22.0;
-const STRIP_H: f32 = 2.0 * c::FILM_SPROCKET_BAND + c::FILM_FRAME_H + EDGE_H;
+const STRIP_H: f32 = 2.0 * c::FILM_SPROCKET_BAND + FILM_FRAME_H + EDGE_H;
 const STRIP_GAP: f32 = 26.0;
 const TOP_PAD: f32 = 28.0;
 const BOTTOM_PAD: f32 = 28.0;
@@ -353,9 +356,9 @@ impl StatesScreen {
                     break;
                 }
                 let (fx, fy) = frame_local(col);
-                let mut p = [Point::from_xy(fx + c::FILM_FRAME_W / 2.0, fy + c::FILM_FRAME_H / 2.0)];
+                let mut p = [Point::from_xy(fx + FILM_FRAME_W / 2.0, fy + FILM_FRAME_H / 2.0)];
                 xf.map_points(&mut p);
-                let (fw, fh) = (c::FILM_FRAME_W * s, c::FILM_FRAME_H * s);
+                let (fw, fh) = (FILM_FRAME_W * s, FILM_FRAME_H * s);
                 layout.frames[i] = Rect::new(p[0].x - fw / 2.0, p[0].y - fh / 2.0, fw, fh);
             }
         }
@@ -551,7 +554,7 @@ impl StatesScreen {
 
 /// Top-left of frame `col` (0..3) inside a strip, in strip pixels.
 fn frame_local(col: usize) -> (f32, f32) {
-    (c::FILM_STRIP_PAD_X + col as f32 * (c::FILM_FRAME_W + c::FILM_FRAME_GAP), c::FILM_SPROCKET_BAND)
+    (c::FILM_STRIP_PAD_X + col as f32 * (FILM_FRAME_W + c::FILM_FRAME_GAP), c::FILM_SPROCKET_BAND)
 }
 
 /// Strip pixels to screen: rotate `deg` about the strip centre, scale by `s`, place at (ox, oy).
@@ -623,7 +626,7 @@ fn draw_strip(cv: &mut Canvas, ctx: &StatesCtx, row: usize) {
         let meta = slot_of(ctx, n);
         let (mid, right): (String, String) = match meta {
             Some(m) => {
-                cv.fill_rect(fx, fy, c::FILM_FRAME_W, c::FILM_FRAME_H, [0, 0, 0]);
+                cv.fill_rect(fx, fy, FILM_FRAME_W, FILM_FRAME_H, [0, 0, 0]);
                 if m.broken.is_some() {
                     let grey = desaturate(&m.frame_full[..]);
                     cv.blit_indexed(&grey, SCREEN_W, SCREEN_H, crate::pixels::bgr555_lut(), fx as i32, fy as i32, 1);
@@ -634,14 +637,14 @@ fn draw_strip(cv: &mut Canvas, ctx: &StatesCtx, row: usize) {
                 }
             }
             None => {
-                cv.fill_rect(fx, fy, c::FILM_FRAME_W, c::FILM_FRAME_H, object::FILM_EMPTY);
-                let (cx, cy) = (fx + c::FILM_FRAME_W / 2.0, fy + c::FILM_FRAME_H / 2.0);
+                cv.fill_rect(fx, fy, FILM_FRAME_W, FILM_FRAME_H, object::FILM_EMPTY);
+                let (cx, cy) = (fx + FILM_FRAME_W / 2.0, fy + FILM_FRAME_H / 2.0);
                 cv.text_center(cx, cy - 22.0, "EMPTY", &Style::display(22.0).color(EMPTY_FG));
                 cv.text_center(cx, cy + 6.0, "F1 saves here", &Style::data(f::DATA_SMALL).color(EMPTY_FG));
                 ("FR –".into(), "–".into())
             }
         };
-        let ty = fy + c::FILM_FRAME_H + 6.0;
+        let ty = fy + FILM_FRAME_H + 6.0;
         // The Data face has no "▸" glyph: draw the marker.
         let mut pb = PathBuilder::new();
         pb.move_to(fx + 1.0, ty + 2.5);
@@ -652,8 +655,8 @@ fn draw_strip(cv: &mut Canvas, ctx: &StatesCtx, row: usize) {
             cv.fill_path(&tri, object::FILM_EDGE_TEXT, Transform::identity());
         }
         cv.text(fx + 11.0, ty, &n.to_string(), &edge);
-        cv.text_center(fx + c::FILM_FRAME_W / 2.0, ty, &mid, &edge);
-        cv.text_right(fx + c::FILM_FRAME_W, ty, &right, &edge);
+        cv.text_center(fx + FILM_FRAME_W / 2.0, ty, &mid, &edge);
+        cv.text_right(fx + FILM_FRAME_W, ty, &right, &edge);
     }
 }
 
@@ -864,7 +867,7 @@ mod tests {
         s.select(8);
         s.render(&mut canvas, &cx);
         assert!(s.scroll > 0.0, "third strip needs scrolling");
-        let bottom = s.layout.frames[7].y + c::FILM_FRAME_H;
+        let bottom = s.layout.frames[7].y + FILM_FRAME_H;
         assert!(bottom < 800.0 - l::FOOT_H);
         s.select(1);
         s.render(&mut canvas, &cx);

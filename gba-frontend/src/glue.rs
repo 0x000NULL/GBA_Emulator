@@ -18,18 +18,22 @@ pub const GBA_SLOTS: SlotFormat = SlotFormat {
     frame_h: SCREEN_H,
 };
 
-impl Snapshot for Gba {
+/// A running machine as the generic save and slot code sees it (the traits and `Gba` are both
+/// foreign to this crate, so a local wrapper carries the impls).
+pub struct Machine<'a>(pub &'a mut Gba);
+
+impl Snapshot for Machine<'_> {
     fn save_state(&self) -> Vec<u8> {
-        Gba::save_state(self)
+        self.0.save_state()
     }
     fn load_state(&mut self, body: &[u8]) -> Result<(), String> {
-        Gba::load_state(self, body).map_err(|e| e.to_string())
+        self.0.load_state(body).map_err(|e| e.to_string())
     }
     fn frame_count(&self) -> u64 {
-        self.bus.ppu.frame_count
+        self.0.bus.ppu.frame_count
     }
     fn picture(&self) -> &[u16] {
-        &self.framebuffer()[..]
+        &self.0.framebuffer()[..]
     }
 }
 
@@ -135,15 +139,15 @@ impl Platform for GbaPlatform {
     }
 }
 
-impl SaveRam for Gba {
+impl SaveRam for Machine<'_> {
     fn save_dirty(&mut self) -> bool {
-        Gba::save_dirty(self)
+        self.0.save_dirty()
     }
     fn save_data(&self) -> Option<Vec<u8>> {
-        Gba::save_data(self)
+        self.0.save_data()
     }
     fn load_save(&mut self, data: &[u8]) {
-        Gba::load_save(self, data)
+        self.0.load_save(data)
     }
 }
 
@@ -213,16 +217,16 @@ mod tests {
 
         let mut gba = Gba::new(rom.clone(), opts.clone()).unwrap();
         let mut mgr = SaveManager::new(sav.clone());
-        assert!(!mgr.load(&mut gba).unwrap(), "no save yet");
-        assert!(!mgr.flush(&mut gba).unwrap(), "clean cart writes nothing");
+        assert!(!mgr.load(&mut Machine(&mut gba)).unwrap(), "no save yet");
+        assert!(!mgr.flush(&mut Machine(&mut gba)).unwrap(), "clean cart writes nothing");
         assert!(!sav.exists());
 
         for (i, b) in b"hello save".iter().enumerate() {
             gba.bus.write8(0x0E00_0010 + i as u32, *b, gba_core::Access::N);
         }
-        mgr.poll(&mut gba);
+        mgr.poll(&mut Machine(&mut gba));
         assert!(mgr.is_pending());
-        assert!(mgr.flush(&mut gba).unwrap());
+        assert!(mgr.flush(&mut Machine(&mut gba)).unwrap());
         assert!(!mgr.is_pending());
         assert!(sav.is_file());
         let on_disk = fs::read(&sav).unwrap();
@@ -230,7 +234,7 @@ mod tests {
 
         let mut fresh = Gba::new(rom, opts).unwrap();
         let mgr2 = SaveManager::new(sav.clone());
-        assert!(mgr2.load(&mut fresh).unwrap());
+        assert!(mgr2.load(&mut Machine(&mut fresh)).unwrap());
         assert!(!fresh.save_dirty(), "loading does not dirty the cart");
         for (i, b) in b"hello save".iter().enumerate() {
             assert_eq!(fresh.bus.read8(0x0E00_0010 + i as u32, gba_core::Access::N), *b);
@@ -285,7 +289,7 @@ mod tests {
             gba.run_frame();
         }
         let frame = gba.bus.ppu.frame_count;
-        let meta = GBA_SLOTS.save(&gba, &rom, 2, 458).unwrap();
+        let meta = GBA_SLOTS.save(&Machine(&mut gba), &rom, 2, 458).unwrap();
         assert_eq!((meta.slot, meta.frame, meta.play_secs), (2, frame, 458));
         assert!(meta.broken.is_none());
         assert_eq!(meta.core_ver, gba_core::state::STATE_VERSION);
@@ -296,7 +300,7 @@ mod tests {
             gba.run_frame();
         }
         assert_ne!(gba.bus.ppu.frame_count, frame);
-        let m2 = GBA_SLOTS.load(&mut gba, &rom, 2).unwrap();
+        let m2 = GBA_SLOTS.load(&mut Machine(&mut gba), &rom, 2).unwrap();
         assert_eq!((gba.bus.ppu.frame_count, m2.frame), (frame, frame));
         // a future core version is listed, not loaded
         let mut bytes = GBA_SLOTS.encode(10, 0, 1, &vec![0u16; SCREEN_W * SCREEN_H], &gba.save_state());
@@ -307,7 +311,7 @@ mod tests {
         assert!(pause[1].as_ref().unwrap().broken.is_none());
         assert!(pause[2].as_ref().unwrap().broken.is_some());
         fs::write(slot_path(&rom, 4), b"nonsense").unwrap();
-        assert!(matches!(GBA_SLOTS.load(&mut gba, &rom, 4), Err(SlotError::Corrupt(_))));
+        assert!(matches!(GBA_SLOTS.load(&mut Machine(&mut gba), &rom, 4), Err(SlotError::Corrupt(_))));
     }
 
     #[test]
@@ -326,7 +330,7 @@ mod tests {
         assert_eq!(m.frame, gba.bus.ppu.frame_count + 1, "one frame run for the picture");
         assert!(legacy.is_file(), "original untouched");
         // a later scan does not overwrite slot 1
-        GBA_SLOTS.save(&gba, &rom, 1, 7).unwrap();
+        GBA_SLOTS.save(&Machine(&mut gba), &rom, 1, 7).unwrap();
         let set2 = scan_slots(&rom, Some(&bytes));
         assert_eq!(set2.get(1).unwrap().play_secs, 7);
     }

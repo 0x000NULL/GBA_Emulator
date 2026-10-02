@@ -11,7 +11,7 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   plus the two KH goldens in `tests/compat.toml` (title at frame 1800, gameplay at frame 27400).
 - **All jsmolka ROMs pass** (arm, thumb, memory, bios, nes, save/none, sram, flash64, flash128;
   ppu hello/shades/stripes by golden hash). `cargo test --workspace` is green: 382 core unit
-  tests, 181 frontend tests, 2 ROM-driver tests (~11 min with all 66 commercial goldens present).
+  tests, 98 frontend tests (+86 in fruit-basket), 2 ROM-driver tests (~11 min with all 66 commercial goldens present).
 - **v1.0.0 released (2026-10-01)**: tag `v1.0.0`; `.github/workflows/release.yml` builds the
   player for Windows x64, Linux x64, macOS x64/arm64 with `--profile dist` and attaches the
   archives to the GitHub release (`CHANGELOG.md` is the release body). Procedure in CLAUDE.md.
@@ -497,6 +497,23 @@ container (`rust:1`, TZ=America/New_York) like the CI test job. A failing pin pr
 `STRAWBERRY_PIN_RECORD=1 cargo test -p gba-frontend pinned_ -- --nocapture` prints every row and
 writes the pinned canvases to `target/ui-renders/pinned/*.png` for review. Re-pin only after
 looking at them.
+
+## fruit-basket split (2026-10-02)
+
+Step 2: the generic half moved out to the new public repo `0x000NULL/fruit-basket` (MIT,
+fresh history: its first commit is the moved code, so nothing from this repo's past or this
+machine went with it). Crates: `basket-ui`, `basket-app`, and `basket-build` (the exe-icon
+helper; a build-dependency of its own so build scripts do not compile cpal and minifb).
+`main.rs` re-imports them under the old module names, so the app's paths did not change.
+Moved with them: `docs/gui/tokens.json` (now `basket-ui/tokens.json`), `pencil-ring.svg` and the
+fonts with their OFL texts. New in basket-app: `pads` (the gamepads, from `input.rs`, plus
+`Ports::Assigned` for two-port consoles: listed UUIDs first, then connection order;
+`uuid_text`/`parse_uuid` for a settings list). `FILM_FRAME_W/H` and `THUMB_W/H` became
+`component::film_frame(screen, scale)` and `pixel::thumb_size(screen, divisor)`; Strawberry
+passes 1 and 5. The orphan rule made `glue::Machine` (a wrapper around `&mut Gba`) carry the
+`SaveRam`/`Snapshot` impls. Unused direct dependencies dropped (fontdue, cpal, chrono,
+raw-window-handle). Every pin unchanged; the release exe still carries its icon and version
+block. Frontend tests: 98 here + 86 in fruit-basket.
 
 ## Generic frontend, in place (2026-10-02)
 

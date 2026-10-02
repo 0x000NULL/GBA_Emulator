@@ -1,6 +1,8 @@
 # GUI design language: paper, ink, one red
 
-The reference renders are `mockups/*.png` (1280×800). Exact values are in `tokens.json`; this file
+The reference renders are `mockups/*.png` (1280×800). Exact values are in `tokens.json` (since
+the fruit-basket split it lives in that repo as `basket-ui/tokens.json`, beside the code it
+checks, together with `pencil-ring.svg` and the fonts); this file
 explains the rules behind them. When a mockup and this file disagree, this file wins. When either
 one disagrees with how the emulator actually behaves, the emulator wins: change the design, not the
 behaviour, and note it in `PROGRESS.md`.

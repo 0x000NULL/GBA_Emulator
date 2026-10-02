@@ -11,6 +11,11 @@ use crate::ui::tokens::pixel::*;
 use gba_core::{FrameBuffer, SCREEN_H, SCREEN_W};
 
 /// A 48x32 slot thumbnail: an exact 1/5 sample of a frame, BGR555.
+/// Thumbnails are every 5th dot of the picture: 48x32.
+pub const THUMB_DIVISOR: u32 = 5;
+pub const THUMB_W: usize = crate::ui::tokens::pixel::thumb_size(crate::config::SCREEN, THUMB_DIVISOR).0;
+pub const THUMB_H: usize = crate::ui::tokens::pixel::thumb_size(crate::config::SCREEN, THUMB_DIVISOR).1;
+
 pub type Thumb = [u16; THUMB_W * THUMB_H];
 
 pub fn thumb_from_frame(fb: &[u16]) -> Thumb {

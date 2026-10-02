@@ -4,7 +4,7 @@
 
 use crate::config::{SCREEN_H, SCREEN_W};
 use crate::ui::input::{actions, KeyMap, PadRepeat, UiInput};
-use crate::input::PadPoll;
+use basket_app::pads::PadPoll;
 use crate::ui::{Canvas, Rgb};
 use anyhow::{anyhow, Result};
 use minifb::{InputCallback, Key, KeyRepeat, MouseButton, MouseMode, Scale, ScaleMode, Window, WindowOptions};

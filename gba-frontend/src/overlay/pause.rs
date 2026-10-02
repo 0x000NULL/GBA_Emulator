@@ -4,7 +4,7 @@
 //! submenu at (100, 8) 132x112 with a 2x2 grid of slot thumbnails (pages of four, L/R to turn);
 //! bar at (8, 128) 224x24 with the selected slot's summary and the two actions.
 
-use super::{font5x5, Overlay, Thumb};
+use super::{font5x5, Overlay, Thumb, THUMB_H, THUMB_W};
 use crate::ui::fmt::fmt_play;
 use crate::ui::input::{Action, UiInput};
 use crate::ui::tokens::pixel::*;
@@ -250,8 +250,6 @@ pub fn slot_infos(set: &crate::slots::SlotSet) -> [Option<SlotInfo>; 8] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::tokens::pixel::THUMB_H;
-    use crate::ui::tokens::pixel::THUMB_W;
 
     fn input(acts: &[Action]) -> UiInput {
         UiInput { actions: acts.to_vec(), ..Default::default() }

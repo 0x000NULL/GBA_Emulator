@@ -13,27 +13,23 @@
 //! Settings.
 
 mod app;
-mod audio;
 mod brand;
 mod config;
 mod debug_ui;
 mod gba_copy;
 mod glue;
-mod icon;
 mod input;
-mod library;
 mod overlay;
-mod pacing;
 mod pinned;
 mod pixels;
-mod prefs;
 mod render_tests;
-mod saves;
 mod settings;
 mod screens;
-mod slots;
-mod ui;
 mod window;
+
+// the generic half of the frontend (fruit-basket), under the module names the app has always used
+use basket_app::{audio, icon, library, pacing, prefs, saves, slots};
+use basket_ui as ui;
 
 use anyhow::Result;
 use clap::Parser;
@@ -81,7 +77,7 @@ fn run(cli: &Cli) -> Result<()> {
     let mut video = window::Video::new(&title, w, h)?;
     video.set_brand_icon(app::App::cache_dir().as_deref());
     println!("window: {w}x{h}");
-    let mut pads = input::Gamepads::new();
+    let mut pads = basket_app::pads::Gamepads::new(basket_app::pads::Ports::Shared);
 
     while video.is_open() && !app.quit {
         let input = video.gather_input(&app.keymap, pads.poll(&app.padmap), Instant::now());
