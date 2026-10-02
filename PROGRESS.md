@@ -24,7 +24,7 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   (`ui/brand.rs`), window icon (`icon.rs`: Windows via a `.ico` written to the cache folder, X11
   via `_NET_WM_ICON`; minifb's `set_icon` panics on Wayland and macOS so both are skipped), exe
   icon and version block (`build.rs` + `winresource`, warns without `rc.exe`), and the empty
-  Library built from board 05. Crate names stay `gba-*`. Unreleased; next tag absorbs it.
+  Library built from board 05. Crate names stay `gba-*`. Released as **v1.3.0 (2026-10-02)**.
 - **BIOS sound driver HLE (2026-10-01)**: SWI 1Ah-1Eh, 28h, 29h and the SoundGetJumpList
   routines are emulated (`gba-core/src/bios/sound/`, guest callbacks in `bios/call.rs`); the six
   titles the sweep left silent play music, pinned by seven `tests/compat.toml` rows with

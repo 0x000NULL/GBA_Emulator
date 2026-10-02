@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.3.0 — 2026-10-02
 
 **Strawberry.** The player has a name and a mark (`docs/branding/`: a 16x16 four-colour
 sprite, Fruit Basket No. 2).
