@@ -16,7 +16,8 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
 - **v1.0.0 released (2026-10-01)**: tag `v1.0.0`; `.github/workflows/release.yml` builds the
   player for Windows x64, Linux x64, macOS x64/arm64 with `--profile dist` and attaches the
   archives to the GitHub release (`CHANGELOG.md` is the release body). Procedure in CLAUDE.md.
-  **v1.1.0 (2026-10-01)**: the BIOS sound driver release; savestate format 4.
+  **v1.1.0 (2026-10-01)**: the BIOS sound driver release; savestate format 4; the workflow now
+  runs entirely on self-hosted runners (PR #2) after the hosted jobs hit the account's spending limit.
 - **BIOS sound driver HLE (2026-10-01)**: SWI 1Ah-1Eh, 28h, 29h and the SoundGetJumpList
   routines are emulated (`gba-core/src/bios/sound/`, guest callbacks in `bios/call.rs`); the six
   titles the sweep left silent play music, pinned by seven `tests/compat.toml` rows with

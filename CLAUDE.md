@@ -98,7 +98,9 @@ and `git push origin vX.Y.Z`. `.github/workflows/release.yml` runs the unit test
 with `--profile dist` for Windows x64, Linux x64, macOS x64 and arm64, and attaches
 `gba-vX.Y.Z-<os>.{zip,tar.gz}` (binary + README, LICENSE, QUICKSTART, CHANGELOG) to the GitHub
 release. Watch it with `gh run watch`; on a matrix failure fix the workflow, delete the tag locally
-and remotely, and push it again.
+and remotely, and push it again. Every job runs on the user's self-hosted runners (since v1.1.0:
+a root Linux container without `sudo`, the Windows box BULV-BULV, and the Mac); GitHub-hosted
+runners are blocked by the account's spending limit, so do not switch jobs back to them.
 
 ## Working on a subsystem
 The initial build split the code among parallel agents by directory (`cpu/`, `ppu/`, `apu/`,
