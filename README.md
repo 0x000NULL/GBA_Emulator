@@ -1,8 +1,11 @@
-# GBA Emulator (Rust)
+<img src="docs/branding/logo/png/strawberry-lockup@2x.png" alt="Strawberry" width="534">
 
-A from-scratch Game Boy Advance emulator: ARM7TDMI interpreter, PPU, APU, DMA, timers,
-cartridge backup memory and a high-level-emulated BIOS, with a pure-Rust desktop frontend and
-a headless test harness. Built against the GBATEK hardware documentation.
+# Strawberry
+
+Strawberry is a from-scratch Game Boy Advance emulator in Rust: ARM7TDMI interpreter, PPU, APU,
+DMA, timers, cartridge backup memory and a high-level-emulated BIOS, with a pure-Rust desktop
+player and a headless test harness. Built against the GBATEK hardware documentation. The name and
+the 16x16 mark (Fruit Basket No. 2) live in `docs/branding/`.
 
 Kingdom Hearts: Chain of Memories, the Zelda titles (Minish Cap, A Link to the Past & Four
 Swords, both Classic NES Series games), Initial D: Another Stage and twenty-three further commercial
@@ -41,7 +44,7 @@ meters, scanline event timeline, CPU registers and disassembly).
 
 Saves are written beside the ROM as `<rom>.sav`; save states as `<rom stem>.s1.state` …
 `.s8.state` (an older single `<rom>.state` is picked up as slot 1). Settings live in
-`%APPDATA%\gba-advance\settings.toml`. No BIOS image is required. If you have one, set
+`%APPDATA%\strawberry\settings.toml`. No BIOS image is required. If you have one, set
 `GBA_BIOS` to its path (or pass `--bios`, or choose it in Settings) and it is used instead of the
 built-in HLE.
 

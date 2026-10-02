@@ -1,23 +1,23 @@
-# GBA Emulator — quick start
+# Strawberry — quick start
 
-A Game Boy Advance emulator with its own library, pause menu, save-state slots, settings and a
+Strawberry is a Game Boy Advance emulator with its own library, pause menu, save-state slots, settings and a
 developer bench. No BIOS file is needed: the system functions are built in.
 
 ## Run it
 
-- **Windows**: unzip and double-click `gba.exe`, or run it from a terminal.
-- **macOS**: `tar xzf gba-*.tar.gz`, then `./gba`. The first launch may need
+- **Windows**: unzip and double-click `strawberry.exe`, or run it from a terminal.
+- **macOS**: `tar xzf strawberry-*.tar.gz`, then `./strawberry`. The first launch may need
   *System Settings › Privacy & Security › Open Anyway* because the binary is not notarised.
-- **Linux**: `tar xzf gba-*.tar.gz`, then `./gba`. Needs ALSA (`libasound2`) and an X11 or
+- **Linux**: `tar xzf strawberry-*.tar.gz`, then `./strawberry`. Needs ALSA (`libasound2`) and an X11 or
   XWayland display.
 
 With no arguments the **library** opens. Add your game folder in *Settings › System* (type or
 paste the path and press Enter), or start with it on the command line:
 
 ```
-gba --library "D:\Games\GBA"
-gba "D:\Games\GBA\Some Game (USA).zip"      # play straight away (.gba or a .zip containing one)
-gba --scale 3 "Some Game.gba"                # fixed 3x picture in a 720x480 window
+strawberry --library "D:\Games\GBA"
+strawberry "D:\Games\GBA\Some Game (USA).zip"      # play straight away (.gba or a .zip containing one)
+strawberry --scale 3 "Some Game.gba"                # fixed 3x picture in a 720x480 window
 ```
 
 ## Keys (defaults, rebindable in Settings)
@@ -47,10 +47,10 @@ button has a keyboard keycap and a gamepad keycap; click one and press the new k
 
 - **Game saves**: `<rom>.sav` beside the ROM.
 - **Save states**: eight slots per game, `<rom stem>.s1.state` … `.s8.state` beside the ROM.
-- **Settings**: `%APPDATA%\gba-advance\settings.toml` (Windows),
-  `~/Library/Application Support/gba-advance/settings.toml` (macOS),
-  `~/.config/gba-advance/settings.toml` (Linux). Plain TOML; safe to edit.
-- **Library index and title pictures**: the user cache folder, `gba-advance/`.
+- **Settings**: `%APPDATA%\strawberry\settings.toml` (Windows),
+  `~/Library/Application Support/strawberry/settings.toml` (macOS),
+  `~/.config/strawberry/settings.toml` (Linux). Plain TOML; safe to edit.
+- **Library index and title pictures**: the user cache folder, `strawberry/`.
 
 ## A real BIOS
 

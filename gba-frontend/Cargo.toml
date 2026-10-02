@@ -4,10 +4,10 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "Desktop frontend for gba-core: window, audio, input, debug views (pure Rust: minifb + cpal + gilrs)."
+description = "Strawberry, the desktop player for gba-core: library, window, audio, input, bench (pure Rust: minifb + cpal + gilrs)."
 
 [[bin]]
-name = "gba"
+name = "strawberry"
 path = "src/main.rs"
 
 [dependencies]

@@ -4,6 +4,9 @@ use clap::Parser;
 use std::path::PathBuf;
 use std::time::Duration;
 
+/// The product name: window title, settings header, docs.
+pub const APP_NAME: &str = "Strawberry";
+
 /// GBA master clock.
 pub const CPU_HZ: f64 = 16_777_216.0;
 /// Cycles per frame (228 lines * 1232 cycles).
@@ -33,7 +36,7 @@ pub const TITLE_REFRESH: Duration = Duration::from_millis(500);
 pub const FAST_FORWARD_PRESENT: Duration = Duration::from_millis(16);
 
 #[derive(Parser, Debug, Clone)]
-#[command(name = "gba", about = "Game Boy Advance emulator", version)]
+#[command(name = "strawberry", about = "Strawberry, a Game Boy Advance emulator", version)]
 pub struct Cli {
     /// ROM file: a .gba, or a .zip containing one. Without it the library opens.
     pub rom: Option<PathBuf>,

@@ -309,8 +309,39 @@ pub struct App {
     step: bool,
 }
 
+/// The folder name under the user's config and cache dirs.
+pub const APP_DIR: &str = "strawberry";
+/// The folder name releases before the rename used (1.0.0 to 1.2.0).
+const LEGACY_DIR: &str = "gba-advance";
+
+/// Move `gba-advance/` to `strawberry/` under the config and cache dirs, once: only when the new
+/// folder does not exist yet. Never deletes; a failure is reported and the defaults are used.
+fn migrate_legacy_dirs() {
+    for base in [dirs::config_dir(), dirs::cache_dir()].into_iter().flatten() {
+        migrate_dir(&base.join(LEGACY_DIR), &base.join(APP_DIR));
+    }
+}
+
+/// Rename `old` to `new` when `old` exists and `new` does not. Returns whether it moved.
+fn migrate_dir(old: &Path, new: &Path) -> bool {
+    if new.exists() || !old.is_dir() {
+        return false;
+    }
+    match std::fs::rename(old, new) {
+        Ok(()) => {
+            println!("moved {} to {}", old.display(), new.display());
+            true
+        }
+        Err(e) => {
+            eprintln!("warning: could not move {} to {}: {e}", old.display(), new.display());
+            false
+        }
+    }
+}
+
 impl App {
     pub fn new(cli: &Cli) -> Result<Self> {
+        migrate_legacy_dirs();
         let settings_path = Settings::default_path();
         let mut settings = settings_path.as_deref().map(Settings::load).unwrap_or_default();
         settings.apply_cli(cli);
@@ -369,9 +400,9 @@ impl App {
         Ok(app)
     }
 
-    /// `<cache dir>/gba-advance`: the library index and title captures.
-    fn cache_dir() -> Option<PathBuf> {
-        dirs::cache_dir().map(|d| d.join("gba-advance"))
+    /// `<cache dir>/strawberry`: the library index and title captures.
+    pub fn cache_dir() -> Option<PathBuf> {
+        dirs::cache_dir().map(|d| d.join(APP_DIR))
     }
 
     /// Settings folders, then the command-line ROM's folder, else `./Games` when it exists.
@@ -938,7 +969,7 @@ impl App {
                 self.library_screen.render(&mut self.canvas, &self.library);
                 video.present_canvas(&self.canvas)?;
                 if !self.title_is_library {
-                    video.set_title("Advance");
+                    video.set_title(config::APP_NAME);
                     self.title_is_library = true;
                 }
             }
@@ -1017,5 +1048,37 @@ impl App {
                 s.pacer.margin()
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::migrate_dir;
+
+    #[test]
+    fn legacy_dir_moves_once_and_never_overwrites() {
+        let root = std::env::temp_dir().join(format!("strawberry-migrate-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let (old, new) = (root.join("gba-advance"), root.join("strawberry"));
+        // neither: nothing to do
+        assert!(!migrate_dir(&old, &new));
+        assert!(!new.exists());
+        // old only: moved with its contents
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("settings.toml"), "volume = 7
+").unwrap();
+        assert!(migrate_dir(&old, &new));
+        assert!(!old.exists());
+        assert_eq!(std::fs::read_to_string(new.join("settings.toml")).unwrap(), "volume = 7
+");
+        // both: the new one is left alone
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("settings.toml"), "volume = 1
+").unwrap();
+        assert!(!migrate_dir(&old, &new));
+        assert_eq!(std::fs::read_to_string(new.join("settings.toml")).unwrap(), "volume = 7
+");
+        assert!(old.exists());
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

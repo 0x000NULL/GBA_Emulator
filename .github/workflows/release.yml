@@ -64,12 +64,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pkg="gba-${GITHUB_REF_NAME}-${{ matrix.name }}"
+          pkg="strawberry-${GITHUB_REF_NAME}-${{ matrix.name }}"
           mkdir -p "dist/$pkg"
           if [ "${{ runner.os }}" = "Windows" ]; then
-            cp "target/${{ matrix.target }}/dist/gba.exe" "dist/$pkg/"
+            cp "target/${{ matrix.target }}/dist/strawberry.exe" "dist/$pkg/"
           else
-            cp "target/${{ matrix.target }}/dist/gba" "dist/$pkg/"
+            cp "target/${{ matrix.target }}/dist/strawberry" "dist/$pkg/"
           fi
           cp README.md LICENSE QUICKSTART.md CHANGELOG.md "dist/$pkg/"
           echo "PKG=$pkg" >> "$GITHUB_ENV"
@@ -111,7 +111,7 @@ jobs:
           cat notes.md
       - uses: softprops/action-gh-release@v2
         with:
-          name: GBA Emulator ${{ github.ref_name }}
+          name: Strawberry ${{ github.ref_name }}
           body_path: notes.md
           files: assets/*
           fail_on_unmatched_files: true

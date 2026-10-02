@@ -340,9 +340,9 @@ fn take<T: DeserializeOwned>(t: &toml::Table, key: &str) -> Option<T> {
 }
 
 impl Settings {
-    /// `<config dir>/gba-advance/settings.toml`.
+    /// `<config dir>/strawberry/settings.toml`.
     pub fn default_path() -> Option<PathBuf> {
-        dirs::config_dir().map(|d| d.join("gba-advance").join("settings.toml"))
+        dirs::config_dir().map(|d| d.join("strawberry").join("settings.toml"))
     }
 
     /// Load the file. Never fails: a missing file gives the defaults, a missing or malformed key
@@ -785,7 +785,7 @@ mod tests {
         s.library_folders = vec![PathBuf::from("C:/Games")];
         s.save(&p).unwrap();
 
-        let cli = Cli::parse_from(["gba", "--scale", "3", "--mute", "--bios", "bios.bin", "--library", "E:/more"]);
+        let cli = Cli::parse_from(["strawberry", "--scale", "3", "--mute", "--bios", "bios.bin", "--library", "E:/more"]);
         let mut s = Settings::load(&p);
         s.apply_cli(&cli);
         assert_eq!(s.picture, PictureSize::Fixed(3));
@@ -810,7 +810,7 @@ mod tests {
         assert_eq!(Settings::load(&p).audio, AudioMode::On);
 
         let mut t = Settings::default();
-        t.apply_cli(&Cli::parse_from(["gba", "--no-audio", "--hle"]));
+        t.apply_cli(&Cli::parse_from(["strawberry", "--no-audio", "--hle"]));
         assert_eq!(t.audio, AudioMode::Off);
         assert_eq!(t.bios, Bios::BuiltIn);
         let _ = std::fs::remove_dir_all(&d);

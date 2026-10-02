@@ -1,6 +1,6 @@
 # CLAUDE.md — GBA emulator (Rust)
 
-A from-scratch Game Boy Advance emulator. Success criterion (met): boot and play
+Strawberry: a from-scratch Game Boy Advance emulator. Success criterion (met): boot and play
 **Kingdom Hearts: Chain of Memories (USA)**; then Zelda titles and Initial D.
 `PROGRESS.md` is the handoff document (status, compat table, known gaps, fix log, next steps).
 `docs/ARCHITECTURE.md` is the design contract. `docs/gbatek/` holds the spec. `docs/gui/` is the
@@ -32,13 +32,15 @@ gba-core/      no deps by default (feature `savestate` adds serde + bincode). cp
                state.rs (savestates)
 gba-test/      lib: load_rom (.gba/.zip), fb_hash (xxh3-64), checks (jsmolka / mgba-suite), manifest
                schema, input scripts; bin: headless CLI; tests/roms.rs: cargo test driver
-gba-frontend/  bin `gba`: app.rs (screens + game session), ui/ (software renderer: tiny-skia + fontdue,
+gba-frontend/  bin `strawberry`: app.rs (screens + game session), ui/ (software renderer: tiny-skia + fontdue,
                tokens, widgets, SVG drawings, input), overlay/ (native 240x160 pause menu + toasts),
                screens/ (library, states, settings, bench), library/ (scan, names, index, captures),
                slots.rs (8 state slots per game), settings.rs (TOML in the config dir), window.rs
                (resizable minifb, letterbox fast path, filters), audio.rs (cpal, gain), pacing.rs,
                saves.rs, debug_ui.rs (hotkey map); assets/fonts/ (OFL faces, embedded)
 docs/gui/      DESIGN.md, SCREENS.md, tokens.json, mockups/*.png, drawings/*.svg
+docs/branding/ the Strawberry mark (SVG sprite, source of truth for ui/brand.rs), wordmark, lockups, .ico,
+               PNG icons, boards (02 mark rules, 05 empty library); README.txt is the designer's note
 tests/golden.toml   test-suite ROMs: check strategy + golden hashes
 tests/compat.toml   commercial ROM goldens (skipped when Games/ is absent); `audio_frames_min` rows gate the sound driver
 tests/inputs/       scripted input logs (khcom-newgame.toml, minish-newgame.toml, ...; triage.toml = the sweep's schedule)
@@ -94,15 +96,15 @@ too, stored as `[gamepad]`); Tab fast-forward; Esc or P pause menu (resume / sav
 quit); N frame-step; F1/F3 save/load the current slot (`<rom stem>.s<N>.state`); F2 save states
 screen; F5 write `.sav`; F10 IO dump; F11 screenshot; F12 bench. Menus navigate with the GBA
 bindings (A confirm, B back, L/R pages, D-pad). Hidden `--exit-after N` ends a windowed run and
-prints timing stats. The settings file lives in `%APPDATA%\gba-advance\settings.toml`, the
-library index and title captures in `%LOCALAPPDATA%\gba-advance\`.
+prints timing stats. The settings file lives in `%APPDATA%\strawberry\settings.toml`, the
+library index and title captures in `%LOCALAPPDATA%\strawberry\`.
 
 ## Releasing
 Bump `[workspace.package] version` in `Cargo.toml`, add the `## vX.Y.Z — date` section to
-`CHANGELOG.md` (it becomes the release body), commit, then `git tag -a vX.Y.Z -m "GBA Emulator X.Y.Z"`
+`CHANGELOG.md` (it becomes the release body), commit, then `git tag -a vX.Y.Z -m "Strawberry X.Y.Z"`
 and `git push origin vX.Y.Z`. `.github/workflows/release.yml` runs the unit tests, builds the player
 with `--profile dist` for Windows x64, Linux x64, macOS x64 and arm64, and attaches
-`gba-vX.Y.Z-<os>.{zip,tar.gz}` (binary + README, LICENSE, QUICKSTART, CHANGELOG) to the GitHub
+`strawberry-vX.Y.Z-<os>.{zip,tar.gz}` (binary + README, LICENSE, QUICKSTART, CHANGELOG) to the GitHub
 release. Watch it with `gh run watch`; on a matrix failure fix the workflow, delete the tag locally
 and remotely, and push it again. Every job runs on the user's self-hosted runners (since v1.1.0:
 a root Linux container without `sudo`, the Windows box BULV-BULV, and the Mac); GitHub-hosted

@@ -66,7 +66,7 @@ fn run(cli: &Cli) -> Result<()> {
     let (w, h) = app.initial_window_size();
     let title = match &app.session {
         Some(s) => format!("{} [{}]", s.game, s.code),
-        None => "Advance".to_string(),
+        None => config::APP_NAME.to_string(),
     };
     if app.session.is_none() {
         println!("library: {} folder(s)", app.library.folders().len());
