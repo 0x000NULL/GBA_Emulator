@@ -7,7 +7,6 @@
 use super::LibraryEntry;
 use crate::saves::write_atomic;
 use anyhow::{Context, Result};
-use gba_core::SaveType;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -41,27 +40,7 @@ pub struct IndexEntry {
 }
 
 fn default_save() -> String {
-    save_to_str(SaveType::None).into()
-}
-
-pub fn save_to_str(t: SaveType) -> &'static str {
-    match t {
-        SaveType::None => "none",
-        SaveType::Sram32K => "sram32k",
-        SaveType::Flash64K => "flash64k",
-        SaveType::Flash128K => "flash128k",
-        SaveType::Eeprom => "eeprom",
-    }
-}
-
-pub fn save_from_str(s: &str) -> SaveType {
-    match s {
-        "sram32k" => SaveType::Sram32K,
-        "flash64k" => SaveType::Flash64K,
-        "flash128k" => SaveType::Flash128K,
-        "eeprom" => SaveType::Eeprom,
-        _ => SaveType::None,
-    }
+    "none".into()
 }
 
 impl IndexEntry {
@@ -75,7 +54,7 @@ impl IndexEntry {
             subtitle: self.subtitle.clone(),
             code: self.code.clone(),
             version: self.version,
-            save: save_from_str(&self.save),
+            save: self.save.clone(),
             rom_len: self.rom_len,
             unreadable: self.unreadable.clone(),
         }
@@ -90,7 +69,7 @@ impl IndexEntry {
         self.subtitle = e.subtitle.clone();
         self.code = e.code.clone();
         self.version = e.version;
-        self.save = save_to_str(e.save).into();
+        self.save = e.save.clone();
         self.rom_len = e.rom_len;
         self.unreadable = e.unreadable.clone();
     }
@@ -200,7 +179,7 @@ mod tests {
             subtitle: "Chain of Memories · USA".into(),
             code: "B8CE".into(),
             version: 1,
-            save: SaveType::Sram32K,
+            save: "sram32k".into(),
             rom_len: 33_554_432,
             unreadable: None,
         }
@@ -219,10 +198,10 @@ mod tests {
         idx.upsert(&entry("Kingdom Hearts"));
         let mut bad = entry("Broken");
         bad.unreadable = Some("no .gba entry in Broken.zip".into());
-        bad.save = SaveType::None;
+        bad.save = "none".into();
         idx.upsert(&bad);
         let mut e = entry("Minish Cap");
-        e.save = SaveType::Eeprom;
+        e.save = "eeprom".into();
         idx.upsert(&e);
         idx.record_played(&entry("Kingdom Hearts").path, 458, 1_790_000_500);
         idx.save(&dir).unwrap();
@@ -279,7 +258,7 @@ last_played = 0
         idx.upsert(&entry("Kingdom Hearts"));
         let mut bad = entry("Broken");
         bad.unreadable = Some("no .gba entry in Broken.zip".into());
-        bad.save = SaveType::None;
+        bad.save = "none".into();
         idx.upsert(&bad);
         idx.record_played(&entry("Kingdom Hearts").path, 458, 1_790_000_500);
         idx.save(&dir).unwrap();
@@ -347,12 +326,5 @@ last_played = 0
         let row = &idx.entries[0];
         assert_eq!(row.title, "Mario Kart");
         assert_eq!(idx.played_secs(Path::new("D:/x/Mario Kart - Super Circuit (USA).zip")), 5);
-    }
-
-    #[test]
-    fn save_type_strings_round_trip() {
-        for t in [SaveType::None, SaveType::Sram32K, SaveType::Flash64K, SaveType::Flash128K, SaveType::Eeprom] {
-            assert_eq!(save_from_str(save_to_str(t)), t);
-        }
     }
 }

@@ -7,6 +7,9 @@
 //!   A warm start shows the whole case from it before the scan has confirmed anything.
 //! * `capture` finds label art: newest save-state frame, else a cached title capture, else none;
 //!   missing captures are made by one background thread running the ROM headless.
+//!
+//! Everything that knows the console goes through [`Platform`]: which files are ROMs, what a ROM
+//! file says about itself, its save-state picture and its title screen.
 //! * `names` turns file names into titles and subtitles.
 //!
 //! The owner calls [`Library::poll`] once per frame and [`Library::record_played`] when a game
@@ -22,11 +25,11 @@ pub mod scan;
 
 pub use capture::Art;
 
-use gba_core::SaveType;
 use index::Index;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// One ROM file as the library knows it.
@@ -42,7 +45,9 @@ pub struct LibraryEntry {
     /// Four-character game code from the header, e.g. `B8CE`; empty when unreadable.
     pub code: String,
     pub version: u8,
-    pub save: SaveType,
+    /// The platform's save memory id (`"none"` when the cartridge has none), stored as is in the
+    /// index.
+    pub save: String,
     /// Length of the ROM image itself (after unzipping).
     pub rom_len: u64,
     /// Why the ROM could not be read, if it could not.
@@ -60,7 +65,36 @@ impl LibraryEntry {
     }
 }
 
+/// What [`Platform::probe`] learns from one ROM file.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RomInfo {
+    /// Length of the ROM image (after unzipping), also when it is unreadable.
+    pub rom_len: u64,
+    /// Short game code shown on the label; empty if the ROM has none.
+    pub code: String,
+    pub version: u8,
+    /// Save memory id, see [`LibraryEntry::save`].
+    pub save: String,
+    /// The title stored in the ROM, used when the file name gives none.
+    pub header_title: String,
+    /// Why the file cannot be played; the other fields are then ignored except `rom_len`.
+    pub unreadable: Option<String>,
+}
+
+/// The console-specific half of the library. Every method runs on a background thread.
+pub trait Platform: Send + Sync + 'static {
+    /// File extensions the library lists, lowercase and without the dot.
+    fn extensions(&self) -> &'static [&'static str];
+    /// Describe one ROM file. A panic counts as "could not be decoded".
+    fn probe(&self, path: &Path) -> RomInfo;
+    /// The picture of the newest loadable save state, if the game has one.
+    fn slot_art(&self, rom: &Path) -> Option<Art>;
+    /// Run the game headless and save its title screen as a PNG at `out`.
+    fn capture_title(&self, rom: &Path, out: &Path) -> anyhow::Result<Art>;
+}
+
 pub struct Library {
+    platform: Option<Arc<dyn Platform>>,
     folders: Vec<PathBuf>,
     cache_dir: Option<PathBuf>,
     entries: Vec<LibraryEntry>,
@@ -87,14 +121,15 @@ fn now_secs() -> i64 {
 impl Library {
     /// Start a library over `folders`. `cache_dir` None = no index file and no title captures
     /// (tests). The scan and the art thread start immediately.
-    pub fn new(folders: Vec<PathBuf>, cache_dir: Option<PathBuf>) -> Library {
+    pub fn new(folders: Vec<PathBuf>, cache_dir: Option<PathBuf>, platform: Arc<dyn Platform>) -> Library {
         let mut lib = Library::bare(folders, cache_dir);
+        lib.platform = Some(platform);
         lib.start_art_thread();
         lib.rescan();
         lib
     }
 
-    /// A library with fixed entries and no threads (screen tests).
+    /// A library with fixed entries and no threads (screen tests); it never scans.
     pub fn from_entries(folders: Vec<PathBuf>, entries: Vec<LibraryEntry>) -> Library {
         let mut lib = Library::bare(folders, None);
         for e in &entries {
@@ -109,6 +144,7 @@ impl Library {
     fn bare(folders: Vec<PathBuf>, cache_dir: Option<PathBuf>) -> Library {
         let index = cache_dir.as_deref().map(Index::load).unwrap_or_default();
         let mut lib = Library {
+            platform: None,
             folders,
             cache_dir,
             entries: Vec::new(),
@@ -141,8 +177,9 @@ impl Library {
     }
 
     fn start_art_thread(&mut self) {
+        let Some(platform) = self.platform.clone() else { return };
         let captures = self.cache_dir.as_deref().map(capture::captures_dir);
-        let (tx, rx) = capture::spawn(captures);
+        let (tx, rx) = capture::spawn(captures, platform);
         self.art_tx = Some(tx);
         self.art_rx = Some(rx);
         self.queue_art_jobs();
@@ -161,9 +198,10 @@ impl Library {
 
     /// Start (or restart) the folder scan.
     pub fn rescan(&mut self) {
+        let Some(platform) = self.platform.clone() else { return };
         self.seen_this_scan.clear();
         self.scanning = true;
-        self.scan_rx = Some(scan::spawn(self.folders.clone(), self.index.entries.clone()));
+        self.scan_rx = Some(scan::spawn(self.folders.clone(), self.index.entries.clone(), platform));
     }
 
     /// Ingest scan and art results. Call once per frame; never blocks.
@@ -303,18 +341,49 @@ impl Library {
     }
 }
 
+/// A stand-in console for the library's own tests: `.rom` files hold a four-character code then
+/// a title; fewer than four bytes is unreadable. `<stem>.art` beside a ROM makes a green slot
+/// picture; title captures always fail.
+#[cfg(test)]
+pub mod fake {
+    use super::{Art, Platform, RomInfo};
+    use std::path::Path;
+    use std::sync::Arc;
+
+    pub struct FakePlatform;
+
+    pub fn platform() -> Arc<dyn Platform> {
+        Arc::new(FakePlatform)
+    }
+
+    impl Platform for FakePlatform {
+        fn extensions(&self) -> &'static [&'static str] {
+            &["rom"]
+        }
+        fn probe(&self, path: &Path) -> RomInfo {
+            let bytes = match std::fs::read(path) {
+                Ok(b) => b,
+                Err(e) => return RomInfo { unreadable: Some(e.to_string()), ..RomInfo::default() },
+            };
+            let rom_len = bytes.len() as u64;
+            if bytes.len() < 4 {
+                return RomInfo { rom_len, unreadable: Some(format!("only {rom_len} bytes: too small")), ..RomInfo::default() };
+            }
+            let text = String::from_utf8_lossy(&bytes);
+            RomInfo { rom_len, code: text[..4].to_string(), version: 0, save: "battery".into(), header_title: text[4..].to_string(), unreadable: None }
+        }
+        fn slot_art(&self, rom: &Path) -> Option<Art> {
+            rom.with_extension("art").is_file().then(|| Art::new(1, 1, vec![0, 255, 0]))
+        }
+        fn capture_title(&self, _rom: &Path, _out: &Path) -> anyhow::Result<Art> {
+            anyhow::bail!("no title captures in tests")
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn rom(title: &str, code: &str) -> Vec<u8> {
-        let mut rom = vec![0u8; 0x1000];
-        rom[0..4].copy_from_slice(&0xEAFF_FFFEu32.to_le_bytes());
-        rom[0xA0..0xA0 + title.len()].copy_from_slice(title.as_bytes());
-        rom[0xAC..0xB0].copy_from_slice(code.as_bytes());
-        rom[0xB2] = 0x96;
-        rom
-    }
 
     fn temp_dir(name: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("gba-lib-{}-{name}", std::process::id()));
@@ -338,12 +407,12 @@ mod tests {
     fn scan_index_and_warm_start() {
         let games = temp_dir("games");
         let cache = temp_dir("cache");
-        std::fs::write(games.join("Mario Kart - Super Circuit (USA).gba"), rom("MARIOKART", "AMKE")).unwrap();
-        std::fs::write(games.join("Broken (USA).gba"), [0u8; 8]).unwrap();
-        let mut lib = Library::new(vec![games.clone()], Some(cache.clone()));
+        std::fs::write(games.join("Mario Kart - Super Circuit (USA).rom"), "AMKEMARIOKART").unwrap();
+        std::fs::write(games.join("Broken (USA).rom"), [0u8; 2]).unwrap();
+        let mut lib = Library::new(vec![games.clone()], Some(cache.clone()), fake::platform());
         wait_scan(&mut lib);
         assert_eq!(lib.entries().len(), 2);
-        assert_eq!(lib.entries()[0].title, "Broken (USA).gba", "sorted by title, unreadable by file name");
+        assert_eq!(lib.entries()[0].title, "Broken (USA).rom", "sorted by title, unreadable by file name");
         let mk = lib.entries().iter().find(|e| e.code == "AMKE").unwrap().path.clone();
         lib.record_played(&mk, 120);
         lib.record_played(&mk, 60);
@@ -353,17 +422,17 @@ mod tests {
         drop(lib);
 
         // the second start shows everything immediately, before any scan result is polled
-        let lib2 = Library::new(vec![games.clone()], Some(cache.clone()));
+        let lib2 = Library::new(vec![games.clone()], Some(cache.clone()), fake::platform());
         assert_eq!(lib2.entries().len(), 2);
         assert_eq!(lib2.played_secs(&mk), 180);
         assert_eq!(lib2.last_played(), Some(mk.clone()));
         // a different folder does not inherit them
-        let other = Library::new(vec![temp_dir("other")], Some(cache.clone()));
+        let other = Library::new(vec![temp_dir("other")], Some(cache.clone()), fake::platform());
         assert!(other.entries().is_empty());
 
         // deleting a file drops its entry once the scan confirms
         std::fs::remove_file(&mk).unwrap();
-        let mut lib3 = Library::new(vec![games.clone()], Some(cache.clone()));
+        let mut lib3 = Library::new(vec![games.clone()], Some(cache.clone()), fake::platform());
         wait_scan(&mut lib3);
         assert_eq!(lib3.entries().len(), 1);
         assert_eq!(lib3.last_played(), None);
@@ -374,8 +443,8 @@ mod tests {
     #[test]
     fn no_cache_dir_means_no_files_written() {
         let games = temp_dir("nocache");
-        std::fs::write(games.join("A.gba"), rom("A", "AAAA")).unwrap();
-        let mut lib = Library::new(vec![games.clone()], None);
+        std::fs::write(games.join("A.rom"), "AAAAA").unwrap();
+        let mut lib = Library::new(vec![games.clone()], None, fake::platform());
         wait_scan(&mut lib);
         assert_eq!(lib.entries().len(), 1);
         lib.record_played(&lib.entries()[0].path.clone(), 5);
@@ -386,11 +455,10 @@ mod tests {
     #[test]
     fn slot_art_reaches_the_library() {
         let games = temp_dir("art");
-        let path = games.join("A.gba");
-        std::fs::write(&path, rom("A", "AAAA")).unwrap();
-        let fb = vec![0x03E0u16; gba_core::SCREEN_W * gba_core::SCREEN_H]; // green
-        std::fs::write(crate::slots::slot_path(&path, 1), crate::slots::encode(1, 1, 1, &fb, b"body")).unwrap();
-        let mut lib = Library::new(vec![games.clone()], None);
+        let path = games.join("A.rom");
+        std::fs::write(&path, "AAAAA").unwrap();
+        std::fs::write(games.join("A.art"), b"").unwrap();
+        let mut lib = Library::new(vec![games.clone()], None, fake::platform());
         let mut got = None;
         for _ in 0..500 {
             lib.poll();
@@ -402,5 +470,12 @@ mod tests {
         }
         assert_eq!(got, Some(vec![0, 255, 0]));
         let _ = std::fs::remove_dir_all(&games);
+    }
+
+    #[test]
+    fn a_fixed_library_never_scans() {
+        let mut lib = Library::from_entries(vec![PathBuf::from("Games")], Vec::new());
+        lib.rescan();
+        assert!(!lib.is_scanning());
     }
 }

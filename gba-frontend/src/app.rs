@@ -368,7 +368,7 @@ impl App {
         let hotkeys = settings.to_hotkeys();
         let ff_limit = settings.ff_limit.factor();
         let folders = Self::library_folders(&settings, cli.rom.as_deref());
-        let library = Library::new(folders, Self::cache_dir());
+        let library = Library::new(folders, Self::cache_dir(), std::sync::Arc::new(crate::glue::GbaPlatform));
         let mut app = App {
             screen: Screen::Library,
             session: None,
@@ -551,7 +551,7 @@ impl App {
         let rom = self.session.as_ref().map(|s| s.rom.clone());
         let folders = Self::library_folders(&self.settings, rom.as_deref());
         if folders != self.library.folders() {
-            self.library = Library::new(folders, Self::cache_dir());
+            self.library = Library::new(folders, Self::cache_dir(), std::sync::Arc::new(crate::glue::GbaPlatform));
             self.library_screen = LibraryScreen::new();
         }
         self.save_settings();

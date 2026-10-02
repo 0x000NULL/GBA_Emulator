@@ -821,7 +821,7 @@ impl LibraryScreen {
             }
             return;
         }
-        let cart = format!("{} · {} · {}", e.code, fmt::fmt_size(e.rom_len), crate::gba_copy::save_name(e.save));
+        let cart = format!("{} · {} · {}", e.code, fmt::fmt_size(e.rom_len), crate::gba_copy::save_name(crate::gba_copy::save_type(&e.save)));
         widgets::detail_row(cv, sx, y, col, "CARTRIDGE", &cart, true, pal);
         y += pitch;
         let last = match (&self.slot_info, self.latest_for_selected()) {
@@ -1081,7 +1081,7 @@ fn draw_cart(cv: &mut Canvas, r: Rect, e: &LibraryEntry, strip: Option<&[u8]>, s
         cv.text(tx, y, &sub, &st);
     }
     let code = Style::data(8.4).color(ink);
-    let line = cv.fonts.ellipsize(&code, &format!("{} · {}", e.code, crate::gba_copy::abbrev_save(e.save)), tw);
+    let line = cv.fonts.ellipsize(&code, &format!("{} · {}", e.code, crate::gba_copy::abbrev_save(crate::gba_copy::save_type(&e.save))), tw);
     cv.text(tx, lab.y + lab.h - 14.0, &line, &code);
 }
 
@@ -1141,7 +1141,6 @@ mod tests {
     use super::*;
     use crate::ui::input::UiInput;
     use crate::ui::text::Fonts;
-    use gba_core::SaveType;
 
     fn entry(dir: &Path, title: &str, code: &str) -> LibraryEntry {
         LibraryEntry {
@@ -1152,7 +1151,7 @@ mod tests {
             subtitle: "USA".into(),
             code: code.into(),
             version: 0,
-            save: SaveType::Sram32K,
+            save: "sram32k".into(),
             rom_len: 32 * 1024 * 1024,
             unreadable: None,
         }
@@ -1489,7 +1488,7 @@ mod tests {
         let games = std::env::var_os("GBA_GAMES_DIR").map(PathBuf::from).unwrap_or_else(|| gba_test::repo_root().join("Games"));
         let mut lib;
         if games.is_dir() {
-            lib = Library::new(vec![games.clone()], Some(crate::render_tests::out_dir().join("library-cache")));
+            lib = Library::new(vec![games.clone()], Some(crate::render_tests::out_dir().join("library-cache")), std::sync::Arc::new(crate::glue::GbaPlatform));
             let start = Instant::now();
             while lib.is_scanning() && start.elapsed() < Duration::from_secs(10) {
                 lib.poll();
@@ -1566,7 +1565,7 @@ mod tests {
                 e
             })
             .collect();
-        entries[7].save = SaveType::Flash128K;
+        entries[7].save = "flash128k".into();
         let mut bad = entry(&dir, "Broken Download (USA)", "");
         bad.unreadable = Some("no .gba entry in Broken Download (USA).zip".into());
         entries.push(bad);
@@ -1615,7 +1614,7 @@ mod tests {
             v.push(bad);
             let mut long = entry(&dir, "Need for Speed Underground 2 Special Collectors Edition", "BNFE");
             long.subtitle = "A very long subtitle that cannot possibly fit · USA, Europe".into();
-            long.save = SaveType::Flash128K;
+            long.save = "flash128k".into();
             v.push(long);
         });
         // art for two of them: a gradient standing in for a screenshot

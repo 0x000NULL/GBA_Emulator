@@ -1,21 +1,16 @@
 //! Label art for the cartridges.
 //!
-//! Order of preference per game: the newest save-state thumbnail (its full 240x160 frame) ->
-//! a cached title capture `<cache_dir>/captures/<code>-<hash of path>.png` -> none (the cartridge
-//! gets a plain colour label). Captures are produced by ONE background thread that runs the ROM
-//! headless with the HLE BIOS for [`CAPTURE_FRAMES`] frames, one game at a time, only after every
-//! cheap lookup has been answered.
+//! Order of preference per game: the newest save-state picture ([`Platform::slot_art`]) -> a
+//! cached title capture `<cache_dir>/captures/<code>-<hash of path>.png` -> none (the cartridge
+//! gets a plain colour label). Captures ([`Platform::capture_title`]) are produced by ONE
+//! background thread, one game at a time, only after every cheap lookup has been answered.
 
-use crate::slots::SlotSet;
-use anyhow::{Context, Result};
-use gba_core::{BiosMode, SCREEN_H, SCREEN_W};
+use super::Platform;
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
 use std::sync::atomic::{AtomicU64, Ordering};
-
-/// Frames a title capture runs (about 30 s of game time: past the logos, on the title screen).
-pub const CAPTURE_FRAMES: u32 = 1800;
+use std::sync::Arc;
 
 static NEXT_ART_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -33,15 +28,6 @@ impl Art {
     pub fn new(w: usize, h: usize, rgb: Vec<u8>) -> Art {
         debug_assert_eq!(rgb.len(), w * h * 3);
         Art { w, h, rgb, id: NEXT_ART_ID.fetch_add(1, Ordering::Relaxed) }
-    }
-
-    /// A 240x160 BGR555 frame as art.
-    pub fn from_frame(fb: &[u16]) -> Art {
-        let mut rgb = Vec::with_capacity(SCREEN_W * SCREEN_H * 3);
-        for &p in fb.iter().take(SCREEN_W * SCREEN_H) {
-            rgb.extend_from_slice(&gba_test::bgr555_to_rgb(p));
-        }
-        Art::new(SCREEN_W, SCREEN_H, rgb)
     }
 
     /// Nearest-neighbour "cover" sample: scale until the picture fills `dw` x `dh`, crop the
@@ -88,12 +74,6 @@ pub fn captures_dir(cache_dir: &Path) -> PathBuf {
     cache_dir.join("captures")
 }
 
-/// The newest loadable save state's full frame, if the game has one.
-pub fn slot_art(rom: &Path) -> Option<Art> {
-    let set = SlotSet::scan(rom, None);
-    set.latest().map(|m| Art::from_frame(&m.frame_full[..]))
-}
-
 /// Decode a capture PNG (8-bit RGB or RGBA).
 pub fn read_png(path: &Path) -> Option<Art> {
     let file = std::fs::File::open(path).ok()?;
@@ -112,22 +92,6 @@ pub fn read_png(path: &Path) -> Option<Art> {
         _ => return None,
     };
     (rgb.len() == w * h * 3 && w > 0 && h > 0).then(|| Art::new(w, h, rgb))
-}
-
-/// Run `rom` headless and write the final frame to `out` (temp file + rename).
-pub fn capture_title(rom: &Path, out: &Path, frames: u32) -> Result<Art> {
-    let mut gba = gba_test::build_gba(rom, Some(BiosMode::Hle), None)?;
-    for _ in 0..frames {
-        gba.run_frame();
-    }
-    let fb = gba.framebuffer();
-    if let Some(dir) = out.parent() {
-        std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
-    }
-    let tmp = out.with_extension("png.tmp");
-    gba_test::write_png(&tmp, &fb[..])?;
-    std::fs::rename(&tmp, out).with_context(|| format!("renaming {}", tmp.display()))?;
-    Ok(Art::from_frame(&fb[..]))
 }
 
 #[derive(Debug)]
@@ -151,17 +115,17 @@ pub struct ArtMsg {
 }
 
 /// Start the capture thread. `captures` None = never run the emulator for art (tests).
-pub fn spawn(captures: Option<PathBuf>) -> (Sender<ArtJob>, Receiver<ArtMsg>) {
+pub fn spawn(captures: Option<PathBuf>, platform: Arc<dyn Platform>) -> (Sender<ArtJob>, Receiver<ArtMsg>) {
     let (job_tx, job_rx) = channel::<ArtJob>();
     let (msg_tx, msg_rx) = channel::<ArtMsg>();
-    let spawned = std::thread::Builder::new().name("library-art".into()).spawn(move || worker(job_rx, msg_tx, captures));
+    let spawned = std::thread::Builder::new().name("library-art".into()).spawn(move || worker(job_rx, msg_tx, captures, &*platform));
     if let Err(e) = spawned {
         eprintln!("warning: could not start the label-art thread: {e}");
     }
     (job_tx, msg_rx)
 }
 
-fn worker(rx: Receiver<ArtJob>, tx: Sender<ArtMsg>, captures: Option<PathBuf>) {
+fn worker(rx: Receiver<ArtJob>, tx: Sender<ArtMsg>, captures: Option<PathBuf>, platform: &dyn Platform) {
     // games with neither a slot nor a cached capture, waiting for their turn
     let mut heavy: VecDeque<(PathBuf, String)> = VecDeque::new();
     loop {
@@ -180,7 +144,7 @@ fn worker(rx: Receiver<ArtJob>, tx: Sender<ArtMsg>, captures: Option<PathBuf>) {
         let send = |path: PathBuf, art: Art, source: ArtSource| tx.send(ArtMsg { path, art, source }).is_ok();
         match job {
             Some(ArtJob::Resolve { path, code }) => {
-                if let Some(art) = slot_art(&path) {
+                if let Some(art) = platform.slot_art(&path) {
                     if !send(path, art, ArtSource::Slot) {
                         return;
                     }
@@ -197,7 +161,7 @@ fn worker(rx: Receiver<ArtJob>, tx: Sender<ArtMsg>, captures: Option<PathBuf>) {
                 }
             }
             Some(ArtJob::Refresh { path }) => {
-                if let Some(art) = slot_art(&path) {
+                if let Some(art) = platform.slot_art(&path) {
                     if !send(path, art, ArtSource::Slot) {
                         return;
                     }
@@ -208,7 +172,7 @@ fn worker(rx: Receiver<ArtJob>, tx: Sender<ArtMsg>, captures: Option<PathBuf>) {
                 let Some(dir) = &captures else { continue };
                 let file = dir.join(capture_file_name(&code, &path));
                 // a core panic on some odd ROM must not end the thread
-                let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| capture_title(&path, &file, CAPTURE_FRAMES)));
+                let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| platform.capture_title(&path, &file)));
                 match run {
                     Ok(Ok(art)) => {
                         if !send(path, art, ArtSource::Capture) {
@@ -265,35 +229,5 @@ mod tests {
         // identity size is a copy
         assert_eq!(art.cover(240, 160), art.rgb);
         assert_ne!(art.id, Art::new(1, 1, vec![0; 3]).id);
-    }
-
-    #[test]
-    fn png_round_trip_through_gba_test() {
-        let dir = std::env::temp_dir().join(format!("gba-capture-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let fb: Vec<u16> = (0..SCREEN_W * SCREEN_H).map(|i| (i as u16).wrapping_mul(7) & 0x7FFF).collect();
-        let file = dir.join("x.png");
-        gba_test::write_png(&file, &fb).unwrap();
-        let art = read_png(&file).expect("decodes");
-        let direct = Art::from_frame(&fb);
-        assert_eq!((art.w, art.h), (240, 160));
-        assert_eq!(art.rgb, direct.rgb);
-        assert!(read_png(&dir.join("missing.png")).is_none());
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn slot_art_is_the_newest_slot_frame() {
-        let dir = std::env::temp_dir().join(format!("gba-slotart-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let rom = dir.join("g.gba");
-        assert!(slot_art(&rom).is_none());
-        let fb = vec![0x001Fu16; SCREEN_W * SCREEN_H]; // red
-        let bytes = crate::slots::encode(10, 100, 5, &fb, b"body");
-        std::fs::write(crate::slots::slot_path(&rom, 3), &bytes).unwrap();
-        let art = slot_art(&rom).expect("slot 3 has a frame");
-        assert_eq!(&art.rgb[..3], &[255, 0, 0]);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

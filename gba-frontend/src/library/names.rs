@@ -4,7 +4,7 @@
 //! `Chain of Memories · USA`.
 //!
 //! Rules, in order:
-//! 1. The extension (`.zip` / `.gba`) is dropped.
+//! 1. The extension (`.zip`, `.gba`, `.nes`: the last dot and 1-4 letters or digits) is dropped.
 //! 2. Every parenthesised tag is lifted out of the name. A language list such as `(En,Fr,De,It)`
 //!    and a revision such as `(Rev 1)` are dropped; the rest (`USA`, `USA, Europe`, `Japan`,
 //!    `Beta`) become the trailing parts of the subtitle.
@@ -68,13 +68,10 @@ pub fn from_header_title(header_title: &str) -> DisplayName {
 }
 
 fn strip_extension(name: &str) -> &str {
-    let lower = name.to_ascii_lowercase();
-    for ext in [".zip", ".gba"] {
-        if lower.ends_with(ext) {
-            return &name[..name.len() - ext.len()];
-        }
+    match name.rsplit_once('.') {
+        Some((stem, ext)) if (1..=4).contains(&ext.len()) && ext.bytes().all(|b| b.is_ascii_alphanumeric()) => stem,
+        _ => name,
     }
-    name
 }
 
 /// Remove every `( ... )` group; return the text without them and the kept tags in order.
@@ -180,6 +177,8 @@ mod tests {
     fn extension_directory_and_case() {
         assert_eq!(n("C:\\Games\\Mario Kart - Super Circuit (USA).GBA"), ("Mario Kart".into(), "Super Circuit · USA".into()));
         assert_eq!(n("/roms/Plain Game.gba"), ("Plain Game".into(), String::new()));
+        assert_eq!(n("Super Mario Bros. 3 (USA).nes"), ("Super Mario Bros. 3".into(), "USA".into()));
+        assert_eq!(n("Dr. Mario"), ("Dr. Mario".into(), String::new()), "no extension: nothing dropped");
         assert_eq!(n("no extension (Japan)"), ("no extension".into(), "Japan".into()));
     }
 

@@ -1,16 +1,16 @@
-//! The folder scan: a background thread that turns `.gba` / `.zip` files into `LibraryEntry`s.
+//! The folder scan: a background thread that turns ROM files (the [`Platform`]'s extensions) into
+//! `LibraryEntry`s.
 //!
 //! Cheapest first: every file whose path + size + mtime match an index row is reported straight
 //! from the index (no ROM bytes read); only unknown or changed files are opened. Folders are
 //! scanned non-recursively.
 
 use super::index::IndexEntry;
-use super::{names, LibraryEntry};
-use gba_core::cart::{Cartridge, Header};
-use gba_core::SaveType;
+use super::{names, LibraryEntry, Platform, RomInfo};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver};
+use std::sync::Arc;
 use std::time::UNIX_EPOCH;
 
 /// What the scan thread sends back.
@@ -21,17 +21,17 @@ pub enum ScanMsg {
     Done { seen: Vec<PathBuf> },
 }
 
-/// True for the file types the library lists.
-pub fn is_rom_file(path: &Path) -> bool {
-    path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("gba") || e.eq_ignore_ascii_case("zip"))
+/// True for the file types the library lists (`extensions`: lowercase, no dot).
+pub fn is_rom_file(path: &Path, extensions: &[&str]) -> bool {
+    path.extension().and_then(|e| e.to_str()).is_some_and(|e| extensions.iter().any(|x| e.eq_ignore_ascii_case(x)))
 }
 
 /// Start a scan thread over `folders`, seeded with the index rows as the cache.
-pub fn spawn(folders: Vec<PathBuf>, cached: Vec<IndexEntry>) -> Receiver<ScanMsg> {
+pub fn spawn(folders: Vec<PathBuf>, cached: Vec<IndexEntry>, platform: Arc<dyn Platform>) -> Receiver<ScanMsg> {
     let (tx, rx) = channel();
     let spawned = std::thread::Builder::new().name("library-scan".into()).spawn(move || {
         let tx2 = tx.clone();
-        let seen = scan(&folders, &cached, |e| tx2.send(ScanMsg::Entry(e)).is_ok());
+        let seen = scan(&folders, &cached, &*platform, |e| tx2.send(ScanMsg::Entry(e)).is_ok());
         let _ = tx.send(ScanMsg::Done { seen });
     });
     if let Err(e) = spawned {
@@ -46,7 +46,7 @@ struct Candidate {
     mtime: i64,
 }
 
-fn list_candidates(folders: &[PathBuf]) -> Vec<Candidate> {
+fn list_candidates(folders: &[PathBuf], extensions: &[&str]) -> Vec<Candidate> {
     let mut out = Vec::new();
     for dir in folders {
         let Ok(rd) = std::fs::read_dir(dir) else { continue };
@@ -54,7 +54,7 @@ fn list_candidates(folders: &[PathBuf]) -> Vec<Candidate> {
             .flatten()
             .filter_map(|de| {
                 let path = de.path();
-                if !is_rom_file(&path) {
+                if !is_rom_file(&path, extensions) {
                     return None;
                 }
                 let md = de.metadata().ok().filter(|m| m.is_file())?;
@@ -70,8 +70,8 @@ fn list_candidates(folders: &[PathBuf]) -> Vec<Candidate> {
 
 /// Run the scan on this thread. `sink` receives entries as they are found and returns false to
 /// stop early (the receiver went away). Returns the paths seen.
-pub fn scan(folders: &[PathBuf], cached: &[IndexEntry], mut sink: impl FnMut(LibraryEntry) -> bool) -> Vec<PathBuf> {
-    let candidates = list_candidates(folders);
+pub fn scan(folders: &[PathBuf], cached: &[IndexEntry], platform: &dyn Platform, mut sink: impl FnMut(LibraryEntry) -> bool) -> Vec<PathBuf> {
+    let candidates = list_candidates(folders, platform.extensions());
     let by_path: HashMap<&Path, &IndexEntry> = cached.iter().map(|e| (Path::new(e.path.as_str()), e)).collect();
     let seen = candidates.iter().map(|c| c.path.clone()).collect();
 
@@ -89,7 +89,7 @@ pub fn scan(folders: &[PathBuf], cached: &[IndexEntry], mut sink: impl FnMut(Lib
     }
     // pass 2: read the rest
     for c in unknown {
-        if !sink(read_entry(&c.path, c.size, c.mtime)) {
+        if !sink(read_entry(platform, &c.path, c.size, c.mtime)) {
             break;
         }
     }
@@ -97,61 +97,47 @@ pub fn scan(folders: &[PathBuf], cached: &[IndexEntry], mut sink: impl FnMut(Lib
 }
 
 /// Open one ROM file and describe it; failures become an `unreadable` entry.
-fn read_entry(path: &Path, size: u64, mtime: i64) -> LibraryEntry {
+fn read_entry(platform: &dyn Platform, path: &Path, size: u64, mtime: i64) -> LibraryEntry {
     let file_name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let from_name = names::from_file_name(&file_name);
+    // a malformed file must never take the scan thread down
+    let info = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| platform.probe(path)))
+        .unwrap_or_else(|_| RomInfo { unreadable: Some("the file could not be decoded".into()), ..RomInfo::default() });
     let mut entry = LibraryEntry {
         path: path.to_path_buf(),
         size,
         mtime,
-        title: from_name.as_ref().map_or_else(|| file_name.clone(), |d| d.title.clone()),
-        subtitle: from_name.as_ref().map(|d| d.subtitle.clone()).unwrap_or_default(),
+        title: file_name.clone(),
+        subtitle: String::new(),
         code: String::new(),
         version: 0,
-        save: SaveType::None,
-        rom_len: 0,
+        save: "none".into(),
+        rom_len: info.rom_len,
         unreadable: None,
     };
-    // a malformed archive must never take the scan thread down
-    let loaded = std::panic::catch_unwind(|| gba_test::load_rom(path));
-    let rom = match loaded {
-        Ok(Ok(rom)) => rom,
-        Ok(Err(e)) => {
-            entry.unreadable = Some(format!("{e:#}"));
-            entry.title = file_name;
-            entry.subtitle.clear();
-            return entry;
-        }
-        Err(_) => {
-            entry.unreadable = Some("the file could not be decoded".into());
-            entry.title = file_name;
-            entry.subtitle.clear();
-            return entry;
-        }
-    };
-    entry.rom_len = rom.len() as u64;
-    // Header::parse indexes up to 0xC0 and panics on anything shorter
-    if rom.len() < 0xC0 {
-        entry.unreadable = Some(format!("only {} bytes: too small to be a GBA ROM", rom.len()));
-        entry.title = file_name;
-        entry.subtitle.clear();
+    if let Some(why) = info.unreadable {
+        entry.unreadable = Some(why);
         return entry;
     }
-    let header = Header::parse(&rom);
-    entry.code = header.game_code_str();
-    entry.version = header.version;
-    entry.save = Cartridge::detect_save_type(&rom, &header);
-    if from_name.is_none() {
-        let d = names::from_header_title(&header.title);
-        entry.title = if d.title.is_empty() { file_name } else { d.title };
+    entry.code = info.code;
+    entry.version = info.version;
+    entry.save = info.save;
+    match from_name {
+        Some(d) => (entry.title, entry.subtitle) = (d.title, d.subtitle),
+        None => {
+            let d = names::from_header_title(&info.header_title);
+            if !d.title.is_empty() {
+                entry.title = d.title;
+            }
+        }
     }
     entry
 }
 
 /// Test and render helper: scan synchronously and collect.
-pub fn scan_collect(folders: &[PathBuf], cached: &[IndexEntry]) -> Vec<LibraryEntry> {
+pub fn scan_collect(folders: &[PathBuf], cached: &[IndexEntry], platform: &dyn Platform) -> Vec<LibraryEntry> {
     let mut out = Vec::new();
-    scan(folders, cached, |e| {
+    scan(folders, cached, platform, |e| {
         out.push(e);
         true
     });
@@ -161,19 +147,7 @@ pub fn scan_collect(folders: &[PathBuf], cached: &[IndexEntry]) -> Vec<LibraryEn
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// A header-only test ROM like the one in `slots.rs`.
-    pub fn test_rom(title: &str, code: &str) -> Vec<u8> {
-        let mut rom = vec![0u8; 0x1000];
-        rom[0..4].copy_from_slice(&0xEAFF_FFFEu32.to_le_bytes());
-        let t = title.as_bytes();
-        rom[0xA0..0xA0 + t.len().min(12)].copy_from_slice(&t[..t.len().min(12)]);
-        rom[0xAC..0xB0].copy_from_slice(code.as_bytes());
-        rom[0xB2] = 0x96;
-        rom[0xBC] = 1;
-        rom[0x200..0x208].copy_from_slice(b"SRAM_V11");
-        rom
-    }
+    use crate::library::fake::FakePlatform;
 
     fn temp_dir(name: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("gba-scan-{}-{name}", std::process::id()));
@@ -185,42 +159,66 @@ mod tests {
     #[test]
     fn scans_a_folder_with_good_bad_and_foreign_files() {
         let dir = temp_dir("mix");
-        std::fs::write(dir.join("Kingdom Hearts - Chain of Memories (USA).gba"), test_rom("KINGDOM HEART", "B8CE")).unwrap();
-        std::fs::write(dir.join("Tiny.gba"), [0u8; 16]).unwrap();
-        std::fs::write(dir.join("Broken (USA).zip"), b"PK\x03\x04 not really a zip").unwrap();
+        std::fs::write(dir.join("Kingdom Hearts - Chain of Memories (USA).rom"), "B8CEKINGDOM HEART").unwrap();
+        std::fs::write(dir.join("Tiny.rom"), [0u8; 2]).unwrap();
         std::fs::write(dir.join("notes.txt"), b"ignored").unwrap();
-        std::fs::create_dir_all(dir.join("sub.gba")).unwrap(); // a directory named like a ROM
-        let got = scan_collect(std::slice::from_ref(&dir), &[]);
-        assert_eq!(got.len(), 3, "{got:?}");
+        std::fs::create_dir_all(dir.join("sub.rom")).unwrap(); // a directory named like a ROM
+        let got = scan_collect(std::slice::from_ref(&dir), &[], &FakePlatform);
+        assert_eq!(got.len(), 2, "{got:?}");
         let kh = got.iter().find(|e| e.code == "B8CE").expect("the good ROM");
         assert_eq!(kh.title, "Kingdom Hearts");
         assert_eq!(kh.subtitle, "Chain of Memories · USA");
-        assert_eq!((kh.rom_len, kh.version, kh.save), (0x1000, 1, SaveType::Sram32K));
+        assert_eq!((kh.rom_len, kh.version, kh.save.as_str()), (17, 0, "battery"));
         assert!(kh.unreadable.is_none());
-        let tiny = got.iter().find(|e| e.title == "Tiny.gba").expect("too small is listed, unreadable");
+        let tiny = got.iter().find(|e| e.title == "Tiny.rom").expect("too small is listed, unreadable");
         assert!(tiny.unreadable.as_deref().unwrap().contains("too small"));
-        assert_eq!(tiny.rom_len, 16);
-        let bad = got.iter().find(|e| e.title == "Broken (USA).zip").expect("bad zip is listed, unreadable");
-        assert!(bad.unreadable.is_some());
+        assert_eq!((tiny.rom_len, tiny.save.as_str(), tiny.subtitle.as_str()), (2, "none", ""));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A probe that panics lists the file as unreadable instead of ending the scan.
+    struct Panicky;
+    impl Platform for Panicky {
+        fn extensions(&self) -> &'static [&'static str] {
+            &["rom"]
+        }
+        fn probe(&self, _: &Path) -> RomInfo {
+            panic!("bad rom")
+        }
+        fn slot_art(&self, _: &Path) -> Option<crate::library::Art> {
+            None
+        }
+        fn capture_title(&self, _: &Path, _: &Path) -> anyhow::Result<crate::library::Art> {
+            anyhow::bail!("no")
+        }
+    }
+
+    #[test]
+    fn a_panicking_probe_is_an_unreadable_entry() {
+        let dir = temp_dir("panic");
+        std::fs::write(dir.join("A (USA).rom"), "AAAA").unwrap();
+        let got = scan_collect(std::slice::from_ref(&dir), &[], &Panicky);
+        assert_eq!(got.len(), 1);
+        assert_eq!((got[0].title.as_str(), got[0].unreadable.as_deref()), ("A (USA).rom", Some("the file could not be decoded")));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn index_hits_skip_the_rom_and_changes_are_reread() {
         let dir = temp_dir("cache");
-        let path = dir.join("Mario Kart - Super Circuit (USA).gba");
-        std::fs::write(&path, test_rom("MARIOKART", "AMKE")).unwrap();
-        let first = scan_collect(std::slice::from_ref(&dir), &[]);
+        let path = dir.join("Mario Kart - Super Circuit (USA).rom");
+        std::fs::write(&path, "AMKEMARIOKART").unwrap();
+        let first = scan_collect(std::slice::from_ref(&dir), &[], &FakePlatform);
         assert_eq!(first[0].code, "AMKE");
         // a cache row with a deliberately different code proves the ROM was not opened
         let mut row = IndexEntry::from_entry(&first[0]);
         row.code = "CACH".into();
-        let hit = scan_collect(std::slice::from_ref(&dir), &[row.clone()]);
+        let hit = scan_collect(std::slice::from_ref(&dir), &[row.clone()], &FakePlatform);
         assert_eq!(hit[0].code, "CACH");
         // a changed size invalidates the row
         let mut stale = row;
         stale.size += 1;
-        let miss = scan_collect(std::slice::from_ref(&dir), &[stale]);
+        let miss = scan_collect(std::slice::from_ref(&dir), &[stale], &FakePlatform);
         assert_eq!(miss[0].code, "AMKE");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -228,9 +226,9 @@ mod tests {
     #[test]
     fn the_thread_reports_entries_then_done() {
         let dir = temp_dir("thread");
-        std::fs::write(dir.join("A (USA).gba"), test_rom("A", "AAAA")).unwrap();
-        std::fs::write(dir.join("B (USA).gba"), test_rom("B", "BBBB")).unwrap();
-        let rx = spawn(vec![dir.clone(), dir.join("missing")], Vec::new());
+        std::fs::write(dir.join("A (USA).rom"), "AAAAA").unwrap();
+        std::fs::write(dir.join("B (USA).rom"), "BBBBB").unwrap();
+        let rx = spawn(vec![dir.clone(), dir.join("missing")], Vec::new(), crate::library::fake::platform());
         let mut entries = 0;
         let seen = loop {
             match rx.recv_timeout(std::time::Duration::from_secs(10)).expect("scan finishes") {
@@ -244,9 +242,10 @@ mod tests {
 
     #[test]
     fn rom_file_extensions() {
-        assert!(is_rom_file(Path::new("a.GBA")));
-        assert!(is_rom_file(Path::new("a.zip")));
-        assert!(!is_rom_file(Path::new("a.sav")));
-        assert!(!is_rom_file(Path::new("a")));
+        let exts = ["gba", "zip"];
+        assert!(is_rom_file(Path::new("a.GBA"), &exts));
+        assert!(is_rom_file(Path::new("a.zip"), &exts));
+        assert!(!is_rom_file(Path::new("a.sav"), &exts));
+        assert!(!is_rom_file(Path::new("a"), &exts));
     }
 }
