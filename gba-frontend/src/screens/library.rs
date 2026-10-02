@@ -24,7 +24,7 @@
 
 use crate::library::{Art, Library, LibraryEntry};
 use crate::overlay::Overlay;
-use crate::ui::brand;
+use crate::brand;
 use crate::ui::canvas::{Clip, Canvas};
 use crate::ui::drawings::{self, Drawing};
 use crate::ui::fmt;
@@ -322,7 +322,7 @@ impl LibraryScreen {
             settings_btn: None,
             find_rect: Rect::default(),
             case_rect: Rect::default(),
-            handheld: drawings::parse(drawings::HANDHELD_LIBRARY),
+            handheld: drawings::parse(crate::brand::HANDHELD_LIBRARY),
             case_cache: None,
             strips: HashMap::new(),
         }

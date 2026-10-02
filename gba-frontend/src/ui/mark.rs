@@ -1,27 +1,15 @@
-//! The Strawberry mark and name (`docs/branding/`). The 16x16 sprite is parsed from
-//! `logo/strawberry-mark.svg` with the same parser as the line drawings, so the SVG stays the
-//! source of truth; the icons are embedded for the window and the exe.
+//! A pixel mark: a 16x16 sprite parsed from an SVG with the same parser as the line drawings,
+//! so the SVG stays the source of truth. Each closed subpath is an axis-aligned run of cells in
+//! one of the four Pixel colours (`tokens::pixel`; the Night chrome colours count as ink and red).
 //!
-//! Whole-number scales only, never smoothed (board 02). On paper the sprite uses all four
-//! colours; on an ink screen the night variant draws the outline in cream and the seeds in red
-//! and leaves the body transparent (`strawberry-mark-night.svg`).
+//! Whole-number scales only, never smoothed. On paper a mark uses all four colours; on an ink
+//! screen the night variant draws the outline in cream and the seeds in red and leaves the body
+//! transparent.
 
 #![allow(dead_code)]
 
 use super::drawings::{self, Geometry, Seg};
 use super::tokens::{pixel, Rgb, NIGHT};
-use std::sync::OnceLock;
-
-pub const NAME: &str = "Strawberry";
-pub const WORDMARK: &str = "STRAWBERRY";
-pub const SERIES: &str = "Fruit Basket · No. 2";
-
-pub const MARK_SVG: &str = include_str!("../../../docs/branding/logo/strawberry-mark.svg");
-pub const MARK_NIGHT_SVG: &str = include_str!("../../../docs/branding/logo/strawberry-mark-night.svg");
-/// `strawberry.ico`: 16, 32, 48, 64, 128 and 256 px entries.
-pub const ICO: &[u8] = include_bytes!("../../../docs/branding/icons/strawberry.ico");
-pub const ICON_48_PNG: &[u8] = include_bytes!("../../../docs/branding/icons/png/strawberry-icon-48.png");
-pub const ICON_128_PNG: &[u8] = include_bytes!("../../../docs/branding/icons/png/strawberry-icon-128.png");
 
 /// Side of the sprite in pixels.
 pub const SPRITE: usize = 16;
@@ -95,12 +83,6 @@ pub fn parse_mark(svg: &str) -> Sprite {
     Sprite { px }
 }
 
-/// The paper mark, parsed once.
-pub fn mark() -> &'static Sprite {
-    static MARK: OnceLock<Sprite> = OnceLock::new();
-    MARK.get_or_init(|| parse_mark(MARK_SVG))
-}
-
 impl Sprite {
     pub fn at(&self, x: usize, y: usize) -> Px {
         self.px[y * SPRITE + x]
@@ -168,63 +150,28 @@ impl Sprite {
 mod tests {
     use super::*;
 
+    const SVG: &str = r##"<svg viewBox="0 0 16 16"><path fill="#181818" d="M0 0 L2 0 L2 1 L0 1 z M5 5 L6 5 L6 7 L5 7 z"/><path fill="#D03828" d="M1 1 L2 1 L2 2 L1 2 z"/><path fill="#F0E8D8" d="M15 15 L17 15 L17 17 L15 17 z"/><path fill="#123456" d="M8 8 L9 8 L9 9 L8 9 z"/></svg>"##;
+
     #[test]
-    fn mark_parses_to_the_documented_cells() {
-        let s = mark();
-        assert_eq!(s.count(Px::Ink), 71);
-        assert_eq!(s.count(Px::Cream), 74);
-        assert_eq!(s.count(Px::Red), 15, "fifteen seeds");
-        assert_eq!(s.count(Px::Shade), 9);
-        assert_eq!(s.count(Px::None), 87);
-        assert_eq!(s.at(7, 0), Px::Ink, "stem");
-        assert_eq!(s.at(3, 7), Px::Red, "first seed");
-        assert_eq!(s.at(14, 7), Px::Shade, "lower-right shade");
-        assert_eq!(s.at(0, 0), Px::None);
+    fn closed_subpaths_fill_their_cells() {
+        let s = parse_mark(SVG);
+        assert_eq!((s.at(0, 0), s.at(1, 0), s.at(2, 0)), (Px::Ink, Px::Ink, Px::None));
+        assert_eq!((s.at(5, 5), s.at(5, 6)), (Px::Ink, Px::Ink), "second subpath");
+        assert_eq!(s.at(1, 1), Px::Red);
+        assert_eq!(s.at(15, 15), Px::Cream, "clipped to the sprite");
+        assert_eq!(s.at(8, 8), Px::None, "a colour outside the palette is skipped");
+        assert_eq!(s.count(Px::Ink), 4);
     }
 
     #[test]
-    fn night_mark_is_the_paper_outline_and_seeds() {
-        let day = mark();
-        let night = parse_mark(MARK_NIGHT_SVG);
-        for i in 0..SPRITE * SPRITE {
-            let want = match day.px[i] {
-                Px::Ink => Px::Ink,
-                Px::Red => Px::Red,
-                _ => Px::None,
-            };
-            assert_eq!(night.px[i], want, "cell {i}");
-        }
-        let tex = day.night_555();
-        assert_eq!(tex.iter().filter(|t| **t == pixel::CREAM_555).count(), 71);
-        assert_eq!(tex.iter().filter(|t| **t == pixel::RED_555).count(), 15);
-        assert_eq!(tex.iter().filter(|t| **t == CLEAR_555).count(), 87 + 74 + 9);
-    }
-
-    #[test]
-    fn paper_texels_are_exact_and_argb_is_opaque_where_drawn() {
-        let tex = mark().paper_555();
-        for t in tex {
-            assert!(matches!(t, pixel::INK_555 | pixel::CREAM_555 | pixel::RED_555 | pixel::SHADE_555 | CLEAR_555));
-        }
-        // the 5-bit values are exact; the frontend's expansion replicates the top bits downward
-        assert_eq!(gba_test::bgr555_to_rgb(pixel::CREAM_555).map(|c| c & 0xF8), pixel::CREAM);
-        assert_eq!(gba_test::bgr555_to_rgb(pixel::RED_555).map(|c| c & 0xF8), pixel::RED);
-        let argb = mark().argb_paper();
-        assert_eq!(argb.iter().filter(|a| **a == 0).count(), 87);
-        assert_eq!(argb[7], 0xFF18_1818);
-    }
-
-    #[test]
-    fn icon_bytes_are_an_ico_with_six_png_entries() {
-        assert_eq!(&ICO[0..4], &[0, 0, 1, 0]);
-        let n = u16::from_le_bytes([ICO[4], ICO[5]]) as usize;
-        assert_eq!(n, 6);
-        for i in 0..n {
-            let e = 6 + i * 16;
-            let off = u32::from_le_bytes([ICO[e + 12], ICO[e + 13], ICO[e + 14], ICO[e + 15]]) as usize;
-            assert_eq!(&ICO[off..off + 4], b"\x89PNG", "entry {i}");
-        }
-        assert_eq!(&ICON_48_PNG[..4], b"\x89PNG");
-        assert_eq!(&ICON_128_PNG[..4], b"\x89PNG");
+    fn texels_and_argb_follow_the_palette() {
+        let s = parse_mark(SVG);
+        let paper = s.paper_555();
+        assert_eq!((paper[0], paper[17], paper[255]), (pixel::INK_555, pixel::RED_555, pixel::CREAM_555));
+        assert_eq!(paper[2], CLEAR_555);
+        let night = s.night_555();
+        assert_eq!((night[0], night[17], night[255]), (pixel::CREAM_555, pixel::RED_555, CLEAR_555));
+        let argb = s.argb_paper();
+        assert_eq!((argb[0], argb[2]), (0xFF18_1818, 0));
     }
 }

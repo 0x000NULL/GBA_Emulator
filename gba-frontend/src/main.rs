@@ -14,6 +14,7 @@
 
 mod app;
 mod audio;
+mod brand;
 mod config;
 mod debug_ui;
 mod gba_copy;

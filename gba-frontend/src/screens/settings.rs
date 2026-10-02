@@ -268,7 +268,7 @@ impl SettingsScreen {
             text: None,
             bios_memory: PathBuf::new(),
             game_dir: None,
-            figure: drawings::parse(drawings::HANDHELD_CONTROLS),
+            figure: drawings::parse(crate::brand::HANDHELD_CONTROLS),
             hits: Vec::new(),
             tab_rects: [R::default(); SPREADS],
             page_rects: [R::default(); 2],

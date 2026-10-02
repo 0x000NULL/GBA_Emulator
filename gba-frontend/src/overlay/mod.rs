@@ -213,7 +213,7 @@ mod tests {
         let mut o = Overlay::new(&mut fb);
         let w = o.text_scaled(0, 0, "AB", RED_555, 2);
         assert_eq!(w, 2 * font5x5::ADVANCE * 2 - 2);
-        let tex = crate::ui::brand::mark().night_555();
+        let tex = crate::brand::mark().night_555();
         o.sprite(100, 100, &tex, 16, 16, 3);
         let at = |x: usize, y: usize| fb[y * SCREEN_W + x];
         // row 0 of 'A' is .###. so column 1 is lit, and at 2x it is a 2x2 block

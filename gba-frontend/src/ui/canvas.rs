@@ -574,11 +574,8 @@ mod tests {
     fn drawings_render_without_panicking() {
         let mut c = Canvas::new(520, 340, Fonts::new());
         c.clear(PAPER.bg);
-        for svg in [super::super::drawings::HANDHELD_CONTROLS, super::super::drawings::HANDHELD_LIBRARY, super::super::drawings::PENCIL_RING] {
-            let d = super::super::drawings::parse(svg);
-            c.drawing(&d, 0.0, 0.0);
-        }
+        c.drawing(&super::super::drawings::parse(super::super::drawings::PENCIL_RING), 0.0, 0.0);
         let ink = (0..520).flat_map(|x| (0..340).map(move |y| (x, y))).filter(|&(x, y)| c.pixel(x, y) != PAPER.bg).count();
-        assert!(ink > 1000);
+        assert!(ink > 300, "{ink}");
     }
 }

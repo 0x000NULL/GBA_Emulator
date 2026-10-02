@@ -160,7 +160,7 @@ impl Video {
     /// The Strawberry icon where the platform allows it (`icon.rs`); `cache_dir` holds the
     /// `.ico` Windows loads from disk.
     pub fn set_brand_icon(&mut self, cache_dir: Option<&std::path::Path>) {
-        crate::icon::install(&mut self.window, cache_dir);
+        crate::icon::install(&mut self.window, cache_dir, &crate::brand::ICON);
     }
 
     /// Current client size.

@@ -1,11 +1,9 @@
-//! The three line drawings in `docs/gui/drawings/*.svg`, parsed from the SVG subset they use
+//! Line drawings (`docs/gui/drawings/*.svg`, and the app's own), parsed from the SVG subset they use
 //! (`rect` with `rx`, `circle`, `path` with `M L C h v z`, `g` with fill/stroke/stroke-width)
 //! so the SVG files stay the source of truth.
 
 use super::tokens::Rgb;
 
-pub const HANDHELD_CONTROLS: &str = include_str!("../../../docs/gui/drawings/handheld-controls.svg");
-pub const HANDHELD_LIBRARY: &str = include_str!("../../../docs/gui/drawings/handheld-library.svg");
 pub const PENCIL_RING: &str = include_str!("../../../docs/gui/drawings/pencil-ring.svg");
 
 #[derive(Clone, Debug, PartialEq)]
@@ -236,44 +234,7 @@ pub fn parse(svg: &str) -> Drawing {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::tokens::{hex, PAPER};
-
-    #[test]
-    fn controls_drawing_parses() {
-        let d = parse(HANDHELD_CONTROLS);
-        assert_eq!((d.width, d.height), (504.0, 280.0));
-        // 4 rects + 11 circles + 8 paths (1 pad + 7 leaders)
-        assert_eq!(d.shapes.len(), 23);
-        let rects = d.shapes.iter().filter(|s| matches!(s.geom, Geometry::Rect { .. })).count();
-        let circles = d.shapes.iter().filter(|s| matches!(s.geom, Geometry::Circle { .. })).count();
-        assert_eq!((rects, circles), (4, 11));
-        // root defaults: no fill, ink stroke 1.5
-        assert_eq!(d.shapes[0].stroke, Some(PAPER.fg));
-        assert_eq!(d.shapes[0].stroke_width, 1.5);
-        assert_eq!(d.shapes[0].fill, None);
-        // the body is filled paper
-        assert_eq!(d.shapes[2].fill, Some(PAPER.bg));
-        // leader lines inherit the group's stroke-width 1
-        let leaders: Vec<_> = d.shapes.iter().filter(|s| s.stroke_width == 1.0).collect();
-        assert_eq!(leaders.len(), 7);
-        // red callout dots: filled spot, no stroke
-        let dots: Vec<_> = d.shapes.iter().filter(|s| s.fill == Some(hex(0xC8322A))).collect();
-        assert_eq!(dots.len(), 7);
-        assert!(dots.iter().all(|s| s.stroke.is_none()));
-    }
-
-    #[test]
-    fn library_drawing_parses() {
-        let d = parse(HANDHELD_LIBRARY);
-        assert_eq!((d.width, d.height), (436.0, 320.0));
-        assert_eq!(d.shapes.len(), 13);
-        let ring = d.shapes.iter().find(|s| matches!(s.geom, Geometry::Circle { r, .. } if r == 15.0)).unwrap();
-        assert_eq!(ring.stroke, Some(hex(0xC8322A)));
-        assert_eq!(ring.stroke_width, 3.0);
-        let speaker: Vec<_> = d.shapes.iter().filter(|s| matches!(s.geom, Geometry::Circle { r, .. } if r == 1.3)).collect();
-        assert_eq!(speaker.len(), 4);
-        assert_eq!(speaker[0].fill, Some(PAPER.fg));
-    }
+    use crate::ui::tokens::hex;
 
     #[test]
     fn pencil_ring_parses() {
