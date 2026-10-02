@@ -158,7 +158,10 @@ the minifb window: no widget toolkit.
   for vector shapes, direct pixel writes for text and framebuffer blits, clip rect, conversion to
   minifb's 0RGB), `text` (seven embedded OFL faces rasterised by fontdue, glyph cache, ellipsis
   and wrapping), `widgets` (keycap, tick, buttons, head/foot frame, tabs, numbered items, ruler),
-  `drawings` (a parser for the SVG subset of the three line drawings), `fmt` (copy rules),
+  `drawings` (a parser for the SVG subset of the three line drawings), `brand` (the Strawberry
+  mark parsed from `docs/branding/logo/strawberry-mark.svg` with that parser into a 16x16
+  four-colour sprite, paper and night BGR555 textures, the embedded `.ico` and PNG icons, and the
+  name strings; the empty Library draws it), `fmt` (copy rules),
   `input` (per-frame snapshot; `KeyMap` and `PadMap`, the rebindable keyboard and gamepad
   layouts; menu navigation derives from the GBA key bindings so a rebinding moves the menus too;
   gamepad edge/repeat).
@@ -186,12 +189,18 @@ the minifb window: no widget toolkit.
   stream, underrun counter, a gain stage in the callback for the volume setting), `pacing.rs`
   (1/59.7275 s frame clock, adaptive sleep margin, +-2% audio-fill correction), `saves.rs`
   (atomic `<rom>.sav` writes every 60 frames/F5/exit), `debug_ui.rs` (hotkey map, IO dump,
-  screenshots, title bar), `settings.rs` (TOML settings file in the user's config dir, unknown
-  keys preserved; keyboard, gamepad and hotkey bindings stored by name; CLI flags override for
-  the run only), `library/` (folder scan thread, display
-  names from file names, index cache, background title captures for the cartridge labels).
+  screenshots, title bar), `settings.rs` (TOML settings file at `<config dir>/strawberry/`,
+  unknown keys preserved; keyboard, gamepad and hotkey bindings stored by name; CLI flags
+  override for the run only; `App::new` first moves a pre-1.3.0 `gba-advance/` config or cache
+  folder to `strawberry/` when the new one is absent), `library/` (folder scan thread, display
+  names from file names, index cache under `<cache dir>/strawberry/`, background title captures
+  for the cartridge labels), `icon.rs` (the window icon: Windows loads the embedded `.ico` after
+  it is written to the cache folder, X11 gets `_NET_WM_ICON` from the icon PNGs; Wayland and
+  macOS are skipped because minifb's `set_icon` panics there), and `build.rs` (on Windows only,
+  the exe's icon and version block through `winresource`; a missing `rc.exe` warns, never fails).
   Runs without an audio device. Review renders: `cargo test -p gba-frontend --release --
-  --ignored render_` writes every screen as PNG under `target/ui-renders/`.
+  --ignored render_` writes every screen as PNG under `target/ui-renders/`; the committed copies
+  in `docs/screenshots/` are what the README shows.
 
 ## Debug tooling
 `--trace` writes mGBA's register layout (sixteen `%08X`, then `cpsr: %08X`, r15 = PC+8/PC+4) per

@@ -11,7 +11,7 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   plus the two KH goldens in `tests/compat.toml` (title at frame 1800, gameplay at frame 27400).
 - **All jsmolka ROMs pass** (arm, thumb, memory, bios, nes, save/none, sram, flash64, flash128;
   ppu hello/shades/stripes by golden hash). `cargo test --workspace` is green: 382 core unit
-  tests, 149 frontend tests, 2 ROM-driver tests (~11 min with all 66 commercial goldens present).
+  tests, 161 frontend tests, 2 ROM-driver tests (~11 min with all 66 commercial goldens present).
 - **v1.0.0 released (2026-10-01)**: tag `v1.0.0`; `.github/workflows/release.yml` builds the
   player for Windows x64, Linux x64, macOS x64/arm64 with `--profile dist` and attaches the
   archives to the GitHub release (`CHANGELOG.md` is the release body). Procedure in CLAUDE.md.
