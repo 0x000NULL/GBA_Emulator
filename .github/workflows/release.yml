@@ -13,12 +13,13 @@ env:
 jobs:
   test:
     name: unit tests
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Linux build dependencies (ALSA for cpal, udev for gilrs)
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev
+        # The self-hosted Linux runner is a root container without sudo.
+        run: apt-get update && apt-get install -y libasound2-dev libudev-dev
       - uses: Swatinem/rust-cache@v2
       - run: cargo test -p gba-core -p gba-frontend
 
@@ -30,11 +31,11 @@ jobs:
       matrix:
         include:
           - name: windows-x64
-            os: windows-latest
+            os: [self-hosted, windows]
             target: x86_64-pc-windows-msvc
             archive: zip
           - name: linux-x64
-            os: ubuntu-22.04
+            os: [self-hosted, linux]
             target: x86_64-unknown-linux-gnu
             archive: tar
           - name: macos-x64
@@ -53,7 +54,7 @@ jobs:
           targets: ${{ matrix.target }}
       - name: Linux build dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev
+        run: apt-get update && apt-get install -y libasound2-dev libudev-dev
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
@@ -91,7 +92,7 @@ jobs:
   release:
     name: GitHub release
     needs: build
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
