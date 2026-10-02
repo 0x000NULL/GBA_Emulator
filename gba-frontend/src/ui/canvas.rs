@@ -282,8 +282,10 @@ impl Canvas {
         p[3] = 255;
     }
 
-    /// Nearest-neighbour blit of a BGR555 picture at an integer scale; bit 15 set = skip (transparent).
-    pub fn blit_bgr555(&mut self, fb: &[u16], fw: usize, fh: usize, x: i32, y: i32, scale: usize) {
+    /// Nearest-neighbour blit of an indexed picture at an integer scale. Each texel's low 15 bits
+    /// index `lut` (0RGB8888, so it must cover every index the picture uses); bit 15 set = skip
+    /// (transparent).
+    pub fn blit_indexed(&mut self, fb: &[u16], fw: usize, fh: usize, lut: &[u32], x: i32, y: i32, scale: usize) {
         let (cx0, cy0, cx1, cy1) = self.clip_bounds();
         let stride = self.pix.width() as usize;
         let data = self.pix.data_mut();
@@ -298,7 +300,7 @@ impl Canvas {
                     if p & 0x8000 != 0 {
                         continue;
                     }
-                    let [cr, cg, cb] = gba_test::bgr555_to_rgb(p);
+                    let [cr, cg, cb] = rgb_of(lut[(p & 0x7FFF) as usize]);
                     for s in 0..scale {
                         let dx = x + (sx * scale + s) as i32;
                         if dx < cx0 || dx >= cx1 {
@@ -338,8 +340,10 @@ impl Canvas {
         }
     }
 
-    /// Blit a BGR555 picture scaled, but only inside the circle (cx, cy, r): the loupe.
-    pub fn blit_bgr555_in_circle(&mut self, fb: &[u16], fw: usize, fh: usize, x: i32, y: i32, scale: usize, cx: f32, cy: f32, r: f32) {
+    /// Blit an indexed picture (see [`Canvas::blit_indexed`]; bit 15 is ignored here) scaled, but
+    /// only inside the circle (cx, cy, r): the loupe.
+    #[allow(clippy::too_many_arguments)]
+    pub fn blit_indexed_in_circle(&mut self, fb: &[u16], fw: usize, fh: usize, lut: &[u32], x: i32, y: i32, scale: usize, cx: f32, cy: f32, r: f32) {
         let (cx0, cy0, cx1, cy1) = self.clip_bounds();
         let stride = self.pix.width() as usize;
         let data = self.pix.data_mut();
@@ -364,7 +368,7 @@ impl Canvas {
                     continue;
                 }
                 let p = fb[sy as usize * fw + sx as usize];
-                let [cr, cg, cb] = gba_test::bgr555_to_rgb(p);
+                let [cr, cg, cb] = rgb_of(lut[(p & 0x7FFF) as usize]);
                 let cov = ((r - d).clamp(0.0, 1.0) * 255.0) as u8;
                 Self::blend_px(data, dy as usize * stride + dx as usize, [cr, cg, cb], cov);
             }
@@ -473,6 +477,11 @@ impl Canvas {
     }
 }
 
+/// 0RGB8888 -> [r, g, b].
+fn rgb_of(c: u32) -> Rgb {
+    [(c >> 16) as u8, (c >> 8) as u8, c as u8]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -531,12 +540,18 @@ mod tests {
         }
     }
 
+    /// A BGR555 table like the app's, built here so the canvas tests need no GBA crate.
+    fn lut555() -> Vec<u32> {
+        let x = |v: u32| (v << 3) | (v >> 2);
+        (0..0x8000u32).map(|p| x(p & 31) << 16 | x(p >> 5 & 31) << 8 | x(p >> 10 & 31)).collect()
+    }
+
     #[test]
     fn bgr555_blit_scales_and_skips_transparent() {
         let mut c = Canvas::new(20, 20, Fonts::new());
         c.clear(PAPER.bg);
         let fb = [0x001Fu16, 0x8000, 0x7C00, 0x03E0];
-        c.blit_bgr555(&fb, 2, 2, 2, 2, 3);
+        c.blit_indexed(&fb, 2, 2, &lut555(), 2, 2, 3);
         assert_eq!(c.pixel(2, 2), [255, 0, 0]);
         assert_eq!(c.pixel(4, 4), [255, 0, 0]);
         assert_eq!(c.pixel(5, 2), PAPER.bg, "transparent texel skipped");
@@ -549,7 +564,7 @@ mod tests {
         let mut c = Canvas::new(40, 40, Fonts::new());
         c.clear(PAPER.bg);
         let fb = vec![0x001Fu16; 4];
-        c.blit_bgr555_in_circle(&fb, 2, 2, 0, 0, 20, 20.0, 20.0, 10.0);
+        c.blit_indexed_in_circle(&fb, 2, 2, &lut555(), 0, 0, 20, 20.0, 20.0, 10.0);
         assert_eq!(c.pixel(20, 20), [255, 0, 0]);
         assert_eq!(c.pixel(2, 2), PAPER.bg);
         assert_eq!(c.pixel(20, 2), PAPER.bg);

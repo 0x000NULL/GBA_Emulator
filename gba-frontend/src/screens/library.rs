@@ -930,7 +930,7 @@ fn draw_brand_screen(cv: &mut Canvas, x: f32, y: f32, empty: Empty, pal: &Palett
         Empty::NoGames => "NO GAMES YET",
     };
     o.text_center(120, 124, line, pixel::DIM_555);
-    cv.blit_bgr555(&fb[..], SCREEN_W, SCREEN_H, x as i32, y as i32, 1);
+    cv.blit_indexed(&fb[..], SCREEN_W, SCREEN_H, crate::pixels::bgr555_lut(), x as i32, y as i32, 1);
     cv.stroke_rect(x - 0.75, y - 0.75, SCREEN_W as f32 + 1.5, SCREEN_H as f32 + 1.5, 1.5, pal.fg);
 }
 
@@ -946,7 +946,7 @@ fn draw_brand_cart(cv: &mut Canvas, r: Rect, pal: &Palette) {
     let tw = cv.fonts.measure(&st, brand::WORDMARK);
     let sprite = brand::SPRITE as f32;
     let x0 = lab.x + (lab.w - (sprite + 6.0 + tw)) / 2.0;
-    cv.blit_bgr555(&brand::mark().paper_555(), brand::SPRITE, brand::SPRITE, x0.round() as i32, (lab.y + 12.0) as i32, 1);
+    cv.blit_indexed(&brand::mark().paper_555(), brand::SPRITE, brand::SPRITE, crate::pixels::bgr555_lut(), x0.round() as i32, (lab.y + 12.0) as i32, 1);
     cv.text(x0 + sprite + 6.0, lab.y + 11.0, brand::WORDMARK, &st);
 }
 

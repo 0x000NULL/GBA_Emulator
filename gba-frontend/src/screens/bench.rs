@@ -118,7 +118,7 @@ impl BenchScreen {
         let gy = (l::HEAD_H + 17.0) as i32;
         let gw = SCREEN_W as i32 * GAME_SCALE as i32;
         let gh = SCREEN_H as i32 * GAME_SCALE as i32;
-        cv.blit_bgr555(&ctx.gba.framebuffer()[..], SCREEN_W, SCREEN_H, gx, gy, GAME_SCALE as usize);
+        cv.blit_indexed(&ctx.gba.framebuffer()[..], SCREEN_W, SCREEN_H, crate::pixels::bgr555_lut(), gx, gy, GAME_SCALE as usize);
         let cap = Style::data(f::DATA_SMALL).color(pal.fg2);
         let cy = (gy + gh) as f32 + 8.0;
         cv.text(gx as f32, cy, &format!("{} × {} · {}× · nearest", SCREEN_W, SCREEN_H, GAME_SCALE), &cap);
@@ -227,7 +227,7 @@ impl BenchScreen {
                             thumb[ty * 80 + sx] = plane[(ty * 3) * SCREEN_W + sx * 3];
                         }
                     }
-                    cv.blit_bgr555(&thumb, 80, 53, tx as i32, y as i32, 1);
+                    cv.blit_indexed(&thumb, 80, 53, crate::pixels::bgr555_lut(), tx as i32, y as i32, 1);
                 }
             }
             if hidden {

@@ -22,6 +22,7 @@ mod library;
 mod overlay;
 mod pacing;
 mod pinned;
+mod pixels;
 mod render_tests;
 mod saves;
 mod settings;

@@ -11,16 +11,6 @@ use minifb::{InputCallback, Key, KeyRepeat, MouseButton, MouseMode, Scale, Scale
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-/// 32768-entry BGR555 -> 0RGB8888 table (bit 15 of the source is ignored).
-pub fn build_lut() -> Vec<u32> {
-    (0..0x8000u32)
-        .map(|p| {
-            let [r, g, b] = gba_test::bgr555_to_rgb(p as u16);
-            (r as u32) << 16 | (g as u32) << 8 | b as u32
-        })
-        .collect()
-}
-
 /// Nearest-neighbour upscale of a 240x160 BGR555 framebuffer into `out` (240*scale x 160*scale, 0RGB).
 #[cfg_attr(not(test), allow(dead_code))]
 pub fn scale_into(fb: &[u16], lut: &[u32], scale: usize, out: &mut [u32]) {
@@ -147,7 +137,7 @@ impl InputCallback for CharSink {
 pub struct Video {
     window: Window,
     buf: Vec<u32>,
-    lut: Vec<u32>,
+    lut: &'static [u32],
     chars: Arc<Mutex<Vec<char>>>,
     pad_repeat: PadRepeat,
     mouse_was_down: bool,
@@ -164,7 +154,7 @@ impl Video {
         window.set_target_fps(0);
         let chars = Arc::new(Mutex::new(Vec::new()));
         window.set_input_callback(Box::new(CharSink(chars.clone())));
-        Ok(Video { window, buf: vec![0; w * h], lut: build_lut(), chars, pad_repeat: PadRepeat::new(), mouse_was_down: false, filter: Filter::None, prev: Vec::new() })
+        Ok(Video { window, buf: vec![0; w * h], lut: crate::pixels::bgr555_lut(), chars, pad_repeat: PadRepeat::new(), mouse_was_down: false, filter: Filter::None, prev: Vec::new() })
     }
 
     /// The Strawberry icon where the platform allows it (`icon.rs`); `cache_dir` holds the
@@ -193,7 +183,7 @@ impl Video {
         let scale = scale.max(1) as usize;
         let (x, y) = crate::ui::centred_frame(w as u32, h as u32, scale as u32);
         self.buf.fill(pack(bg));
-        scale_into_at(fb, &self.lut, scale, &mut self.buf, w, x, y);
+        scale_into_at(fb, self.lut, scale, &mut self.buf, w, x, y);
         match self.filter {
             Filter::None => {}
             Filter::LcdGrid => lcd_grid(&mut self.buf, w, x, y, scale, SCREEN_W, SCREEN_H),
@@ -255,7 +245,7 @@ mod tests {
 
     #[test]
     fn lut_endpoints() {
-        let lut = build_lut();
+        let lut = crate::pixels::bgr555_lut();
         assert_eq!(lut.len(), 0x8000);
         assert_eq!(lut[0], 0x000000);
         assert_eq!(lut[0x7FFF], 0xFFFFFF);
@@ -266,14 +256,14 @@ mod tests {
 
     #[test]
     fn scale_replicates_pixels() {
-        let lut = build_lut();
+        let lut = crate::pixels::bgr555_lut();
         let mut fb = vec![0u16; SCREEN_W * SCREEN_H];
         fb[0] = 0x001F; // red at (0,0)
         fb[SCREEN_W + 1] = 0x7C00; // blue at (1,1)
         let scale = 3;
         let w = SCREEN_W * scale;
         let mut out = vec![0u32; w * SCREEN_H * scale];
-        scale_into(&fb, &lut, scale, &mut out);
+        scale_into(&fb, lut, scale, &mut out);
         for y in 0..3 {
             for x in 0..3 {
                 assert_eq!(out[y * w + x], 0xFF0000);
@@ -309,12 +299,12 @@ mod tests {
 
     #[test]
     fn scale_at_offset_into_a_letterbox() {
-        let lut = build_lut();
+        let lut = crate::pixels::bgr555_lut();
         let mut fb = vec![0x03E0u16; SCREEN_W * SCREEN_H]; // green
         fb[SCREEN_W * SCREEN_H - 1] = 0x001F; // red bottom-right
         let (w, h) = (1280usize, 800usize);
         let mut out = vec![0x141414u32; w * h];
-        scale_into_at(&fb, &lut, 4, &mut out, w, 160, 80);
+        scale_into_at(&fb, lut, 4, &mut out, w, 160, 80);
         assert_eq!(out[79 * w + 160], 0x141414, "letterbox above");
         assert_eq!(out[80 * w + 159], 0x141414, "letterbox left");
         assert_eq!(out[80 * w + 160], 0x00FF00);
@@ -322,7 +312,7 @@ mod tests {
         assert_eq!(out[(80 + 640) * w + 160], 0x141414, "letterbox below");
         // partially off-screen placement does not panic
         let mut small = vec![0u32; 100 * 100];
-        scale_into_at(&fb, &lut, 2, &mut small, 100, -50, -30);
+        scale_into_at(&fb, lut, 2, &mut small, 100, -50, -30);
         assert_eq!(small[0], 0x00FF00);
     }
 }

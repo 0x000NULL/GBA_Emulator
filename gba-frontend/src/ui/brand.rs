@@ -25,7 +25,7 @@ pub const ICON_128_PNG: &[u8] = include_bytes!("../../../docs/branding/icons/png
 
 /// Side of the sprite in pixels.
 pub const SPRITE: usize = 16;
-/// Transparent texel for `Canvas::blit_bgr555` / `Overlay::sprite` (bit 15 set).
+/// Transparent texel for `Canvas::blit_indexed` / `Overlay::sprite` (bit 15 set).
 pub const CLEAR_555: u16 = 0x8000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -141,13 +141,13 @@ fn pinned_overlay() {
 
 #[test]
 fn pinned_window_blits() {
-    use crate::window::{build_lut, frame_blend, lcd_grid, scale_into_at};
-    let lut = build_lut();
-    check("window-lut", u32_hash(&lut));
+    use crate::window::{frame_blend, lcd_grid, scale_into_at};
+    let lut = crate::pixels::bgr555_lut();
+    check("window-lut", u32_hash(lut));
     let fb = test_frame(3);
     let (w, h) = (1280usize, 800usize);
     let mut out = vec![0x141414u32; w * h];
-    scale_into_at(&fb[..], &lut, 4, &mut out, w, 160, 80);
+    scale_into_at(&fb[..], lut, 4, &mut out, w, 160, 80);
     check("window-scale4", u32_hash(&out));
     lcd_grid(&mut out, w, 160, 80, 4, SCREEN_W, SCREEN_H);
     check("window-lcd-grid", u32_hash(&out));

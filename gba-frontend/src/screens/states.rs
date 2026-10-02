@@ -448,7 +448,7 @@ impl StatesScreen {
             } else {
                 &m.frame_full[..]
             };
-            cv.blit_bgr555_in_circle(pic, SCREEN_W, SCREEN_H, ox, oy, mag as usize, lcx, lcy, r_glass);
+            cv.blit_indexed_in_circle(pic, SCREEN_W, SCREEN_H, crate::pixels::bgr555_lut(), ox, oy, mag as usize, lcx, lcy, r_glass);
         }
 
         // Title line
@@ -626,10 +626,10 @@ fn draw_strip(cv: &mut Canvas, ctx: &StatesCtx, row: usize) {
                 cv.fill_rect(fx, fy, c::FILM_FRAME_W, c::FILM_FRAME_H, [0, 0, 0]);
                 if m.broken.is_some() {
                     let grey = desaturate(&m.frame_full[..]);
-                    cv.blit_bgr555(&grey, SCREEN_W, SCREEN_H, fx as i32, fy as i32, 1);
+                    cv.blit_indexed(&grey, SCREEN_W, SCREEN_H, crate::pixels::bgr555_lut(), fx as i32, fy as i32, 1);
                     ("CAN'T LOAD".into(), if m.play_secs > 0 { fmt_play(m.play_secs) } else { "–".into() })
                 } else {
-                    cv.blit_bgr555(&m.frame_full[..], SCREEN_W, SCREEN_H, fx as i32, fy as i32, 1);
+                    cv.blit_indexed(&m.frame_full[..], SCREEN_W, SCREEN_H, crate::pixels::bgr555_lut(), fx as i32, fy as i32, 1);
                     (format!("FR {}", fmt_frames(m.frame)), fmt_play(m.play_secs))
                 }
             }
