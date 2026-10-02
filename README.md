@@ -5,7 +5,7 @@ cartridge backup memory and a high-level-emulated BIOS, with a pure-Rust desktop
 a headless test harness. Built against the GBATEK hardware documentation.
 
 Kingdom Hearts: Chain of Memories, the Zelda titles (Minish Cap, A Link to the Past & Four
-Swords, both Classic NES Series games), Initial D: Another Stage and twenty further commercial
+Swords, both Classic NES Series games), Initial D: Another Stage and twenty-three further commercial
 titles (Final Fantasy, Mario, Crash, Need for Speed, Max Payne, ...) reach controllable gameplay
 under scripted headless runs pinned in `tests/compat.toml`. A sweep of a 1,543-title library
 (`docs/library-compat.md`) boots 1,528 to a moving picture with sound; the rest are menus the
@@ -83,20 +83,26 @@ $env:GBA_TESTS_DIR = "$PWD\tools\tests"
 cargo test --workspace
 ```
 
-`cargo test` runs the core unit tests (about 330), the frontend's unit tests (about 150;
+`cargo test` runs the core unit tests (about 380), the frontend's unit tests (about 150;
 `cargo test -p gba-frontend --release -- --ignored render_` additionally writes review renders of
-every screen to `target/ui-renders/`), every ROM in
-`tests/golden.toml` (the jsmolka CPU, memory, BIOS, PPU and save suites, all passing) and the
-commercial-ROM goldens in `tests/compat.toml` (skipped when the ROMs are not present under
-`Games/`, which is gitignored). The mgba-suite entry is skipped because that suite ships as
-source only and needs devkitARM to build.
+every screen to `target/ui-renders/`), every ROM in `tests/golden.toml` (the jsmolka CPU, memory,
+BIOS, PPU and save suites, all passing, and the thirteen mgba-suite sub-suites pinned at their
+scores) and the 66 commercial-ROM goldens in `tests/compat.toml` (scripted gameplay for the
+priority titles, plus 1500-frame rows for the titles whose music goes through the BIOS sound
+driver, which also require a minimum number of frames with audio). Commercial rows are skipped
+when the ROMs are not present under `Games/`, which is gitignored. The mgba suite ships as
+source and needs devkitARM: `tools/tests/suite/suite.gba` is built with its `docker-build.sh`.
 
 ## Status in one paragraph
 
-Milestones M0-M7 of the plan are complete against their headless gates; M8 has savestates,
-fast-forward and audio-clocked pacing, while the game-pak prefetch model and finer instruction
-timing are deferred because the only gate that measures them (mgba-suite timing) cannot be run
-here. Release speed is roughly 30x real time headless. Two things were not verifiable in the
-development environment and should be checked once at a console: the live audio output path
-(no audio device was available) and a reference-emulator audio comparison (mGBA's portable build
-has no headless capture; `scripts/compare-wav.py` documents the manual procedure).
+Every milestone of the plan is complete against its headless gate except M8, where savestates,
+fast-forward, audio-clocked pacing and the game-pak prefetch buffer are in and only
+per-instruction timing refinement remains deferred (no runnable gate beyond the mgba-suite
+scores above, which are pinned). The BIOS is high-level emulated, including the sound driver
+that six library titles need, so no BIOS image is required for anything the library does
+(only the undocumented SWI 20h-24h entries are unimplemented, and no title calls them). Release speed is
+about 26x real time headless (1,590 fps on KH:CoM). Live audio has been verified on a real
+48 kHz device (zero underruns). Still open: a reference-emulator audio comparison (mGBA's
+portable build has no headless capture; `scripts/compare-wav.py` documents the manual
+procedure), which would also settle the sound driver's output scaling and reverb, and the three
+boot bugs listed in `docs/library-compat.md`.

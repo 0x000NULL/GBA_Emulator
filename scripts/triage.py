@@ -18,6 +18,10 @@ Categories (in order of checking):
              a key the pattern does not press, or a real hang with a busy CPU)
   silent     the picture moves but no audio sample above the noise floor was produced
   ok         picture with colour and motion, audio present
+A silent title whose only unimplemented SWIs are the undocumented SoundWhatever0-4 (20h-24h) is
+reported as needs-bios-sound-driver in the committed document; the BIOS sound driver proper
+(1A-1E, 28-2A and its routines) is emulated since 2026-10-01. `--notes` merges hand verdicts
+(waiting / needs-hardware / not-a-game) into the document.
 """
 import argparse
 import csv

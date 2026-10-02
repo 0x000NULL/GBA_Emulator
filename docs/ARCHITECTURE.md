@@ -13,7 +13,8 @@ Module map (gba-core/src): `cpu/` (regs, alu, decode tables, arm, thumb, disasm,
 `ppu/` (regs views, bg_text, bg_affine, bitmap, obj, compose; timing contract in mod.rs),
 `apu/` (regs, psg, fifo, mixer), `bus/` (memory map + waitstates in mod.rs, IO dispatch in io.rs,
 DMA execution in dma_exec.rs, debugger hooks in debug.rs), `dma.rs`, `timers.rs`, `irq.rs`,
-`keypad.rs`, `cart/` (header, save detection, SRAM/flash/eeprom), `bios/` (LLE image + HLE SWIs),
+`keypad.rs`, `cart/` (header, save detection, SRAM/flash/eeprom), `bios/` (LLE image + HLE SWIs in
+hle.rs, cycle costs in swi_timing.rs, guest callbacks in call.rs, the sound driver in sound/),
 `sched.rs`, `timing.rs`, `gba.rs` (main loop), `state.rs` (savestates, feature-gated).
 
 ## MemoryBus (the CPU's view of the world)
@@ -51,6 +52,26 @@ through: RAM regions align them, the 8-bit SRAM/Flash bus uses the low bits to p
   halfword of every 128K game pak block is `N` for fetches and LDM/STM words alike. With the
   prefetch buffer enabled (WAITCNT bit 14, `bus/prefetch.rs`) the bus decides ROM opcode-fetch cost
   by address and ignores the flag on a buffer hit; a miss uses the flag as usual.
+
+## BIOS sound driver (bios/sound/)
+SWI 1Ah-1Eh, 28h, 29h and 2Ah plus the 36 SoundGetJumpList routines, written clean room from
+GBATEK, the games' observed memory traffic and the published m4a structure layouts (no BIOS
+code). `area.rs` holds the work-area layout (`SoundInfo` header, twelve 0x40-byte channels at
++0x50, two 0x630-byte PCM halves at +0x350: right for FIFO A, left for FIFO B), the channel status
+bits and the twelve-rate table derived from GBATEK's frequencies (timer period = 16777216/Hz,
+samples per V-Blank = 280896/period, DMA period = 0x630/samples). `mod.rs` has the SWI bodies:
+Init programs SOUNDCNT_X/H, SOUNDBIAS, timer 0 and both FIFO DMAs; VSync counts V-Blanks and
+restarts the DMAs at the buffer start every period (prime four words immediately, stop, re-enable
+in FIFO mode, the library's own sequence); Main locks the area (`ident + 1`), calls the game's
+`func(intp)` and `CgbSound` through `call.rs`, then mixes. `mixer.rs` writes one frame into ring
+slot `(period - count + 1) % period` with the GBATEK envelope (STOP stays set during the release),
+loops, nearest-sample resampling, fixed-rate voices (`type` bit 3, copied 1:1), reverb from the
+slot being overwritten and master-volume scaling. `jumplist.rs` serves the trap addresses
+0x200+4i: slots 0-29 are the track commands (r0 = player, r1 = track, `cmdPtr` already past the
+command byte, return via lr, `flags == 0` ends the track), 30-35 the helpers; `player.rs` holds
+the `MusicPlayerInfo`/`MusicPlayerTrack` offsets. All driver state lives in the game's work area
+(pointer at 0x03007FF0), so savestates and the game see one picture. The design choices that
+have no hardware reference are listed in PROGRESS.md's fix log.
 
 ## Scheduler and main loop
 `Scheduler { now, heap }` with `Event { HBlank, LineEnd, TimerOverflow(n), DmaStart(n), ApuSample,
@@ -102,18 +123,26 @@ EEPROM is reached through 0x0D (whole region for carts <= 16 MB, 0x0DFFFF00+ for
 `load_rom` (gba/zip), `fb_hash` = xxh3-64 of the framebuffer as LE u16s, `checks::check_jsmolka`
 (spin loop + r12 == 0), `checks::check_mgba_suite` (parse `END: p/t` from the debug log),
 `golden::GoldenFile` (`tests/golden.toml` and `tests/compat.toml`; entries take `check`, `reg`,
-`golden`, `frames`, inline `input` steps or an `input_file`, `expect`, `skip`),
-`input_script::InputScript` (`{frame, press/release}` with `A+START` combos).
-`tests/roms.rs` runs every entry under `cargo test`; compat entries skip when the ROM is absent.
+`golden`, `frames`, inline `input` steps or an `input_file`, `expect`, `audio_frames_min` (frames
+with a sample above +-64 that the run must reach: `gba_test::audio_active`, the sweep's measure),
+`skip`), `input_script::InputScript` (`{frame, press/release}` with `A+START` combos;
+`tests/inputs/triage.toml` is the sweep's schedule). `tests/roms.rs` runs every entry under
+`cargo test`; compat entries skip when the ROM is absent.
 CLI extras: `--stats-from F` (underruns/samples counted from frame F), `--pcm` (WAV at the
-SOUNDBIAS rate), `--save-state/--load-state`, `--record` (prints a manifest stanza).
+SOUNDBIAS rate), `--fifo-stats F` (per-frame FIFO pushed/popped/underruns), `--save-state/--load-state`,
+`--record` (prints a manifest stanza), `--triage` (the sweep's input schedule and one-line
+classification summary), `--log-swi` (every HLE SWI, sound-driver Init/Mode and jump-list call as
+a `guest:` line), `--dump-mem LO..HI`, `--watch-read LO..HI`.
 
 ## Savestates (feature `savestate`)
 Every state struct carries `#[cfg_attr(feature = "savestate", derive(Serialize, Deserialize))]`;
 `state.rs` provides byte-array helpers for the big buffers and `Gba::save_state/load_state`
 (magic `GBAS`, version, bincode body). Not stored: ROM, BIOS image (reattached from the live
 machine), framebuffer and PPU scratch (regenerated), audio sample queue, debug hooks. Resuming
-KH:CoM from a state reproduces the straight run's framebuffer hash exactly.
+KH:CoM from a state reproduces the straight run's framebuffer hash exactly. Format 4 (2026-10-01)
+added the HLE call stack `Bios::calls`, so a state saved while the sound driver waits on the
+game's music player resumes it; a version mismatch is rejected (the frontend shows such slots as
+`CAN'T LOAD`).
 
 ## Frontend (gba-frontend)
 The GUI follows `docs/gui/` (DESIGN.md is the design language, SCREENS.md the per-screen
@@ -161,9 +190,13 @@ the minifb window: no widget toolkit.
 
 ## Debug tooling
 `--trace` writes mGBA's register layout (sixteen `%08X`, then `cpsr: %08X`, r15 = PC+8/PC+4) per
-instruction; `--trace-hash` writes `cycle pc hash`. `--break PC`, `--watch LO..HI`, `--exit-on-swi N`,
-`--dump-io`, `--png`. Hooks live in `bus/debug.rs` behind a single `enabled` flag so the hot path
-pays one branch. Guest `mgba` debug prints are collected and echoed as `guest:` lines.
+instruction; `--trace-hash` writes `cycle pc hash`. `--break PC`, `--watch LO..HI` and
+`--watch-read LO..HI` (with `--watch-log` to log every hit instead of stopping), `--dump-mem LO..HI`,
+`--exit-on-swi N`, `--dump-io`, `--png`, `--log-swi`. Hooks live in `bus/debug.rs` behind a single
+`enabled` flag so the hot path pays one branch. Guest `mgba` debug prints, HLE SWI calls and the
+sound driver's `sound init/mode` and `jl slot=` lines are collected and echoed as `guest:` lines.
+The BIOS-region PC traps (0x18, 0x138, 0x140, 0x150, 0x200+4i) are listed under the CPU/HLE
+contract.
 
 Bench capture (the developer "Bench" view: per-layer pictures, channel levels, scanline event log,
 layer/channel mutes) follows an ownership rule. The PPU and APU cannot reach `DebugHooks`

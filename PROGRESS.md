@@ -4,15 +4,14 @@ Target: boot and play **Kingdom Hearts: Chain of Memories (USA)**, then Zelda (M
 ALttP+FS, Classic NES Zelda 1/2) and Initial D Another Stage (J). Spec: `docs/gbatek/`.
 Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `README.md`.
 
-## Where things stand (2026-09-30)
+## Where things stand (2026-10-02)
 
 - **Success criterion met.** KH:CoM boots under the HLE BIOS, plays the intro, reaches Castle
   Oblivion and the battle tutorial with player control. Headless proof: `tests/inputs/khcom-newgame.toml`
   plus the two KH goldens in `tests/compat.toml` (title at frame 1800, gameplay at frame 27400).
 - **All jsmolka ROMs pass** (arm, thumb, memory, bios, nes, save/none, sram, flash64, flash128;
-  ppu hello/shades/stripes by golden hash). `cargo test --workspace` is green: 328 core unit
-  tests, 149 frontend tests, 2 ROM-driver tests (~17 min with all 59 commercial goldens present;
-  381 core tests and 66 commercial goldens after the sound driver).
+  ppu hello/shades/stripes by golden hash). `cargo test --workspace` is green: 382 core unit
+  tests, 149 frontend tests, 2 ROM-driver tests (~11 min with all 66 commercial goldens present).
 - **v1.0.0 released (2026-10-01)**: tag `v1.0.0`; `.github/workflows/release.yml` builds the
   player for Windows x64, Linux x64, macOS x64/arm64 with `--profile dist` and attaches the
   archives to the GitHub release (`CHANGELOG.md` is the release body). Procedure in CLAUDE.md.
@@ -32,9 +31,10 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   `docs/gui/`: Library, in-frame pause menu with eight state slots, Save states, Settings (with key
   rebinding and a settings file) and the Bench developer view on new core capture hooks. See the
   M9 section below.
-- **Compat**: all 26 titles in `Games/` boot and 25 reach controllable gameplay under scripted
-  headless runs pinned in `tests/compat.toml` (Mario Tennis: controllable overworld, its first
-  match is behind a story cutscene). See the table below.
+- **Compat**: the 29 priority titles pinned in `tests/compat.toml` all boot and 28 reach
+  controllable gameplay under scripted headless runs (Mario Tennis: controllable overworld, its
+  first match is behind a story cutscene); seven more rows pin the BIOS sound driver titles at
+  1500 frames with a picture golden and an audio minimum. See the table below.
 - **mgba-suite is built and gated** (`suite.gba` via its `docker-build.sh`; 13 sub-suites in
   `tests/golden.toml`, each pinned at its current score so any regression fails `cargo test`).
   Scores after the 2026-09-30 merges: Memory 1552/1552, I/O read 130/130, Timing 2020/2020,
@@ -95,6 +95,12 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
 | Super Mario Advance 2 (USA) | AA2E | EEPROM | Yoshi's House, RIGHT walks out to the map (level was invisible before the 2026-09-30 window fix) | title 1200, card 5300, gameplay 6300 |
 | Super Mario Advance 4 (USA) | AX4E | Flash 128K | 1-1 start, RIGHT moves Mario | title 1800, gameplay 8100 |
 | Final Fantasy IV Advance (USA) | BZ4E | SRAM 32K | Red Wings intro, scripted battles, Baron castle; Cecil controllable in the corridor (four directions verified). Its `swi 0xFF` is a logged no-op (GBATEK: 2Bh+ jump to garbage on hardware) | title 2400, gameplay 19800 |
+
+Seven further rows (Atari Anniversary Advance, Lizzie McGuire - On the Go!, Pocket Professor,
+Rampage - Puzzle Attack, X-Men - Reign of Apocalypse, Saibara Rieko no Dendou Mahjong, Cyberdrive
+Zoids) run the sweep's input for 1500 frames and pin the title or menu picture plus a minimum
+count of frames with audio (`audio_frames_min`): they gate the BIOS sound driver HLE (see its fix
+log). Every other title in the 1,543-title library has a boot verdict in `docs/library-compat.md`.
 
 ## Environment facts
 - Rust 1.95 stable-msvc; no devkitARM; no BIOS dump. HLE is the only boot path.

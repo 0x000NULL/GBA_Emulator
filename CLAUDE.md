@@ -40,8 +40,8 @@ gba-frontend/  bin `gba`: app.rs (screens + game session), ui/ (software rendere
                saves.rs, debug_ui.rs (hotkey map); assets/fonts/ (OFL faces, embedded)
 docs/gui/      DESIGN.md, SCREENS.md, tokens.json, mockups/*.png, drawings/*.svg
 tests/golden.toml   test-suite ROMs: check strategy + golden hashes
-tests/compat.toml   commercial ROM goldens (skipped when Games/ is absent)
-tests/inputs/       scripted input logs (khcom-newgame.toml, minish-newgame.toml)
+tests/compat.toml   commercial ROM goldens (skipped when Games/ is absent); `audio_frames_min` rows gate the sound driver
+tests/inputs/       scripted input logs (khcom-newgame.toml, minish-newgame.toml, ...; triage.toml = the sweep's schedule)
 scripts/fetch-tests.ps1   clones jsmolka/gba-tests + mgba suite, downloads portable mGBA, GBATEK
 scripts/gbatek-split.py   regenerates docs/gbatek from tools/gbatek.htm
 scripts/compare-wav.py    aligns and compares a --pcm capture with a reference WAV
@@ -61,7 +61,7 @@ cargo run -p gba-test -- <rom> --frames N --watch-read 0x04000000..0x040003FE --
 cargo run -p gba-test -- <rom> --frames N --dump-mem 0x03007D80..0x03007E40   # word dump of guest memory at the end
 cargo run -p gba-test -- <rom> --frames 1800 --pcm out.wav --stats-from 1200   # audio capture + underruns
 cargo run -p gba-test -- <rom> --frames 1900 --fifo-stats 1800                # per-frame FIFO pushed/popped/underruns
-cargo run -p gba-test -- <rom> --frames 300 --log-swi                         # every HLE SWI call as a guest: line
+cargo run -p gba-test -- <rom> --frames 300 --log-swi                         # every HLE SWI call (and sound-driver jump-list call) as a guest: line
 cargo run -p gba-test -- <rom> --frames 27400 --input tests/inputs/khcom-newgame.toml --save-state kh.state
 cargo run -p gba-test -- <rom> --frames 300 --load-state kh.state    # resume a savestate headless
 cargo run -p gba-test -- <rom> --frames N --record                   # print a manifest stanza
