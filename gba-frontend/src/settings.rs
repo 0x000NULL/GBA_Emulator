@@ -414,7 +414,7 @@ impl Settings {
         }
         let known = toml::Table::try_from(self.persistable()).context("encoding settings")?;
         table.extend(known);
-        let text = format!("# Advance settings. Edited by the Settings screen; unknown keys are kept.\n{}", toml::to_string_pretty(&table).context("encoding settings")?);
+        let text = format!("# {} settings. Edited by the Settings screen; unknown keys are kept.\n{}", crate::config::APP_NAME, toml::to_string_pretty(&table).context("encoding settings")?);
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
         }

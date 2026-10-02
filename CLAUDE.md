@@ -1,4 +1,4 @@
-# CLAUDE.md — GBA emulator (Rust)
+# CLAUDE.md — Strawberry (a GBA emulator in Rust)
 
 Strawberry: a from-scratch Game Boy Advance emulator. Success criterion (met): boot and play
 **Kingdom Hearts: Chain of Memories (USA)**; then Zelda titles and Initial D.

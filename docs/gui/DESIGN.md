@@ -19,7 +19,8 @@ scales only and never smoothed; `-night` variants (outline in cream, seeds in re
 go on dark backgrounds. `logo/strawberry-mark.svg` is the source `ui/brand.rs` parses; the
 wordmark is outlined Archivo ExtraBold at 72 % width, and over a game the pixel font. The mark
 appears on the window and the exe, in the empty Library (board 05) and nowhere else in the
-chrome. The `00-system` mockup's "ADVANCE" header predates the name.
+chrome. The `00-system` mockup's "ADVANCE" header predates the name. Renders of every screen
+as built live in `docs/screenshots/` (written by the ignored `render_` tests).
 
 ## Rules
 

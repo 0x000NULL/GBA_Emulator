@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- README: the lockup follows the reader's light or dark theme, a Screens section shows every
+  screen (`docs/screenshots/`), and a Name and mark section describes the brand; stale status
+  text brought up to v1.2.0.
+- The settings file's header comment names Strawberry (it still said Advance).
+- Release workflow: `actions/checkout` v7, `upload-artifact` v7, `download-artifact` v8 and
+  `action-gh-release` v3, all on the Node 24 runtime the self-hosted runners already provide.
+
 ## v1.3.0 — 2026-10-02
 
 **Strawberry.** The player has a name and a mark (`docs/branding/`: a 16x16 four-colour

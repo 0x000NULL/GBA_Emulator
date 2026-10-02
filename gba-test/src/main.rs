@@ -25,7 +25,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 #[derive(Parser, Debug)]
-#[command(name = "gba-test", about = "Run a GBA ROM headless and report framebuffer hash + CPU state")]
+#[command(name = "gba-test", about = "Strawberry's headless harness: run a GBA ROM and report framebuffer hash + CPU state")]
 struct Cli {
     /// ROM (.gba) or zip containing one.
     rom: PathBuf,

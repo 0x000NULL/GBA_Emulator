@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "Headless harness for gba-core: run a ROM N frames, hash the framebuffer, check test-suite results."
+description = "Strawberry's headless harness for gba-core: run a ROM N frames, hash the framebuffer, check test-suite results."
 
 [lib]
 path = "src/lib.rs"

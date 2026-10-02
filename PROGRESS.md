@@ -25,6 +25,10 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   via `_NET_WM_ICON`; minifb's `set_icon` panics on Wayland and macOS so both are skipped), exe
   icon and version block (`build.rs` + `winresource`, warns without `rc.exe`), and the empty
   Library built from board 05. Crate names stay `gba-*`. Released as **v1.3.0 (2026-10-02)**.
+  After the tag: README with the dark/light lockup, every screen's render in `docs/screenshots/`
+  and a brand section; the settings header fixed; the release workflow's actions bumped to the
+  Node 24 majors (checkout v7, upload-artifact v7, download-artifact v8, gh-release v3), first
+  exercised by the next tag.
 - **BIOS sound driver HLE (2026-10-01)**: SWI 1Ah-1Eh, 28h, 29h and the SoundGetJumpList
   routines are emulated (`gba-core/src/bios/sound/`, guest callbacks in `bios/call.rs`); the six
   titles the sweep left silent play music, pinned by seven `tests/compat.toml` rows with

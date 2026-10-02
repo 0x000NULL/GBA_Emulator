@@ -15,7 +15,7 @@ jobs:
     name: unit tests
     runs-on: [self-hosted, linux]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - name: Linux build dependencies (ALSA for cpal, udev for gilrs)
         # The self-hosted Linux runner is a root container without sudo.
@@ -48,7 +48,7 @@ jobs:
             archive: tar
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -81,7 +81,7 @@ jobs:
         if: matrix.archive == 'tar'
         shell: bash
         run: tar -C dist -czf "dist/$PKG.tar.gz" "$PKG"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}
           path: |
@@ -94,8 +94,8 @@ jobs:
     needs: build
     runs-on: [self-hosted, linux]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           path: assets
           merge-multiple: true
@@ -109,7 +109,7 @@ jobs:
           ' CHANGELOG.md > notes.md
           if [ ! -s notes.md ]; then echo "No CHANGELOG section for $GITHUB_REF_NAME" > notes.md; fi
           cat notes.md
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           name: Strawberry ${{ github.ref_name }}
           body_path: notes.md

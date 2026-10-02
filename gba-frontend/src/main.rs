@@ -1,4 +1,4 @@
-//! Desktop frontend for gba-core: minifb window, cpal audio, gilrs gamepads, and the GUI
+//! Strawberry, the desktop player for gba-core: minifb window, cpal audio, gilrs gamepads, and the GUI
 //! described in `docs/gui/` (library, pause overlay, save states, settings, bench).
 //!
 //! Layout: `app` (screens and the game session), `ui` (window-resolution rendering), `window`
