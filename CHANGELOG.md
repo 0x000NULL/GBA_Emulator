@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.2.0 — 2026-10-02
 
 **Player**
 - Gamepad buttons can be rebound. The Controls page shows a second keycap for every GBA button;

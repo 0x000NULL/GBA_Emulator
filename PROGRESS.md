@@ -17,6 +17,7 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   archives to the GitHub release (`CHANGELOG.md` is the release body). Procedure in CLAUDE.md.
   **v1.1.0 (2026-10-01)**: the BIOS sound driver release; savestate format 4; the workflow now
   runs entirely on self-hosted runners (PR #2) after the hosted jobs hit the account's spending limit.
+  **v1.2.0 (2026-10-02)**: gamepad rebinding and the reference audio comparison tooling.
 - **BIOS sound driver HLE (2026-10-01)**: SWI 1Ah-1Eh, 28h, 29h and the SoundGetJumpList
   routines are emulated (`gba-core/src/bios/sound/`, guest callbacks in `bios/call.rs`); the six
   titles the sweep left silent play music, pinned by seven `tests/compat.toml` rows with
