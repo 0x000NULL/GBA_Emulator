@@ -664,7 +664,7 @@ dependencies = [
 
 [[package]]
 name = "gba-core"
-version = "1.6.0"
+version = "1.6.1"
 dependencies = [
  "bincode",
  "serde",
@@ -672,7 +672,7 @@ dependencies = [
 
 [[package]]
 name = "gba-frontend"
-version = "1.6.0"
+version = "1.6.1"
 dependencies = [
  "anyhow",
  "basket-app",
@@ -694,7 +694,7 @@ dependencies = [
 
 [[package]]
 name = "gba-test"
-version = "1.6.0"
+version = "1.6.1"
 dependencies = [
  "anyhow",
  "clap",

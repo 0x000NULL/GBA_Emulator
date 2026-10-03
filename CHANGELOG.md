@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.6.1 — 2026-10-03
+
+Documentation only; the player is the same as v1.6.0.
+- QUICKSTART (included in the release archives): the `=` / `-` sun keys and the pause menu's SUN
+  row, a Clock and sunlight section, the 16 bytes clock games add to their `.sav`, and the note
+  that save states from before v1.6.0 show CAN'T LOAD.
+- README: the Settings screenshot shows the new emulator keys.
+
 ## v1.6.0 — 2026-10-03
 
 Cartridge hardware: the GPIO port in the ROM chip, with the two devices the library needs.
