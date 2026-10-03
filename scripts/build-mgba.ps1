@@ -41,17 +41,18 @@ $gcc = Get-Command gcc -ErrorAction SilentlyContinue
 $ninja = Get-Command ninja -ErrorAction SilentlyContinue
 if ($gcc -and $ninja) {
     Write-Host "Configuring with Ninja + $($gcc.Source)"
-    cmake -S $tool -B $build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=gcc -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -Wno-dev "-DMGBA_SRC=$src"
+    cmake -S $tool -B $build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=gcc "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" -Wno-dev "-DMGBA_SRC=$src"
 } else {
     Write-Host "Configuring with Visual Studio 17 2022"
-    cmake -S $tool -B $build -G 'Visual Studio 17 2022' -A x64 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -Wno-dev "-DMGBA_SRC=$src"
+    cmake -S $tool -B $build -G 'Visual Studio 17 2022' -A x64 "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" -Wno-dev "-DMGBA_SRC=$src"
 }
 if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
 
-cmake --build $build --config Release --target mgba-wav
-if ($LASTEXITCODE -ne 0) { throw "build failed" }
-
-$exe = Get-ChildItem -Path $build -Recurse -Filter 'mgba-wav.exe' | Select-Object -First 1
-if (-not $exe) { throw "mgba-wav.exe not found under $build" }
-Copy-Item $exe.FullName (Join-Path $repo 'tools\mgba-wav.exe') -Force
-Write-Host "mgba-wav: $(Join-Path $repo 'tools\mgba-wav.exe')"
+foreach ($name in 'mgba-wav', 'mgba-ref') {
+    cmake --build $build --config Release --target $name
+    if ($LASTEXITCODE -ne 0) { throw "build of $name failed" }
+    $exe = Get-ChildItem -Path $build -Recurse -Filter "$name.exe" | Select-Object -First 1
+    if (-not $exe) { throw "$name.exe not found under $build" }
+    Copy-Item $exe.FullName (Join-Path $repo "tools\$name.exe") -Force
+    Write-Host "${name}: $(Join-Path $repo "tools\$name.exe")"
+}

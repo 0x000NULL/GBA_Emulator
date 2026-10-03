@@ -1,10 +1,10 @@
 //! Headless harness CLI.
 //!
 //! gba-test <rom|zip> --frames N [--golden HEX] [--check jsmolka|mgba-suite] [--reg r12]
-//!          [--input script.toml] [--trace [file]] [--trace-hash] [--break PC] [--watch LO..HI]
+//!          [--input script.toml] [--trace [file]] [--trace-hash] [--trace-frames A..B] [--trace-cycles] [--break PC] [--watch LO..HI]
 //!          [--watch-read LO..HI] [--watch-log] [--dump-mem LO..HI] [--log-swi] [--exit-on-swi N] [--dump-io] [--png out.png] [--png-every N] [--pcm out.wav] [--mute-channels MASK] [--record]
 //!          [--bios file] [--hle] [--stats-from F] [--fifo-stats F] [--save-state f] [--load-state f]
-//!          [--triage]
+//!          [--triage] [--png-at F,F,...] [--regs file]
 //! Exit code: 0 pass, 1 fail, 2 error.
 //!
 //! `--triage` is the library sweep mode: a built-in input pattern (Start / A presses after boot)
@@ -53,6 +53,23 @@ struct Cli {
     /// Compact `cycle pc hash` trace instead of full registers.
     #[arg(long)]
     trace_hash: bool,
+    /// Trace only frames A..B (0-based, inclusive); the others run at full speed.
+    #[arg(long, value_parser = parse_dec_range)]
+    trace_frames: Option<(u32, u32)>,
+    /// Prefix every full trace line with the cycle count (the layout of tools/mgba-ref.exe --trace).
+    #[arg(long)]
+    trace_cycles: bool,
+    /// Step every instruction and print `poll frame cycle pc addr old new` whenever one of these
+    /// halfwords changes (hex, comma-separated; the layout of tools/mgba-ref.exe --poll).
+    #[arg(long, value_delimiter = ',', value_parser = parse_hex)]
+    poll: Vec<u32>,
+    /// Write `<png stem>-<frame>.png` after each of these frames (1-based, comma-separated).
+    #[arg(long, value_delimiter = ',')]
+    png_at: Vec<u32>,
+    /// After every frame write `frame cycle r0..r14 pc cpsr` and key IO halfwords (the layout of
+    /// tools/mgba-ref.exe --regs; pc as in the trace: PC + 8 / + 4).
+    #[arg(long)]
+    regs: Option<PathBuf>,
     /// Stop when the CPU is about to execute this PC (hex).
     #[arg(long = "break", value_parser = parse_hex)]
     break_pc: Vec<u32>,
@@ -167,6 +184,19 @@ fn parse_hex(s: &str) -> Result<u32, String> {
     u32::from_str_radix(t, 16).map_err(|e| e.to_string())
 }
 
+fn parse_dec_range(s: &str) -> Result<(u32, u32), String> {
+    let (a, b) = s.split_once("..").ok_or("expected A..B")?;
+    Ok((a.parse().map_err(|e| format!("{e}"))?, b.parse().map_err(|e| format!("{e}"))?))
+}
+
+/// IO halfwords in a `--regs` line, the same list as tools/mgba-ref.exe: DISPCNT, DISPSTAT, VCOUNT,
+/// TM0-3 counter and control, DMA0-3 CNT_H, IE, IF, IME, KEYINPUT.
+const REGS_IO: [u32; 19] = [
+    0x04000000, 0x04000004, 0x04000006, 0x04000100, 0x04000102, 0x04000104, 0x04000106, 0x04000108, 0x0400010A,
+    0x0400010C, 0x0400010E, 0x040000BA, 0x040000C6, 0x040000D2, 0x040000DE, 0x04000200, 0x04000202, 0x04000208,
+    0x04000130,
+];
+
 fn parse_range(s: &str) -> Result<(u32, u32), String> {
     let (a, b) = s.split_once("..").ok_or("expected LO..HI")?;
     Ok((parse_hex(a)?, parse_hex(b)?))
@@ -235,7 +265,11 @@ fn run() -> Result<bool> {
     let mut stopped: Option<Hit> = None;
     let mut stats_base: Option<(u64, u64)> = None;
     let mut fifo_prev: Option<[u64; 6]> = None;
-    let tracing = trace_out.is_some() || cli.exit_on_swi.is_some();
+    let mut poll_prev: Vec<u16> = cli.poll.iter().map(|&a| gba.bus.peek16(a)).collect();
+    let mut regs_out = match &cli.regs {
+        Some(p) => Some(BufWriter::new(File::create(p)?)),
+        None => None,
+    };
 
     let mut triage = Triage::default();
     'frames: for f in 0..cli.frames {
@@ -247,14 +281,18 @@ fn run() -> Result<bool> {
         if cli.triage && f + 60 == cli.frames {
             triage.instr_at_minus_60 = gba.cpu.instr_count;
         }
+        let in_window = cli.trace_frames.is_none_or(|(a, b)| (a..=b).contains(&f));
+        let tracing = (trace_out.is_some() && in_window) || cli.exit_on_swi.is_some() || !cli.poll.is_empty();
         if tracing {
             // Step instruction by instruction until the frame completes.
             let frame0 = gba.bus.ppu.frame_count;
             while gba.bus.ppu.frame_count == frame0 {
-                if let Some(out) = trace_out.as_mut() {
+                if let Some(out) = trace_out.as_mut().filter(|_| in_window) {
                     if !gba.bus.irq.halted && gba.bus.dma.pending == 0 {
                         if cli.trace_hash {
                             writeln!(out, "{} {:08X} {:016x}", gba.bus.sched.now, gba.cpu.pc(), gba.cpu.state_hash())?;
+                        } else if cli.trace_cycles {
+                            writeln!(out, "{} {}", gba.bus.sched.now, gba.cpu.trace_line())?;
                         } else {
                             writeln!(out, "{}", gba.cpu.trace_line())?;
                         }
@@ -269,6 +307,14 @@ fn run() -> Result<bool> {
                 if let StopReason::Breakpoint(h) = gba.run_until(target) {
                     stopped = Some(h);
                     break 'frames;
+                }
+                for (p, prev) in cli.poll.iter().zip(poll_prev.iter_mut()) {
+                    let v = gba.bus.peek16(*p);
+                    if v != *prev {
+                        let pc = gba.cpu.regs.r[15].wrapping_add(if gba.cpu.regs.thumb() { 4 } else { 8 });
+                        println!("poll {f} {} {pc:08X} {p:08X} {:04X} {v:04X}", gba.bus.sched.now, *prev);
+                        *prev = v;
+                    }
                 }
             }
             gba.bus.ppu.take_frame_ready();
@@ -302,6 +348,24 @@ fn run() -> Result<bool> {
             if gba_test::audio_active(&gba.bus.apu.samples) {
                 triage.audio_frames += 1;
             }
+        }
+        if cli.png_at.contains(&(f + 1)) {
+            let stem = cli.png.clone().unwrap_or_else(|| PathBuf::from("frame.png")).with_extension("");
+            let path = PathBuf::from(format!("{}-{}.png", stem.display(), f + 1));
+            write_png(&path, &gba.bus.ppu.fb[..])?;
+            println!("png={} frame={}", path.display(), f + 1);
+        }
+        if let Some(out) = regs_out.as_mut() {
+            let r = &gba.cpu.regs;
+            let mut line = format!("{} {}", f + 1, gba.bus.sched.now);
+            for v in &r.r[..15] {
+                line.push_str(&format!(" {v:08X}"));
+            }
+            line.push_str(&format!(" {:08X} {:08X}", r.r[15].wrapping_add(if r.thumb() { 4 } else { 8 }), r.cpsr));
+            for &a in &REGS_IO {
+                line.push_str(&format!(" {:04X}", gba.bus.peek16(a)));
+            }
+            writeln!(out, "{line}")?;
         }
         if let Some(n) = cli.png_every {
             if n > 0 && (f + 1) % n == 0 {
@@ -338,6 +402,9 @@ fn run() -> Result<bool> {
         println!("stats_from={from} underruns={} samples={}", u1 - u0, gba.bus.apu.sample_count - s0);
     }
     if let Some(out) = trace_out.as_mut() {
+        out.flush()?;
+    }
+    if let Some(out) = regs_out.as_mut() {
         out.flush()?;
     }
 

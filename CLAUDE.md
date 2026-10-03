@@ -59,6 +59,8 @@ scripts/compare-wav.py    aligns and compares a --pcm capture with a reference W
 scripts/build-mgba.ps1    clones mGBA 0.10.5 into tools/mgba-src and builds tools/mgba-wav.exe (headless libmgba audio capture)
 scripts/mgba-wav/         the capture tool's CMakeLists.txt + main.c (public libmgba API only)
 scripts/compare-audio.py  records a title set with gba-test (full / PSG-only / FIFO-only) and mgba-wav, fits gains, writes tools/audio-ref/report.md
+scripts/mgba-wav/mgba-ref.c  tools/mgba-ref.exe: mGBA pictures, memory, per-frame regs, IO change logs, instruction traces, debug prints
+scripts/compare-trace.py  walks gba-test's and mgba-ref's instruction streams: cycle offset changes up to the first divergence
 tools/         gitignored: tests/, mgba/, gbatek.htm
 ```
 
@@ -77,6 +79,11 @@ cargo run -p gba-test -- <rom> --frames 1800 --pcm out.wav --stats-from 1200   #
 cargo run -p gba-test -- <rom> --frames 1900 --fifo-stats 1800                # per-frame FIFO pushed/popped/underruns
 cargo run -p gba-test -- <rom> --frames 1800 --pcm psg.wav --mute-channels 30 # PSG only (mask: 1 SQ1 2 SQ2 4 WAVE 8 NOISE 10 FIFO A 20 FIFO B)
 scripts/build-mgba.ps1; python scripts/compare-audio.py --titles kh,minish    # reference audio comparison -> tools/audio-ref/report.md
+cargo run -p gba-test -- <rom> --frames N --input s.toml --png o.png --png-at 900,1800   # pictures at given frames (o-900.png ...)
+tools/mgba-ref.exe <rom.gba> N --input sched.txt --png 900,1800 m                        # mGBA's pictures at the same frames (m-900.ppm ...)
+cargo run -p gba-test -- <rom> --frames N --poll 04000082,04000200   # log every change of these halfwords (mgba-ref --poll prints the same lines)
+python scripts/compare-trace.py <rom.gba> --frames 30                 # where our instruction timing parts from mGBA's
+cargo run -p gba-test -- <rom> --frames N --regs r.txt --trace t.txt --trace-cycles --trace-frames 150..152
 cargo run -p gba-test -- <rom> --frames 300 --log-swi                         # every HLE SWI call (and sound-driver jump-list call) as a guest: line
 cargo run -p gba-test -- <rom> --frames 27400 --input tests/inputs/khcom-newgame.toml --save-state kh.state
 cargo run -p gba-test -- <rom> --frames 300 --load-state kh.state    # resume a savestate headless
@@ -145,7 +152,10 @@ behaviour, then fix. Log non-obvious findings in `PROGRESS.md`.
 gcc, static, no dependencies) for headless audio captures: `tools/mgba-wav.exe rom.gba out.wav
 <frames> <rate> [inputs.txt]`, driven by `scripts/compare-audio.py`. mGBA's HLE BIOS stubs the
 sound driver SWIs, so the six BIOS-driver titles are silent there; compare ROM-mixer titles only.
-No CLI debugger on Windows (`USE_EDITLINE` is non-Windows only): trace diffing still needs a Linux
-build with `-d`; our `--trace` prints the same sixteen-`%08X` + `cpsr:` prefix so the files would
-diff directly. Clean-room rule for the capture tool: read only mGBA's `include/`, CMake files and
+`tools/mgba-ref.exe` (same build) steps libmgba through its public API for traces and state,
+so trace diffing works on Windows (`scripts/compare-trace.py`); it takes `.gba` files, not zips,
+and `frame mask` schedules (`compare-trace.py`'s `schedule_from_toml` converts a script).
+**mGBA is not a timing reference**: it scores 1768/2020 on the Timing rows, 639/936 on Timer
+count-up and 3/12 on Misc edge where we pass 2020, 936 and 6. Use it for pictures, control flow
+and state, not for cycle counts. Clean-room rule for the capture tool: read only mGBA's `include/`, CMake files and
 `src/platform/`, never `src/gba/`.

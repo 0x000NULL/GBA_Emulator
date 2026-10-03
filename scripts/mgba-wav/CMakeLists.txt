@@ -28,3 +28,7 @@ add_subdirectory("${MGBA_SRC}" mgba EXCLUDE_FROM_ALL)
 
 add_executable(mgba-wav main.c)
 target_link_libraries(mgba-wav mgba)
+
+# mgba-ref: pictures, memory, per-frame registers and instruction traces for scripts/compare-frames.py
+add_executable(mgba-ref mgba-ref.c)
+target_link_libraries(mgba-ref mgba)

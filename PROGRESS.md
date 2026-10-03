@@ -148,10 +148,11 @@ log). Every other title in the 1,543-title library has a boot verdict in `docs/l
   blue/yellow/red diagonal ribbon scrolling with the Mode 7 ground. Possibly the course's flower
   strip; unverified against hardware.
 - Initial D (garage, script frame ~22900 of `tests/inputs/initiald-race.toml`): the phone screen
-  (A) draws a blank white panel with only the signal/battery icons, and the driving-technique
-  screen (DOWN x2, A) has its content area solid black. Unverified against hardware; could be a
-  missing text layer or a blend/window case. Classic NES Zelda: on the SELECT screen after
-  registering a name (frame 2000) an extra "O" appears one row below the "A"; unverified.
+  (A) is a blank white panel with only the signal/battery icons and the driving-technique screen
+  (DOWN x2, A) has a black content area. **Pixel-identical to mGBA** (`tools/mgba-ref.exe`,
+  2026-10-02): the game's content at that point of the story, not a rendering bug. Classic NES
+  Zelda: the "O" one row below the name on the SELECT screen is the file's death counter (0),
+  also pixel-identical to mGBA.
 - PPU: no per-scanline OBJ cycle budget; OAM evaluated on the rendered line; forced blank does not
   advance affine references (mGBA-like); window `x1 > 240 && x1 > x2` covers the whole line (mGBA).
 - APU: PSG and FIFO scales follow GBATEK's "Max Output Levels" (FIFO +-200h, each PSG +-80h);
@@ -470,15 +471,46 @@ IRQ phase).
 
 ## Next steps, in order of value
 1. Hello Kitty Collection and the two Tennis no Ouji-sama 2004 titles (see "Library sweep").
-2. Misc edge H-blank bit / DMA prefetch rows (6/12, see "Misc edge attempt").
-3. Initial D garage screens (phone, driving technique) render blank content areas: verify and fix
-   (see Known gaps). Mario Tennis: the first match is behind the story's center-court cutscene;
-   not scripted.
-4. Boot-path timing against mGBA: the same ROM and inputs start their music 0.02-0.43 s earlier
-   under mGBA's HLE BIOS on several titles, and sounds triggered by an input land one frame apart
-   (see "Reference audio comparison"). A trace of the first frames would show which BIOS routine
-   or reset state differs. The BIOS sound driver's own scaling has no reference (mGBA's HLE BIOS
-   stubs it).
+2. Misc edge H-blank bit / DMA prefetch rows (6/12): attempted twice, no model found (see "Misc
+   edge attempt" and "Reference comparison 2026-10-02"); needs a hardware measurement or a new
+   idea, not more parameter scans.
+3. Mario Tennis: the first match is behind the story's center-court cutscene; not scripted.
+4. The BIOS sound driver's own scaling has no reference (mGBA's HLE BIOS stubs it).
+
+## Reference comparison (2026-10-02): mgba-ref, garage screens, boot timing, Misc edge
+Tooling: `tools/mgba-ref.exe` (`scripts/mgba-wav/mgba-ref.c`, built by `scripts/build-mgba.ps1`
+beside mgba-wav, public libmgba API only) writes mGBA's pictures (`--png F,F prefix`, PPM),
+memory words (`--dump LO..HI`, the `--dump-mem` format), per-frame registers and IO (`--regs`),
+IO change logs (`--poll A,A`), instruction traces (`--trace`, `--trace-pc`) and the guest's
+debug-print lines (so it can score mgba-suite). gba-test gained the matching `--png-at`,
+`--regs`, `--poll`, `--trace-frames A..B` and `--trace-cycles`. `scripts/compare-trace.py` walks
+the two instruction streams (BIOS addresses dropped: mGBA's HLE BIOS runs a stub from address 0
+at boot and on IRQ entry, ours works natively) and prints the cycle offset wherever it changes,
+up to the first control-flow divergence. libmgba 0.10.5 keeps its running cycle total in
+`mTiming.masterCycles` (`globalCycles` stays 0) and reports r15 one instruction ahead of the next
+PC.
+
+Findings:
+- **Initial D garage screens and the NES Zelda "O"** match mGBA pixel for pixel (Known gaps).
+- **mGBA is not a timing reference.** Scored with the same input scripts, libmgba 0.10.5 gets
+  **1768/2020** on the hardware-recorded Timing rows, **639/936** on Timer count-up and **3/12**
+  on Misc edge (ours: 2020, 936, 6).
+- **Boot timing**: the music start offsets of the audio comparison are mGBA's side. Advance
+  Wars traced instruction by instruction:
+  - mGBA's boot stub enters the ROM 28 cycles after reset; ours enters at 0.
+  - From there the offset moves in steps at game pak prefetch sequences, e.g. a Thumb
+    `ldr rX, [pc, #]` from ROM plus a `str` to EWRAM costs 19 cycles in ours and 13 in mGBA.
+    Ours is the model that passes every recorded prefetch row.
+  - The two streams part at frame 2 in a VCOUNT poll that the accumulated offset tips.
+  - No core change.
+- **The one-frame input offset** is the harness drift noted under Known gaps ("Harness frame
+  index"). Advance Wars and KH clear memory with a boot DMA that spans two V-Blanks, so after it
+  gba-test's frame N is mGBA's frame N+1. Both pictures are right; only script frame numbers are
+  shifted. Not changed: it would move every golden for no emulation gain.
+- **Misc edge, H-blank rows**: the trace confirms that both Halt wakes take the same path in
+  ours: IRQ, then the handler at 03002D90, then the BIOS return, then the TM0 read. The second
+  path has three more `movs` before the read, hence 1235 against hardware's 1232. Whatever
+  absorbs those 3 cycles on hardware is not an instruction cost. Left at 6/12.
 
 ## Pinned frontend output (2026-10-02)
 
@@ -577,7 +609,7 @@ Results (11 captures, 1500-4000 frames, 8 kHz low-pass for the level figures):
   9392 (Classic NES Zelda), 11926 (Minish Cap), 16500 (ALttP) and 28033 (Advance Wars) at
   65536 Hz, i.e. 15-430 ms, while Circle of the Moon and Golden Sun start 9-15 ms earlier in
   ours. Not an audio effect: the games' boot paths take different emulated time under the two
-  HLE BIOSes (next steps). Where an input triggers a sound (KH new game, Advance Wars) windows
+  HLE BIOSes (traced later the same day: mGBA's own timing, see "Reference comparison"). Where an input triggers a sound (KH new game, Advance Wars) windows
   flip by exactly one frame (1097 samples), so the two harnesses also apply a frame's keys at
   different points.
 - **Clipping**: ours clips 32 samples in 4000 frames of the KH new-game run, mGBA none; the

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Developer tooling: `tools/mgba-ref.exe` (built by `scripts/build-mgba.ps1`) captures mGBA's
+  pictures, memory, registers, IO changes and instruction traces headless, and
+  `scripts/compare-trace.py` diffs instruction timing against ours. gba-test gained `--png-at`,
+  `--regs`, `--poll`, `--trace-frames` and `--trace-cycles`.
+- Checked against mGBA: the Initial D garage's blank phone and technique screens and the "0"
+  under the NES Zelda file name are pixel-identical (game content, not bugs). The music start
+  offsets of the audio comparison come from mGBA's own timing: it scores 1768/2020 on the
+  hardware-recorded timing tests that Strawberry passes in full.
+- `scripts/build-mgba.ps1`: quote the CMake policy argument (PowerShell split it at the dot).
+
 ## v1.3.1 — 2026-10-02
 
 **fruit-basket.** The frontend's console-independent half (renderer and design tokens, fonts,
