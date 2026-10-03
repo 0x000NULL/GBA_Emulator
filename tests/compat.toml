@@ -471,3 +471,17 @@ input_file = "tests/inputs/triage.toml"
 golden = "9ab84c63912c2340"
 audio_frames_min = 500
 note = "Zoid select (Diablo Tiger alpha); the other jump-list title: SoundDriverMain called mid-frame (lines 8-107); 1094 audio frames when pinned; AZ3J, SRAM 32K"
+
+[[rom]]
+path = "Games/Pokemon - Emerald Version (USA, Europe).zip"
+frames = 1500
+input_file = "tests/inputs/emerald-rtc.toml"
+golden = "1fd572fcfd7522ce"
+note = "cartridge RTC: NEW GAME / OPTION menu straight after the title; without the clock the game stops on 'The internal battery has run dry' first; BPEE, Flash 128K"
+
+[[rom]]
+path = "Games/Boktai - The Sun Is in Your Hand (USA).zip"
+frames = 8900
+input_file = "tests/inputs/boktai-solar.toml"
+golden = "d100875bc0a4e996"
+note = "solar sensor + RTC: calibration dark, TIME SETTING shows the harness seed (01/01 2026), Istrakan field with the solar gauge full (sun 10 from frame 5000; empty at sun 0); U3IE, EEPROM"

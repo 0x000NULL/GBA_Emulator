@@ -42,8 +42,27 @@ pub fn build_gba(rom_path: &Path, bios: Option<BiosMode>, save_type: Option<Save
             _ => BiosMode::Hle,
         },
     };
-    let gba = Gba::new(rom, Options { bios, save_type }).map_err(|e| anyhow!("{e}"))?;
+    let mut gba = Gba::new(rom, Options { bios, save_type }).map_err(|e| anyhow!("{e}"))?;
+    gba.set_rtc_clock(RTC_DEFAULT);
     Ok(gba)
+}
+
+/// Cartridge clock seed for headless runs (2026-01-01 00:00:00), so goldens are deterministic.
+/// The frontend reseeds with the wall clock.
+pub const RTC_DEFAULT: i64 = 20454 * 86400;
+
+/// Parse `YYYY-MM-DD HH:MM:SS` (or `YYYY-MM-DDTHH:MM:SS`, seconds optional) into seconds since
+/// 1970-01-01, the unit of `Gba::set_rtc_clock`.
+pub fn parse_rtc(s: &str) -> Result<i64> {
+    let bad = || anyhow!("expected YYYY-MM-DD HH:MM[:SS], got {s:?}");
+    let (date, time) = s.trim().split_once([' ', 'T']).ok_or_else(bad)?;
+    let d: Vec<u32> = date.split('-').map(|x| x.parse().map_err(|_| bad())).collect::<Result<_>>()?;
+    let t: Vec<u32> = time.split(':').map(|x| x.parse().map_err(|_| bad())).collect::<Result<_>>()?;
+    if d.len() != 3 || !(2..=3).contains(&t.len()) || !(1..=12).contains(&d[1]) || !(1..=31).contains(&d[2]) || t[0] > 23 || t[1] > 59 {
+        return Err(bad());
+    }
+    let days = gba_core::cart::rtc::days_from_civil(d[0] as i64, d[1], d[2]);
+    Ok(days * 86400 + (t[0] * 3600 + t[1] * 60 + t.get(2).copied().unwrap_or(0)) as i64)
 }
 
 /// xxh3-64 of the framebuffer as little-endian u16s.

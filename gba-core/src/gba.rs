@@ -179,6 +179,43 @@ impl Gba {
         self.bus.cart.load_save(data);
     }
 
+    /// The cartridge carries a real-time clock (GPIO).
+    pub fn has_rtc(&self) -> bool {
+        self.bus.cart.gpio.as_ref().is_some_and(|g| g.rtc.is_some())
+    }
+
+    /// The cartridge carries Boktai's solar sensor (GPIO).
+    pub fn has_solar(&self) -> bool {
+        self.bus.cart.gpio.as_ref().is_some_and(|g| g.solar.is_some())
+    }
+
+    /// Seed the cartridge clock with the host's wall-clock time: seconds since 1970-01-01 in local
+    /// time. From here the clock advances with emulated time; a time the game set is kept as an
+    /// offset. Call after boot and after loading a state. No-op without an RTC.
+    pub fn set_rtc_clock(&mut self, local_secs: i64) {
+        let now = self.bus.sched.now;
+        if let Some(rtc) = self.bus.cart.gpio.as_mut().and_then(|g| g.rtc.as_mut()) {
+            rtc.set_clock(local_secs, now);
+        }
+    }
+
+    /// The clock's current time (seconds since 1970-01-01, local), or None without an RTC.
+    pub fn rtc_time(&self) -> Option<i64> {
+        let now = self.bus.sched.now;
+        self.bus.cart.gpio.as_ref().and_then(|g| g.rtc.as_ref()).map(|r| r.now_secs(now))
+    }
+
+    /// Light on the solar sensor, 0 (dark) to `SUN_MAX` (full gauge). No-op without the sensor.
+    pub fn set_sun_level(&mut self, level: u8) {
+        if let Some(s) = self.bus.cart.gpio.as_mut().and_then(|g| g.solar.as_mut()) {
+            s.set_level(level);
+        }
+    }
+
+    pub fn sun_level(&self) -> Option<u8> {
+        self.bus.cart.gpio.as_ref().and_then(|g| g.solar.as_ref()).map(|s| s.level())
+    }
+
     /// True if save memory changed since the last call; clears the flag.
     pub fn save_dirty(&mut self) -> bool {
         std::mem::replace(&mut self.bus.cart.dirty, false)

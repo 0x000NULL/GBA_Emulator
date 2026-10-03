@@ -361,7 +361,10 @@ impl Bus {
                 }
             }
             0x07 => {} // 8-bit OAM writes are ignored.
-            0x08..=0x0D => self.cart.write8(addr, v),
+            0x08..=0x0D => {
+                self.cart.now = self.sched.now;
+                self.cart.write8(addr, v);
+            }
             0x0E | 0x0F => self.cart.save_write8(addr, v),
             _ => {}
         }
@@ -391,7 +394,10 @@ impl Bus {
                 let i = (a & 0x3FF) as usize;
                 self.ppu.oam[i..i + 2].copy_from_slice(&v.to_le_bytes());
             }
-            0x08..=0x0D => self.cart.write16(a, v),
+            0x08..=0x0D => {
+                self.cart.now = self.sched.now;
+                self.cart.write16(a, v);
+            }
             0x0E | 0x0F => {
                 // 8-bit bus: the lane selected by the address is written.
                 let b = if addr & 1 != 0 { (v >> 8) as u8 } else { v as u8 };
@@ -426,6 +432,7 @@ impl Bus {
                 self.ppu.oam[i..i + 4].copy_from_slice(&v.to_le_bytes());
             }
             0x08..=0x0D => {
+                self.cart.now = self.sched.now;
                 self.cart.write16(a, v as u16);
                 self.cart.write16(a + 2, (v >> 16) as u16);
             }

@@ -1,6 +1,7 @@
 //! Scripted input: a list of `{frame, press|release}` steps applied before the given frame runs.
 //! Files are TOML: `steps = [{ frame = 4, press = "A" }, { frame = 6, release = "A" }]`.
 //! Several keys may be combined with `+` ("A+START"). A press stays held until an explicit release.
+//! A step may also set the solar sensor's light, `{ frame = 900, sun = 8 }`, held until changed.
 
 use crate::golden::InputStep;
 use anyhow::{anyhow, Result};
@@ -45,6 +46,11 @@ impl InputScript {
     }
 
     /// Key state that should be held while `frame` runs.
+    /// Sun level set by the last `sun` step at or before `frame`, if any.
+    pub fn sun_at(&self, frame: u32) -> Option<u8> {
+        self.steps.iter().take_while(|s| s.frame <= frame).filter_map(|s| s.sun).last()
+    }
+
     pub fn keys_at(&self, frame: u32) -> Result<Keys> {
         let mut mask: u16 = 0;
         for s in self.steps.iter().take_while(|s| s.frame <= frame) {

@@ -68,6 +68,9 @@ pub struct InputStep {
     pub press: Option<String>,
     #[serde(default)]
     pub release: Option<String>,
+    /// Light on a solar-sensor cart from this frame on (0 dark .. 10 full gauge).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sun: Option<u8>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

@@ -131,6 +131,12 @@ struct Cli {
     /// Library sweep: built-in Start/A presses (unless --input is given) and a `triage:` summary.
     #[arg(long)]
     triage: bool,
+    /// Cartridge clock at boot, `YYYY-MM-DD HH:MM[:SS]` (default 2026-01-01 00:00:00).
+    #[arg(long, value_parser = gba_test::parse_rtc)]
+    rtc: Option<i64>,
+    /// Light on a solar-sensor cart (Boktai), 0 dark .. 10 full gauge; scripts can change it with `sun` steps.
+    #[arg(long, value_name = "LEVEL")]
+    sun: Option<u8>,
 }
 
 /// Triage input: Start for 10 frames in pairs 100 frames apart (700/800, 1300/1400, 1900/2000,
@@ -237,6 +243,9 @@ fn run() -> Result<bool> {
             gba.bus.cart.mirror,
             if gba.bus.bios.is_hle() { "hle" } else { "lle" }
         );
+        if let Some(g) = &gba.bus.cart.gpio {
+            println!("gpio: {:?}", g.devices());
+        }
     }
     let script = match &cli.input {
         Some(p) => InputScript::load(p)?,
@@ -246,6 +255,13 @@ fn run() -> Result<bool> {
         let bytes = std::fs::read(p)?;
         gba.load_state(&bytes).map_err(|e| anyhow!("{e}"))?;
         println!("state loaded: {} (frame {})", p.display(), gba.bus.ppu.frame_count);
+    }
+    // After a state load, so the flags win over the state's clock and light.
+    if let Some(t) = cli.rtc {
+        gba.set_rtc_clock(t);
+    }
+    if let Some(level) = cli.sun {
+        gba.set_sun_level(level);
     }
 
     gba.bus.debug.pc_breaks = cli.break_pc.clone();
@@ -275,6 +291,9 @@ fn run() -> Result<bool> {
     'frames: for f in 0..cli.frames {
         if !script.is_empty() {
             gba.set_keys(script.keys_at(f)?);
+            if let Some(level) = script.sun_at(f) {
+                gba.set_sun_level(level);
+            }
         } else if cli.triage {
             gba.set_keys(triage_keys(f));
         }

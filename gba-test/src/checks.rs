@@ -74,6 +74,9 @@ pub fn run_and_check(gba: &mut Gba, frames: u32, script: &InputScript, check: &C
     for f in 0..frames {
         if !script.is_empty() {
             gba.set_keys(script.keys_at(f)?);
+            if let Some(level) = script.sun_at(f) {
+                gba.set_sun_level(level);
+            }
         }
         match gba.run_frame() {
             StopReason::Done => {}

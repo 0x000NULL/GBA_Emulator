@@ -1,14 +1,20 @@
-//! Cartridge: ROM, mirroring, save-type detection, backup media. Source: GBATEK "GBA Cartridges".
+//! Cartridge: ROM, mirroring, save-type detection, backup media, the GPIO port (RTC, solar
+//! sensor). Source: GBATEK "GBA Cartridges".
 
 pub mod eeprom;
 pub mod flash;
+pub mod gpio;
 pub mod header;
+pub mod rtc;
+pub mod solar;
 #[cfg(test)]
 mod tests;
 
 use crate::CoreError;
 use eeprom::Eeprom;
 use flash::Flash;
+use gpio::Gpio;
+pub use gpio::GpioDevices;
 pub use header::Header;
 
 pub const ROM_MAX: usize = 32 * 1024 * 1024;
@@ -46,7 +52,16 @@ pub struct Cartridge {
     pub save: SaveBackend,
     /// Set when save memory changed since the last `clear_dirty`.
     pub dirty: bool,
+    /// GPIO port with the devices the ROM was detected to carry (None: plain ROM).
+    pub gpio: Option<Gpio>,
+    /// Scheduler cycle of the current ROM-region write, set by the bus (the RTC's time base).
+    #[cfg_attr(feature = "savestate", serde(skip))]
+    pub now: u64,
 }
+
+/// Tag of the RTC record appended to `.sav` data (followed by offset i64, weekday offset, control).
+const RTC_TRAILER_MAGIC: &[u8; 6] = b"SBRTC\x01";
+const RTC_TRAILER_LEN: usize = 16;
 
 impl Cartridge {
     pub fn new(rom: Vec<u8>, save_override: Option<SaveType>) -> Result<Self, CoreError> {
@@ -67,7 +82,16 @@ impl Cartridge {
             SaveType::Flash128K => SaveBackend::Flash(Flash::new(true)),
             SaveType::Eeprom => SaveBackend::Eeprom(Eeprom::new(rom.len() > 16 * 1024 * 1024)),
         };
-        Ok(Cartridge { rom, rom_mask, mirror, header, save_type, save, dirty: false })
+        let dev = Self::detect_gpio(&rom, &header);
+        let gpio = (dev != GpioDevices::default()).then(|| Gpio::new(dev));
+        Ok(Cartridge { rom, rom_mask, mirror, header, save_type, save, dirty: false, gpio, now: 0 })
+    }
+
+    /// GPIO devices: the RTC by the SDK's `SIIRTC_V` library string (the ten library carts that
+    /// carry it are the RTC titles), the solar sensor by the Boktai game codes (U3I, U32, U33).
+    pub fn detect_gpio(rom: &[u8], header: &Header) -> GpioDevices {
+        let solar = matches!(&header.game_code[..3], b"U3I" | b"U32" | b"U33");
+        GpioDevices { rtc: solar || find_aligned(rom, b"SIIRTC_V").is_some(), solar }
     }
 
     pub fn rom(&self) -> &[u8] {
@@ -129,7 +153,20 @@ impl Cartridge {
         ((addr & 0x01FF_FFFF) >> 1) as u16
     }
 
+    /// The GPIO registers answer reads in R/W mode (otherwise the ROM bytes show through).
+    #[inline]
+    fn gpio_read16(&self, addr: u32) -> Option<u16> {
+        let off = addr & 0x01FF_FFFF;
+        if !Gpio::is_reg(off) {
+            return None;
+        }
+        self.gpio.as_ref().filter(|g| g.readable()).map(|g| g.read16(off))
+    }
+
     pub fn peek8(&self, addr: u32) -> u8 {
+        if let Some(v) = self.gpio_read16(addr) {
+            return (v >> ((addr & 1) * 8)) as u8;
+        }
         match self.rom_index(addr) {
             Some(i) => self.rom[i],
             None => {
@@ -145,6 +182,9 @@ impl Cartridge {
 
     pub fn peek16(&self, addr: u32) -> u16 {
         let a = addr & !1;
+        if let Some(v) = self.gpio_read16(a) {
+            return v;
+        }
         match self.rom_index(a) {
             Some(i) if i + 1 < self.rom.len() => u16::from_le_bytes([self.rom[i], self.rom[i + 1]]),
             _ => Self::rom_open_bus16(a),
@@ -193,6 +233,17 @@ impl Cartridge {
     }
 
     pub fn write16(&mut self, addr: u32, v: u16) {
+        let off = addr & 0x01FF_FFFF;
+        if Gpio::is_reg(off) {
+            if let Some(g) = &mut self.gpio {
+                let before = g.rtc.as_ref().map(|r| r.persist());
+                g.write16(off, v, self.now);
+                if g.rtc.as_ref().map(|r| r.persist()) != before {
+                    self.dirty = true;
+                }
+                return;
+            }
+        }
         if self.is_eeprom_addr(addr) {
             if let SaveBackend::Eeprom(e) = &mut self.save {
                 if e.write_bit(v & 1) {
@@ -200,7 +251,7 @@ impl Cartridge {
                 }
             }
         }
-        // ROM writes are otherwise ignored (GPIO/RTC not emulated: none of the target games use it).
+        // Other ROM writes are ignored.
     }
 
     /// Called by the DMA engine for transfers into the EEPROM region (halfword count of the request).
@@ -253,17 +304,39 @@ impl Cartridge {
 
     // ------------------------------------------------------------ persistence
 
-    /// Raw save contents for `<rom>.sav`, or None if the cart has no backup media.
+    /// Raw save contents for `<rom>.sav`, or None if the cart has no backup media. RTC carts
+    /// append a 16-byte trailer (`SBRTC\x01`, offset i64 LE, weekday offset, control) so a time
+    /// the game set survives restarts.
     pub fn save_data(&self) -> Option<Vec<u8>> {
-        match &self.save {
-            SaveBackend::None => None,
-            SaveBackend::Sram(s) => Some(s.to_vec()),
-            SaveBackend::Flash(f) => Some(f.data().to_vec()),
-            SaveBackend::Eeprom(e) => Some(e.data().to_vec()),
+        let mut out = match &self.save {
+            SaveBackend::None => return None,
+            SaveBackend::Sram(s) => s.to_vec(),
+            SaveBackend::Flash(f) => f.data().to_vec(),
+            SaveBackend::Eeprom(e) => e.data().to_vec(),
+        };
+        if let Some(rtc) = self.gpio.as_ref().and_then(|g| g.rtc.as_ref()) {
+            let (offset, wday_off, control) = rtc.persist();
+            out.extend_from_slice(RTC_TRAILER_MAGIC);
+            out.extend_from_slice(&offset.to_le_bytes());
+            out.extend_from_slice(&[wday_off, control]);
         }
+        Some(out)
     }
 
+    /// Load `<rom>.sav` contents. An RTC trailer is split off first (EEPROM infers its size from
+    /// the length) and applied when the cart has a clock.
     pub fn load_save(&mut self, data: &[u8]) {
+        let mut data = data;
+        if data.len() >= RTC_TRAILER_LEN {
+            let (body, t) = data.split_at(data.len() - RTC_TRAILER_LEN);
+            if &t[..6] == RTC_TRAILER_MAGIC {
+                if let Some(rtc) = self.gpio.as_mut().and_then(|g| g.rtc.as_mut()) {
+                    let offset = i64::from_le_bytes(t[6..14].try_into().unwrap());
+                    rtc.restore(offset, t[14], t[15]);
+                }
+                data = body;
+            }
+        }
         match &mut self.save {
             SaveBackend::None => {}
             SaveBackend::Sram(s) => {

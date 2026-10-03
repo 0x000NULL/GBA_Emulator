@@ -1,0 +1,18 @@
+# Pokemon Emerald: intro, title, main menu. START at 600-1350 (every 150 frames) skips the intro and
+# leaves the title. With the cartridge RTC the game goes straight to the NEW GAME / OPTION menu
+# (golden at 1500); without one it stops on "The internal battery has run dry. The game can be
+# played." first. The harness seeds the clock with 2026-01-01 00:00:00.
+steps = [
+  { frame = 600, press = "START" },
+  { frame = 606, release = "START" },
+  { frame = 750, press = "START" },
+  { frame = 756, release = "START" },
+  { frame = 900, press = "START" },
+  { frame = 906, release = "START" },
+  { frame = 1050, press = "START" },
+  { frame = 1056, release = "START" },
+  { frame = 1200, press = "START" },
+  { frame = 1206, release = "START" },
+  { frame = 1350, press = "START" },
+  { frame = 1356, release = "START" },
+]

@@ -74,7 +74,7 @@ pub mod bytes_arr {
 
 /// Magic + version prefix so stale states are rejected instead of misparsed.
 pub const STATE_MAGIC: &[u8; 4] = b"GBAS";
-pub const STATE_VERSION: u32 = 4;
+pub const STATE_VERSION: u32 = 5;
 
 #[derive(Debug)]
 pub enum StateError {
@@ -218,6 +218,32 @@ mod tests {
         let mut s = g.save_state();
         s[4] = 99;
         assert!(matches!(g.load_state(&s), Err(super::StateError::Version(99))));
+    }
+
+    /// The GPIO devices travel in the state: the game's clock offset and the sun level.
+    #[test]
+    fn gpio_devices_round_trip() {
+        let mut rom = test_rom();
+        rom[0xAC..0xB0].copy_from_slice(b"U3IE");
+        rom[0x2000..0x2008].copy_from_slice(b"SIIRTC_V");
+        let new = || Gba::new(rom.clone(), Options { bios: BiosMode::Hle, save_type: None }).unwrap();
+        let mut a = new();
+        assert!(a.has_rtc() && a.has_solar());
+        a.set_rtc_clock(1_000_000);
+        a.bus.cart.gpio.as_mut().unwrap().rtc.as_mut().unwrap().offset = 3600;
+        a.set_sun_level(7);
+        a.run_cycles(20_000);
+        let state = a.save_state();
+        let mut b = new();
+        b.load_state(&state).unwrap();
+        assert_eq!(b.sun_level(), Some(7));
+        assert_eq!(b.rtc_time(), a.rtc_time());
+        assert_eq!(b.rtc_time(), Some(1_003_600));
+        // The frontend reseeds the host clock after a load; the game's offset stays.
+        b.set_rtc_clock(2_000_000);
+        assert_eq!(b.rtc_time(), Some(2_003_600));
+        let plain = Gba::new(test_rom(), Options { bios: BiosMode::Hle, save_type: None }).unwrap();
+        assert!(!plain.has_rtc() && !plain.has_solar() && plain.rtc_time().is_none());
     }
 
     #[test]
