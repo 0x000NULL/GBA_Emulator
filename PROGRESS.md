@@ -4,20 +4,23 @@ Target: boot and play **Kingdom Hearts: Chain of Memories (USA)**, then Zelda (M
 ALttP+FS, Classic NES Zelda 1/2) and Initial D Another Stage (J). Spec: `docs/gbatek/`.
 Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `README.md`.
 
-## Where things stand (2026-10-02)
+## Where things stand (2026-10-03)
 
 - **Success criterion met.** KH:CoM boots under the HLE BIOS, plays the intro, reaches Castle
   Oblivion and the battle tutorial with player control. Headless proof: `tests/inputs/khcom-newgame.toml`
   plus the two KH goldens in `tests/compat.toml` (title at frame 1800, gameplay at frame 27400).
 - **All jsmolka ROMs pass** (arm, thumb, memory, bios, nes, save/none, sram, flash64, flash128;
   ppu hello/shades/stripes by golden hash). `cargo test --workspace` is green: 382 core unit
-  tests, 98 frontend tests (+86 in fruit-basket), 2 ROM-driver tests (~11 min with all 66 commercial goldens present).
+  tests, 103 frontend tests (+86 in fruit-basket), 2 ROM-driver tests (~11 min with all 66 commercial goldens present).
 - **v1.0.0 released (2026-10-01)**: tag `v1.0.0`; `.github/workflows/release.yml` builds the
   player for Windows x64, Linux x64, macOS x64/arm64 with `--profile dist` and attaches the
   archives to the GitHub release (`CHANGELOG.md` is the release body). Procedure in CLAUDE.md.
   **v1.1.0 (2026-10-01)**: the BIOS sound driver release; savestate format 4; the workflow now
   runs entirely on self-hosted runners (PR #2) after the hosted jobs hit the account's spending limit.
   **v1.2.0 (2026-10-02)**: gamepad rebinding and the reference audio comparison tooling.
+  **v1.3.1 (2026-10-02)**: the fruit-basket split (below). **v1.4.0 (2026-10-02)**: `--slot N`.
+  **v1.5.0 (2026-10-03)**: couch mode (`--fullscreen`, `--exit-on-quit`, gamepad route to the
+  pause menu). Both are hooks for the Fruit Basket launcher; see "Launcher hooks" below.
 - **Rebrand (2026-10-02)**: the player is **Strawberry** (`docs/branding/`, Fruit Basket No. 2).
   Window title, binary and archives (`strawberry`), `strawberry/` config and cache folders with a
   one-time move from `gba-advance/` (`app.rs migrate_dir`), the mark parsed from the SVG
@@ -479,6 +482,37 @@ IRQ phase).
    are not found yet (the script header lists the areas tried; untried: the lobby staff, the
    doors outside the Main Building, a possible 3rd floor).
 4. The BIOS sound driver's own scaling has no reference (mGBA's HLE BIOS stubs it).
+
+## Launcher hooks (v1.4.0 and v1.5.0, 2026-10-02/03)
+
+The Fruit Basket launcher (projects.ethanaldrich.net feed, `strawberry/LAUNCHER`) starts
+Strawberry with these flags; the same convention goes to ps2emu and Crabapple.
+- `--slot N` (1-8, needs a ROM): `App::new` boots the ROM, then `Session::load_start_slot(n)`
+  before the window opens, so the first frame shown is the loaded state; F1/F3 point at that
+  slot. An empty or broken slot prints `error: slot N: <reason>; starting from a fresh boot`
+  and play goes on: `Gba::load_state` decodes into a fresh machine and swaps only on success,
+  so a failed load cannot damage the boot. Slot files are unchanged.
+- `--fullscreen` (conflicts with `--scale`): `Video::new_fullscreen` opens a borderless window
+  of the primary display's size at 0,0. minifb has no real fullscreen, and on Windows its
+  `borderless` option only drops the resize frame (the caption stays), so the window uses
+  `none: true` (WS_POPUP). The display size comes from `GetSystemMetrics` on Windows (the
+  process is DPI-unaware, so the size and the window are in the same logical units and DWM
+  scales the result to the panel), CoreGraphics on macOS, and the first connected
+  `/sys/class/drm` connector's preferred mode on Linux (works under X11 and Wayland without
+  linking either). Without a size it warns and opens a normal window. `App::shutdown` does not
+  store the window size for a fullscreen run. Verified on Windows (3840x2160, style
+  0x94000000); the macOS and Linux paths are compiled by CI but untested on a screen.
+- `--exit-on-quit`: the pause menu's QUIT runs `end_game` (flushes the `.sav`) and then sets
+  `App::quit`, so `main` returns `Ok(())`: exit code 0.
+- Gamepad route to the pause menu (`input::PadPause`): the Guide button (gilrs `Button::Mode`),
+  or SELECT+START held for one second, fires once per hold and is re-armed when either button
+  is released. It injects `Hotkey::Pause` into `update_game`, so it opens and closes the menu
+  exactly like Esc. The game still sees SELECT and START during the hold; it uses the combined
+  keyboard + pad mask, so Right Shift + Enter held for a second also works.
+
+Release note: v1.4.0's macOS x64 job failed once with "The self-hosted runner lost
+communication with the server" during rust-cache's post-step upload (0.1 MB/s); every build
+step had passed. `gh run rerun <id> --failed` re-ran it and the release job.
 
 ## Reference comparison (2026-10-02): mgba-ref, garage screens, boot timing, Misc edge
 Tooling: `tools/mgba-ref.exe` (`scripts/mgba-wav/mgba-ref.c`, built by `scripts/build-mgba.ps1`

@@ -155,5 +155,7 @@ that six library titles need, so no BIOS image is required for anything the libr
 about 26x real time headless (1,590 fps on KH:CoM). Live audio has been verified on a real
 48 kHz device (zero underruns). Audio has been compared against libmgba with a headless capture
 tool (`scripts/build-mgba.ps1`, `scripts/compare-audio.py`): our levels follow GBATEK's stated
-maxima and mGBA mixes about 3 dB lower, a difference in convention rather than a bug. Still
-open: the three boot bugs listed in `docs/library-compat.md`.
+maxima and mGBA mixes about 3 dB lower, a difference in convention rather than a bug. The player
+takes launcher hooks (`--slot`, `--fullscreen`, `--exit-on-quit`, and a gamepad route to the pause
+menu) for the Fruit Basket launcher's couch mode. Still open: the three boot bugs listed in
+`docs/library-compat.md`.

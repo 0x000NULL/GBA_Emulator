@@ -174,6 +174,9 @@ byte for byte.
   SaveStates (03), Settings (04) or Bench (D). `Session` owns the running `Gba`, its `.sav`
   manager, slot set, audio, pacer and overlay state. Only Game (unpaused) and Bench (running)
   call `Session::step`. `App::update` reacts to the frame's `UiInput`, `App::render` presents.
+  Launcher hooks (`RunOptions`): `--slot N` loads a slot into the fresh boot before the window
+  opens (a failed load keeps the boot), `--exit-on-quit` turns the pause menu's QUIT into a
+  program exit, `--fullscreen` skips storing the window size at shutdown.
 - `ui/` (basket-ui): `tokens` (constants, checked against tokens.json by a test), `canvas` (tiny-skia pixmap
   for vector shapes, direct pixel writes for text and framebuffer blits, clip rect, conversion to
   minifb's 0RGB), `text` (seven embedded OFL faces rasterised by fontdue, glyph cache, ellipsis
@@ -202,11 +205,12 @@ byte for byte.
 - `screens/`: `library` (01), `states` (03), `settings` (04), `bench` (D), each a struct with
   `update(&UiInput, ctx) -> Outcome` and `render(&mut Canvas, ctx)`; the app owns the wiring.
   The bench switches the core capture on only while it is open (`Gba::set_bench`).
-- `window.rs` (resizable minifb window; `present_game` is the fast path: BGR555 LUT + integer
+- `window.rs` (resizable minifb window, or with `--fullscreen` a borderless `none` window of
+  the primary display's size from `display_size()`; `present_game` is the fast path: BGR555 LUT + integer
   upscale onto the Night letterbox, optional LCD-grid / frame-blend filters; `present_canvas`
   for the window-resolution screens; `gather_input`), `input.rs` (default keyboard and gamepad
   tables; gilrs polling returns the key mask through the live `PadMap` plus the buttons that went
-  down, for rebinding),
+  down, for rebinding; `PadPause`, the Guide or SELECT+START-held-1-s route to the pause menu),
   `audio.rs` (SPSC ring, linear resampler from the core's SOUNDBIAS rate to the device rate, cpal
   stream, underrun counter, a gain stage in the callback for the volume setting), `pacing.rs`
   (1/59.7275 s frame clock, adaptive sleep margin, +-2% audio-fill correction), `saves.rs`

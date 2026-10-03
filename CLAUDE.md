@@ -34,8 +34,9 @@ gba-test/      lib: load_rom (.gba/.zip), fb_hash (xxh3-64), checks (jsmolka / m
                schema, input scripts; bin: headless CLI; tests/roms.rs: cargo test driver
 gba-frontend/  bin `strawberry`: app.rs (screens + game session), overlay/ (native 240x160 pause menu +
                toasts), screens/ (library, states, settings, bench), settings.rs (Strawberry's
-               settings fields), window.rs (resizable minifb, letterbox fast path, filters),
-               input.rs (GBA button set + default layouts), debug_ui.rs (hotkey map), brand.rs (the
+               settings fields), window.rs (resizable minifb, `--fullscreen` borderless window of
+               the display's size, letterbox fast path, filters), input.rs (GBA button set + default
+               layouts, PadPause: the pad route to the pause menu), debug_ui.rs (hotkey map), brand.rs (the
                mark parsed from docs/branding, icons, handheld drawings), glue.rs (gba_core behind
                the generic traits: GbaPlatform, Machine for SaveRam/Snapshot, GBA_SLOTS, legacy
                state import), gba_copy.rs (save type names), pixels.rs (BGR555 table), pinned.rs
