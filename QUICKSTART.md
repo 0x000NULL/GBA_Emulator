@@ -19,6 +19,7 @@ paste the path and press Enter), or start with it on the command line:
 strawberry --library "D:\Games\GBA"
 strawberry "D:\Games\GBA\Some Game (USA).zip"      # play straight away (.gba or a .zip containing one)
 strawberry --scale 3 "Some Game.gba"                # fixed 3x picture in a 720x480 window
+strawberry --slot 2 "Some Game.gba"                 # start from save-state slot 2 (an empty slot boots normally)
 ```
 
 ## Keys (defaults, rebindable in Settings)

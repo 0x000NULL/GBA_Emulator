@@ -229,6 +229,21 @@ impl Session {
         Ok(())
     }
 
+    /// `--slot N`: load `slot` into the freshly booted machine. A failed load leaves the boot
+    /// untouched (the core swaps in the decoded state only on success), so play goes on from it.
+    pub fn load_start_slot(&mut self, slot: u8) -> bool {
+        match self.load_slot(slot) {
+            Ok(()) => {
+                println!("loaded slot {slot}");
+                true
+            }
+            Err(e) => {
+                eprintln!("error: slot {slot}: {e}; starting from a fresh boot");
+                false
+            }
+        }
+    }
+
     pub fn title(&self) -> String {
         debug_ui::format_title(&TitleInfo {
             game: &self.game,
@@ -398,6 +413,12 @@ impl App {
         if let Some(rom) = &cli.rom {
             app.start_game(rom)?;
             app.library_screen.select(rom);
+            if let Some(n) = cli.slot {
+                app.slot_cursor = n;
+                if let Some(s) = app.session.as_mut() {
+                    s.load_start_slot(n);
+                }
+            }
         }
         Ok(app)
     }
@@ -1070,7 +1091,39 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::migrate_dir;
+    use super::{migrate_dir, AudioMode, Session};
+    use gba_core::BiosMode;
+
+    #[test]
+    fn start_slot_loads_a_saved_state_and_an_empty_one_keeps_the_boot() {
+        let root = std::env::temp_dir().join(format!("strawberry-start-slot-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        // 1 KiB ROM whose entry point is `b .`
+        let mut rom = vec![0u8; 0x400];
+        rom[..4].copy_from_slice(&0xEAFF_FFFEu32.to_le_bytes());
+        let path = root.join("spin.gba");
+        std::fs::write(&path, &rom).unwrap();
+        let session = || Session::new(&path, Some(BiosMode::Hle), AudioMode::Off, None, 0).unwrap();
+
+        // empty slot: reports failure, the fresh boot keeps running
+        let mut s = session();
+        assert!(!s.load_start_slot(4));
+        for _ in 0..10 {
+            s.gba.run_frame();
+        }
+        let saved_frame = s.gba.bus.ppu.frame_count;
+        assert!(saved_frame >= 10);
+        s.save_slot(4).unwrap();
+
+        // a new boot started from that slot resumes at the saved frame
+        let mut s = session();
+        assert_eq!(s.gba.bus.ppu.frame_count, 0);
+        assert!(s.load_start_slot(4));
+        assert_eq!(s.gba.bus.ppu.frame_count, saved_frame);
+        s.gba.run_frame();
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn legacy_dir_moves_once_and_never_overwrites() {

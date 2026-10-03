@@ -43,6 +43,9 @@ pub struct Cli {
     /// 1280x800 design size with the largest whole-number picture that fits.
     #[arg(long, value_parser = clap::value_parser!(u32).range(1..=10))]
     pub scale: Option<u32>,
+    /// Start the ROM from save-state slot N (1-8); an empty or unreadable slot boots normally.
+    #[arg(long, value_name = "N", requires = "rom", value_parser = clap::value_parser!(u8).range(1..=8))]
+    pub slot: Option<u8>,
     /// Extra library folder (repeatable). The folder of a ROM given on the command line is
     /// always included.
     #[arg(long, value_name = "DIR")]
@@ -79,5 +82,16 @@ mod tests {
         assert!((GBA_FPS - 59.7275).abs() < 1e-3);
         let p = frame_period();
         assert!((p.as_secs_f64() - 1.0 / 59.7275).abs() < 1e-7);
+    }
+
+    #[test]
+    fn slot_flag_needs_a_rom_and_a_slot_in_range() {
+        let cli = Cli::try_parse_from(["strawberry", "--slot", "3", "game.gba"]).unwrap();
+        assert_eq!(cli.slot, Some(3));
+        assert_eq!(Cli::try_parse_from(["strawberry", "game.gba"]).unwrap().slot, None);
+        for bad in ["0", "9"] {
+            assert!(Cli::try_parse_from(["strawberry", "--slot", bad, "game.gba"]).is_err(), "--slot {bad}");
+        }
+        assert!(Cli::try_parse_from(["strawberry", "--slot", "2"]).is_err());
     }
 }

@@ -1,7 +1,11 @@
 # Changelog
 
-## Unreleased
+## v1.4.0 — 2026-10-02
 
+- `--slot N` (1–8) starts the ROM from that save-state slot before the first frame is shown,
+  for launchers (Fruit Basket couch mode's Load button). `--slot` needs a ROM; an empty or
+  unreadable slot prints one line to stderr and the game plays on from a fresh boot. The slot
+  files are unchanged.
 - Developer tooling: `tools/mgba-ref.exe` (built by `scripts/build-mgba.ps1`) captures mGBA's
   pictures, memory, registers, IO changes and instruction traces headless, and
   `scripts/compare-trace.py` diffs instruction timing against ours. gba-test gained `--png-at`,

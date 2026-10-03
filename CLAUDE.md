@@ -91,6 +91,7 @@ cargo run -p gba-test -- <rom> --frames N --record                   # print a m
 cargo run --release -p gba-frontend                                   # the library (folders from settings / --library)
 cargo run --release -p gba-frontend -- <rom|zip>                      # play straight away
 cargo run --release -p gba-frontend -- <rom> --scale 3                # fixed 3x picture in a 720x480 window
+cargo run --release -p gba-frontend -- <rom> --slot 2                 # start from state slot 2 (empty/broken: stderr line, fresh boot)
 cargo run --release -p gba-frontend -- <rom> --bench 1200             # headless speed
 cargo test -p gba-frontend --release -- --ignored render_             # review renders of every screen -> target/ui-renders/*.png
 $env:STRAWBERRY_PIN_RECORD=1; cargo test -p gba-frontend pinned_ -- --nocapture   # print pinned hashes (src/pinned.rs) + target/ui-renders/pinned/*.png
