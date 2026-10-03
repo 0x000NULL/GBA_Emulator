@@ -20,6 +20,7 @@ use crate::screens::states::{StatesCtx, StatesOutcome, StatesScreen};
 use crate::settings::{AudioMode, Bios, PictureSize, Settings};
 use crate::window::Filter;
 use crate::glue::{Machine, GBA_SLOTS};
+use crate::input::PadPause;
 use crate::slots::{self, SlotSet};
 use crate::ui::fmt::frames_to_secs;
 use crate::ui::input::{KeyMap, PadMap, UiInput};
@@ -293,6 +294,10 @@ pub struct RunOptions {
     pub scale: Option<u32>,
     /// `--scale N` was given: the window opens at exactly 240N x 160N.
     pub exact_window: bool,
+    /// `--fullscreen`: a borderless window covering the display; its size is not saved.
+    pub fullscreen: bool,
+    /// `--exit-on-quit`: the pause menu's QUIT ends the program instead of opening the library.
+    pub exit_on_quit: bool,
 }
 
 pub struct App {
@@ -324,6 +329,8 @@ pub struct App {
     states_rom: Option<(PathBuf, String, SlotSet)>,
     /// Frame step requested while paused (N).
     step: bool,
+    /// Guide / SELECT+START-hold route to the pause menu.
+    pad_pause: PadPause,
 }
 
 /// The folder name under the user's config and cache dirs.
@@ -379,7 +386,15 @@ impl App {
             (None, PictureSize::Fixed(n)) => Some(n),
             (None, PictureSize::Largest) => None,
         };
-        let opts = RunOptions { bios, fullspeed: cli.fullspeed, exit_after: cli.exit_after, scale, exact_window: cli.scale.is_some() };
+        let opts = RunOptions {
+            bios,
+            fullspeed: cli.fullspeed,
+            exit_after: cli.exit_after,
+            scale,
+            exact_window: cli.scale.is_some(),
+            fullscreen: cli.fullscreen,
+            exit_on_quit: cli.exit_on_quit,
+        };
         let keymap = settings.to_keymap();
         let padmap = settings.to_padmap();
         let hotkeys = settings.to_hotkeys();
@@ -409,6 +424,7 @@ impl App {
             states: None,
             states_rom: None,
             step: false,
+            pad_pause: PadPause::default(),
         };
         if let Some(rom) = &cli.rom {
             app.start_game(rom)?;
@@ -826,8 +842,11 @@ impl App {
     }
 
     fn update_game(&mut self, input: &UiInput, video: &Video) -> Result<()> {
-        let hotkeys: Vec<Hotkey> = self.hotkeys.pressed(input);
+        let mut hotkeys: Vec<Hotkey> = self.hotkeys.pressed(input);
         let now = Instant::now();
+        if self.pad_pause.update(&input.pad_buttons, input.game_mask, now) && !hotkeys.contains(&Hotkey::Pause) {
+            hotkeys.push(Hotkey::Pause);
+        }
         let slot = self.slot_cursor;
         let Some(s) = self.session.as_mut() else { return Ok(()) };
 
@@ -888,6 +907,9 @@ impl App {
                 }
                 Outcome::Quit => {
                     self.end_game();
+                    if self.opts.exit_on_quit {
+                        self.quit = true;
+                    }
                     return Ok(());
                 }
             }
@@ -1067,7 +1089,7 @@ impl App {
 
     /// Final save flush, remembered window size and the exit statistics line.
     pub fn shutdown(&mut self, window: (usize, usize)) {
-        if !self.opts.exact_window {
+        if !self.opts.exact_window && !self.opts.fullscreen {
             self.settings.window = Some((window.0 as u32, window.1 as u32));
             self.save_settings();
         }

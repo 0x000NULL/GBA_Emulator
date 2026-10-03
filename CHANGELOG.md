@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.5.0 — 2026-10-03
+
+Couch mode, for launchers that start games on a TV (the Fruit Basket convention, shared with
+ps2emu and Crabapple):
+- `--fullscreen`: a borderless window covering the primary display, for that run only (the
+  window size in settings.toml is left alone). It cannot be combined with `--scale`. Where the
+  display size cannot be read, Strawberry warns and opens a normal window.
+- `--exit-on-quit`: the pause menu's QUIT flushes the save and exits with code 0 instead of
+  returning to the library.
+- Gamepads reach the pause menu: the Guide button, or Select+Start held for one second (once
+  per hold; the game still sees both buttons). Either one closes the menu again.
+
 ## v1.4.0 — 2026-10-02
 
 - `--slot N` (1–8) starts the ROM from that save-state slot before the first frame is shown,

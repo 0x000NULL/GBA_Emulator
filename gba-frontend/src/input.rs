@@ -11,6 +11,7 @@ use basket_app::pads::stick_to_dpad;
 use gba_core::Keys;
 use gilrs::Button;
 use minifb::Key;
+use std::time::{Duration, Instant};
 
 /// The GBA's buttons, ordered as `Keys` bits, and the ones the menus use.
 pub const GBA_BUTTONS: ButtonSet = ButtonSet {
@@ -72,6 +73,38 @@ pub fn keyboard_keys(down: impl Fn(Key) -> bool) -> u16 {
     KEYBOARD_MAP.iter().filter(|(k, _)| down(*k)).fold(0, |m, (_, bit)| m | bit)
 }
 
+/// How long SELECT+START must be held to open the pause menu from a pad.
+pub const PAD_PAUSE_HOLD: Duration = Duration::from_secs(1);
+
+/// The controller route to the pause menu (the Fruit Basket couch convention, shared with ps2emu
+/// and Crabapple): the Guide button, or SELECT+START held for [`PAD_PAUSE_HOLD`]. The hold fires
+/// once; both buttons must be released before it can fire again. The game still sees the buttons.
+#[derive(Debug, Default)]
+pub struct PadPause {
+    held_since: Option<Instant>,
+    fired: bool,
+}
+
+impl PadPause {
+    /// `pad_pressed`: pad buttons that went down this frame; `mask`: the GBA buttons held now.
+    /// True when the pause menu should toggle.
+    pub fn update(&mut self, pad_pressed: &[Button], mask: u16, now: Instant) -> bool {
+        let combo = Keys::SELECT | Keys::START;
+        let mut toggle = pad_pressed.contains(&Button::Mode);
+        if mask & combo == combo {
+            let since = *self.held_since.get_or_insert(now);
+            if !self.fired && now.duration_since(since) >= PAD_PAUSE_HOLD {
+                self.fired = true;
+                toggle = true;
+            }
+        } else {
+            self.held_since = None;
+            self.fired = false;
+        }
+        toggle
+    }
+}
+
 /// Drop simultaneous opposite directions (possible when keyboard and pad disagree); real hardware
 /// cannot report them and some games misbehave.
 pub fn sanitize(mask: u16) -> u16 {
@@ -98,6 +131,32 @@ mod tests {
     }
 
     const R: &MenuRoles = &GBA_BUTTONS.roles;
+
+    #[test]
+    fn pad_pause_is_guide_or_a_one_second_select_start_hold() {
+        let t0 = Instant::now();
+        let at = |ms: u64| t0 + Duration::from_millis(ms);
+        let combo = Keys::SELECT | Keys::START;
+        let mut p = PadPause::default();
+        // Guide toggles on the frame it goes down
+        assert!(p.update(&[Button::Mode], 0, at(0)));
+        assert!(!p.update(&[], 0, at(16)));
+        // SELECT+START: nothing before the second, once at it, not again while held
+        assert!(!p.update(&[Button::Select, Button::Start], combo, at(100)));
+        assert!(!p.update(&[], combo | Keys::A, at(1099)));
+        assert!(p.update(&[], combo, at(1100)));
+        assert!(!p.update(&[], combo, at(3000)));
+        // releasing either button re-arms it; a short hold does nothing
+        assert!(!p.update(&[], Keys::START, at(3016)));
+        assert!(!p.update(&[], combo, at(3032)));
+        assert!(!p.update(&[], 0, at(3500)));
+        assert!(!p.update(&[], combo, at(3600)));
+        assert!(p.update(&[], combo, at(4600)));
+        // either button alone never fires
+        let mut p = PadPause::default();
+        assert!(!p.update(&[], Keys::START, at(0)));
+        assert!(!p.update(&[], Keys::START, at(5000)));
+    }
 
     #[test]
     fn default_maps_match_the_tables() {

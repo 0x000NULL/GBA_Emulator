@@ -46,6 +46,12 @@ pub struct Cli {
     /// Start the ROM from save-state slot N (1-8); an empty or unreadable slot boots normally.
     #[arg(long, value_name = "N", requires = "rom", value_parser = clap::value_parser!(u8).range(1..=8))]
     pub slot: Option<u8>,
+    /// Borderless window covering the display, for this run only (nothing is saved).
+    #[arg(long, conflicts_with = "scale")]
+    pub fullscreen: bool,
+    /// The pause menu's QUIT exits the program (code 0) instead of returning to the library.
+    #[arg(long)]
+    pub exit_on_quit: bool,
     /// Extra library folder (repeatable). The folder of a ROM given on the command line is
     /// always included.
     #[arg(long, value_name = "DIR")]
@@ -93,5 +99,14 @@ mod tests {
             assert!(Cli::try_parse_from(["strawberry", "--slot", bad, "game.gba"]).is_err(), "--slot {bad}");
         }
         assert!(Cli::try_parse_from(["strawberry", "--slot", "2"]).is_err());
+    }
+
+    #[test]
+    fn couch_flags() {
+        let cli = Cli::try_parse_from(["strawberry", "game.gba", "--fullscreen", "--exit-on-quit", "--slot", "1"]).unwrap();
+        assert!(cli.fullscreen && cli.exit_on_quit);
+        let cli = Cli::try_parse_from(["strawberry", "game.gba"]).unwrap();
+        assert!(!cli.fullscreen && !cli.exit_on_quit);
+        assert!(Cli::try_parse_from(["strawberry", "game.gba", "--fullscreen", "--scale", "3"]).is_err());
     }
 }

@@ -92,6 +92,7 @@ cargo run --release -p gba-frontend                                   # the libr
 cargo run --release -p gba-frontend -- <rom|zip>                      # play straight away
 cargo run --release -p gba-frontend -- <rom> --scale 3                # fixed 3x picture in a 720x480 window
 cargo run --release -p gba-frontend -- <rom> --slot 2                 # start from state slot 2 (empty/broken: stderr line, fresh boot)
+cargo run --release -p gba-frontend -- <rom> --fullscreen --exit-on-quit   # couch mode: borderless display-sized window (not saved), QUIT exits 0
 cargo run --release -p gba-frontend -- <rom> --bench 1200             # headless speed
 cargo test -p gba-frontend --release -- --ignored render_             # review renders of every screen -> target/ui-renders/*.png
 $env:STRAWBERRY_PIN_RECORD=1; cargo test -p gba-frontend pinned_ -- --nocapture   # print pinned hashes (src/pinned.rs) + target/ui-renders/pinned/*.png
@@ -110,7 +111,7 @@ Harness exit codes: 0 pass, 1 fail, 2 error. `GBA_TESTS_REQUIRED=1` turns the
 
 Frontend keys (defaults, rebindable in Settings): Z=A X=B A=L S=R Enter=Start RShift=Select
 arrows=D-pad; gamepad South=A East=B LB=L RB=R Start Select D-pad/left stick (pad buttons rebind
-too, stored as `[gamepad]`); Tab fast-forward; Esc or P pause menu (resume / save / load / settings / bench /
+too, stored as `[gamepad]`), Guide or Select+Start held 1 s opens the pause menu; Tab fast-forward; Esc or P pause menu (resume / save / load / settings / bench /
 quit); N frame-step; F1/F3 save/load the current slot (`<rom stem>.s<N>.state`); F2 save states
 screen; F5 write `.sav`; F10 IO dump; F11 screenshot; F12 bench. Menus navigate with the GBA
 bindings (A confirm, B back, L/R pages, D-pad). Hidden `--exit-after N` ends a windowed run and

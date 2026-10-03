@@ -9,7 +9,7 @@
 //! Default keys: Z=A X=B A=L S=R Enter=Start RShift=Select arrows=D-pad; Tab (held) fast-forward;
 //! Esc/P pause menu; N frame-step; F5 write save; F1/F3 save/load state; F10 dump IO;
 //! F11 screenshot; F12 bench; F2 save states. Gamepad defaults: South=A East=B LB=L RB=R Start
-//! Select D-pad (the left stick is always a D-pad too). Keys and pad buttons are rebindable in
+//! Select D-pad (the left stick is always a D-pad too); Guide, or SELECT+START held 1 s, opens the pause menu. Keys and pad buttons are rebindable in
 //! Settings.
 
 mod app;
@@ -74,7 +74,15 @@ fn run(cli: &Cli) -> Result<()> {
     if app.session.is_none() {
         println!("library: {} folder(s)", app.library.folders().len());
     }
-    let mut video = window::Video::new(&title, w, h)?;
+    let fullscreen = if app.opts.fullscreen { window::Video::new_fullscreen(&title)? } else { None };
+    if app.opts.fullscreen && fullscreen.is_none() {
+        eprintln!("warning: --fullscreen: the display size is unknown here; opening a window");
+    }
+    let mut video = match fullscreen {
+        Some(v) => v,
+        None => window::Video::new(&title, w, h)?,
+    };
+    let (w, h) = video.size();
     video.set_brand_icon(app::App::cache_dir().as_deref());
     println!("window: {w}x{h}");
     let mut pads = basket_app::pads::Gamepads::new(basket_app::pads::Ports::Shared);

@@ -134,6 +134,69 @@ impl InputCallback for CharSink {
     }
 }
 
+/// The primary display's size in the units windows are created in, where it can be read.
+pub fn display_size() -> Option<(usize, usize)> {
+    display::size()
+}
+
+#[cfg(windows)]
+mod display {
+    #[link(name = "user32")]
+    extern "system" {
+        fn GetSystemMetrics(index: i32) -> i32;
+    }
+
+    pub fn size() -> Option<(usize, usize)> {
+        // SM_CXSCREEN / SM_CYSCREEN: the primary monitor, in this (DPI-unaware) process's units
+        let (w, h) = unsafe { (GetSystemMetrics(0), GetSystemMetrics(1)) };
+        (w > 0 && h > 0).then_some((w as usize, h as usize))
+    }
+}
+
+#[cfg(target_os = "macos")]
+mod display {
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGMainDisplayID() -> u32;
+        fn CGDisplayPixelsWide(display: u32) -> usize;
+        fn CGDisplayPixelsHigh(display: u32) -> usize;
+    }
+
+    pub fn size() -> Option<(usize, usize)> {
+        let (w, h) = unsafe {
+            let d = CGMainDisplayID();
+            (CGDisplayPixelsWide(d), CGDisplayPixelsHigh(d))
+        };
+        (w > 0 && h > 0).then_some((w, h))
+    }
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+mod display {
+    /// The first connected DRM connector's preferred mode: works under X11 and Wayland without
+    /// linking either.
+    pub fn size() -> Option<(usize, usize)> {
+        let mut connectors: Vec<_> = std::fs::read_dir("/sys/class/drm").ok()?.flatten().map(|e| e.path()).collect();
+        connectors.sort();
+        connectors.iter().find_map(|c| {
+            let status = std::fs::read_to_string(c.join("status")).ok()?;
+            if status.trim() != "connected" {
+                return None;
+            }
+            super::parse_mode(std::fs::read_to_string(c.join("modes")).ok()?.lines().next()?)
+        })
+    }
+}
+
+/// `1920x1080` (a DRM mode line; some carry a suffix such as `i`).
+#[cfg_attr(not(all(unix, not(target_os = "macos"))), allow(dead_code))]
+fn parse_mode(line: &str) -> Option<(usize, usize)> {
+    let (w, h) = line.trim().split_once('x')?;
+    let h: String = h.chars().take_while(|c| c.is_ascii_digit()).collect();
+    let (w, h) = (w.parse().ok()?, h.parse().ok()?);
+    (w > 0 && h > 0).then_some((w, h))
+}
+
 pub struct Video {
     window: Window,
     buf: Vec<u32>,
@@ -149,6 +212,20 @@ impl Video {
     /// Open a resizable window of `w` x `h` client pixels.
     pub fn new(title: &str, w: usize, h: usize) -> Result<Self> {
         let opts = WindowOptions { resize: true, scale: Scale::X1, scale_mode: ScaleMode::Stretch, ..WindowOptions::default() };
+        Self::open(title, w, h, opts)
+    }
+
+    /// `--fullscreen`: a borderless window covering the primary display (minifb has no exclusive
+    /// fullscreen). None when the display size cannot be read here.
+    pub fn new_fullscreen(title: &str) -> Result<Option<Self>> {
+        let Some((w, h)) = display_size() else { return Ok(None) };
+        let opts = WindowOptions { borderless: true, none: true, resize: false, scale: Scale::X1, scale_mode: ScaleMode::Stretch, ..WindowOptions::default() };
+        let mut video = Self::open(title, w, h, opts)?;
+        video.window.set_position(0, 0);
+        Ok(Some(video))
+    }
+
+    fn open(title: &str, w: usize, h: usize, opts: WindowOptions) -> Result<Self> {
         let mut window = Window::new(title, w, h, opts).map_err(|e| anyhow!("creating window: {e}"))?;
         // minifb rate-limits update() to 250 fps by default; pacing is ours.
         window.set_target_fps(0);
@@ -242,6 +319,16 @@ impl Video {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn drm_mode_lines() {
+        assert_eq!(parse_mode("1920x1080"), Some((1920, 1080)));
+        assert_eq!(parse_mode("3840x2160
+"), Some((3840, 2160)));
+        assert_eq!(parse_mode("1920x1080i"), Some((1920, 1080)));
+        assert_eq!(parse_mode("0x0"), None);
+        assert_eq!(parse_mode("garbage"), None);
+    }
 
     #[test]
     fn lut_endpoints() {

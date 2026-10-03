@@ -91,11 +91,14 @@ All of these can be rebound in Settings (every GBA button shows a keyboard keyca
 keycap; click one and press the new key or pad button); the menus navigate with the same
 bindings (A confirm, B back, L/R turn pages).
 
-Hotkeys: **Esc** or **P** pause menu, **Tab** (held) fast-forward, **N** frame step,
+Hotkeys: **Esc** or **P** pause menu (on a gamepad: **Guide**, or **Select+Start** held for a
+second), **Tab** (held) fast-forward, **N** frame step,
 **F1 / F3** save / load the current slot, **F2** save states screen, **F5** write the `.sav`
 now, **F10** dump IO registers to the console, **F11** screenshot, **F12** bench. The window is
 resizable and the picture is always drawn at a whole-number scale on a dark letterbox;
-`--scale N` fixes the picture at N× in a window of exactly that size, `--slot N` (1–8) starts the
+`--scale N` fixes the picture at N× in a window of exactly that size, `--fullscreen` covers the
+display with a borderless window for that run, `--exit-on-quit` makes the pause menu's QUIT close
+Strawberry (exit code 0) instead of opening the library, `--slot N` (1–8) starts the
 game from that save-state slot (an empty slot boots normally), `--no-audio` disables
 sound, `--fullspeed` removes pacing, `--bench N` runs N frames headless and prints the speed.
 

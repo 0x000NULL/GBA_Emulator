@@ -20,6 +20,7 @@ strawberry --library "D:\Games\GBA"
 strawberry "D:\Games\GBA\Some Game (USA).zip"      # play straight away (.gba or a .zip containing one)
 strawberry --scale 3 "Some Game.gba"                # fixed 3x picture in a 720x480 window
 strawberry --slot 2 "Some Game.gba"                 # start from save-state slot 2 (an empty slot boots normally)
+strawberry --fullscreen --exit-on-quit "Some Game.gba"   # couch: whole display, pause menu QUIT closes Strawberry
 ```
 
 ## Keys (defaults, rebindable in Settings)
@@ -37,6 +38,7 @@ button has a keyboard keycap and a gamepad keycap; click one and press the new k
 | Key | Action |
 |---|---|
 | Esc or P | pause menu (resume, save/load slot, settings, bench, quit) |
+| Guide, or Select+Start held 1 s (gamepad) | pause menu |
 | Tab (hold) | fast-forward (speed limit in Settings) |
 | F1 / F3 | save / load the current state slot |
 | F2 | save states screen |
