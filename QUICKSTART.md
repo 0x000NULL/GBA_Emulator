@@ -37,7 +37,7 @@ button has a keyboard keycap and a gamepad keycap; click one and press the new k
 
 | Key | Action |
 |---|---|
-| Esc or P | pause menu (resume, save/load slot, settings, bench, quit) |
+| Esc or P | pause menu (resume, save/load slot, sun level on Boktai, settings, bench, quit) |
 | Guide, or Select+Start held 1 s (gamepad) | pause menu |
 | Tab (hold) | fast-forward (speed limit in Settings) |
 | F1 / F3 | save / load the current state slot |
@@ -46,11 +46,24 @@ button has a keyboard keycap and a gamepad keycap; click one and press the new k
 | N | advance one frame while paused |
 | F11 | screenshot (PNG beside the ROM) |
 | F12 | bench (developer view) |
+| = / - | more / less sunlight on Boktai's solar sensor |
+
+## Clock and sunlight
+
+Games with a clock in the cartridge (Pokémon Ruby, Sapphire and Emerald, Rockman EXE 4.5, the
+Boktai games and a few more) read your computer's local time. A time you set inside such a game
+is remembered in its `.sav`.
+
+The Boktai games also have a solar sensor. Strawberry gives it a sun level from 0 (dark) to 10
+(the in-game gauge fills): change it with **=** and **-** while playing, or on the **SUN** row of
+the pause menu (LEFT/RIGHT). The level is remembered in the settings file (`sun_level`).
 
 ## Where things are kept
 
-- **Game saves**: `<rom>.sav` beside the ROM.
+- **Game saves**: `<rom>.sav` beside the ROM (games with a clock add 16 bytes at the end for it).
 - **Save states**: eight slots per game, `<rom stem>.s1.state` … `.s8.state` beside the ROM.
+  States from before v1.6.0 show CAN'T LOAD (the state format changed); delete them from the
+  save states screen.
 - **Settings**: `%APPDATA%\strawberry\settings.toml` (Windows),
   `~/Library/Application Support/strawberry/settings.toml` (macOS),
   `~/.config/strawberry/settings.toml` (Linux). Plain TOML; safe to edit.

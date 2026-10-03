@@ -22,7 +22,8 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   **v1.5.0 (2026-10-03)**: couch mode (`--fullscreen`, `--exit-on-quit`, gamepad route to the
   pause menu). Both are hooks for the Fruit Basket launcher; see "Launcher hooks" below.
   **v1.6.0 (2026-10-03)**: cartridge GPIO, the real-time clock (Pokémon R/S/E and seven more) and
-  Boktai's solar sensor; savestate format 5. See "Cartridge GPIO" below.
+  Boktai's solar sensor; savestate format 5. See "Cartridge GPIO" below. Release run 37157962442:
+  unit tests and all four builds green, archives attached.
 - **Rebrand (2026-10-02)**: the player is **Strawberry** (`docs/branding/`, Fruit Basket No. 2).
   Window title, binary and archives (`strawberry`), `strawberry/` config and cache folders with a
   one-time move from `gba-advance/` (`app.rs migrate_dir`), the mark parsed from the SVG
@@ -445,7 +446,9 @@ the window close button, or Esc on the Library); the Bench in full including cor
   instead of SCREENS.md's "No games found" paragraph, with `Open <folder>` / `Settings` buttons
   (Settings was reachable only from the pause menu before) and the whole `Settings` button when
   no folder exists; the board's handheld screen is composed at native 240x160 in BGR555, so its
-  cream is the Pixel cream, not the Night chrome cream.
+  cream is the Pixel cream, not the Night chrome cream; the pause menu gains a SUN row after
+  LOAD STATE on solar-sensor carts (2026-10-03, seven rows still fit the 84x112 window) and
+  Settings' emulator keys list "Sun brighter / dimmer (Boktai)" (`=` / `-`), neither in the design.
 - **Not done.** The window has no
   minimum size enforcement (layouts clip below 960x640); thread priority for the capture thread
   (std has none; it runs one game at a time with pauses).
