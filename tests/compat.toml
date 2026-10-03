@@ -405,6 +405,13 @@ input_file = "tests/inputs/tennis-match.toml"
 golden = "255fd3d58bfeed73"
 note = "story mode: Clay standing under the closed tunnel at the top of the Junior Class Court (no match reached: the story's first playable match sits behind the center-court cutscene, whose area was not found; six areas explored, all fenced dead ends); player control verified (LEFT 30600-30900 walks Clay to the west fence, DOWN 100 frames puts him on the court; 300 frames of DOWN exits the gate into a black map transition); BTME, 16 MB, SRAM 32K"
 
+[[rom]]
+path = "Games/Mario Tennis - Power Tour (USA, Australia) (En,Fr,De,Es,It).zip"
+frames = 39400
+input_file = "tests/inputs/tennis-academy.toml"
+golden = "33c00655f839ab89"
+note = "story mode past the center-court wall: the southern exit of Outside Restaurant (RIGHT 340 frames, DOWN) triggers the center-court aftermath cutscene (~30300); A taps lead to 'To the headmaster's office' and control in the Plaza (~38900); DOWN enters the Main Building lobby (39400, golden). Player control verified (LEFT or UP held 39400-39600: three distinct hashes). The headmaster's office trigger and the first match are not reached yet"
+
 # ---- BIOS sound driver HLE (2026-10-01): these titles' music goes through SWI 1A-1E / the
 # SoundGetJumpList routines. `audio_frames_min` pins that it plays (about half of the frames
 # measured with sound at the time of pinning); the pictures are the sweep's 1500-frame screens.

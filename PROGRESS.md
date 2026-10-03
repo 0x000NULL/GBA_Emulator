@@ -98,7 +98,7 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
 | Final Fantasy Tactics Advance (USA) | AFXE | Flash 64K | Snowball fight command menu, UP moves the cursor | title 4500, gameplay 19500 |
 | Mario Party Advance (USA) | B8ME | EEPROM | Shroom City map, A stops the dice | title 3000, gameplay 32100 |
 | Mario Pinball Land (USA) | BMVE | EEPROM | First table; A flips, LEFT nudges | title 3000, gameplay 3400 |
-| Mario Tennis: Power Tour (USA) | BTME | SRAM 32K | Story mode through character setup and the dorm to the academy courts, Clay controllable (LEFT walks to the fence); no match reachable from power-on without save data (hung black before the 2026-09-30 fetch-arbitration fix) | title 1800, overworld 30600 |
+| Mario Tennis: Power Tour (USA) | BTME | SRAM 32K | Story mode through character setup and the dorm to the academy courts, Clay controllable (LEFT walks to the fence); no match reachable from power-on without save data (hung black before the 2026-09-30 fetch-arbitration fix) | title 1800, overworld 30600, Main Building after the center-court cutscene 39400 |
 | Max Payne (USA) | BMEE | EEPROM | Roscoe St. Station, LEFT/UP move | menu 1200, gameplay 2300 |
 | NFS Carbon: Own the City (USA/EU) | BN7E | EEPROM | Elimination race, LEFT/RIGHT steer | title 2700, race 6900 |
 | NFS Most Wanted (USA/EU) | BNWE | EEPROM | Tollbooth race, LEFT/RIGHT steer | title 1500, race 6600 |
@@ -474,7 +474,10 @@ IRQ phase).
 2. Misc edge H-blank bit / DMA prefetch rows (6/12): attempted twice, no model found (see "Misc
    edge attempt" and "Reference comparison 2026-10-02"); needs a hardware measurement or a new
    idea, not more parameter scans.
-3. Mario Tennis: the first match is behind the story's center-court cutscene; not scripted.
+3. Mario Tennis: the center-court cutscene is scripted (`tests/inputs/tennis-academy.toml`, compat
+   row at 39400 in the Main Building lobby); the headmaster's office trigger and the first match
+   are not found yet (the script header lists the areas tried; untried: the lobby staff, the
+   doors outside the Main Building, a possible 3rd floor).
 4. The BIOS sound driver's own scaling has no reference (mGBA's HLE BIOS stubs it).
 
 ## Reference comparison (2026-10-02): mgba-ref, garage screens, boot timing, Misc edge
