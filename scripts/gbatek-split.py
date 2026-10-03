@@ -1,7 +1,8 @@
 """Split tools/gbatek.htm (GBATEK by Martin Korth) into per-section text files under docs/gbatek/.
 
-Only the GBA reference (0..84), the ARM CPU reference (661..702), BIOS functions (703..714) and BIOS RAM usage (720) are emitted;
-NDS/DSi/3DS chapters are skipped. Run: python scripts/gbatek-split.py
+Only the GBA reference (0..84), the ARM CPU reference (661..702), BIOS functions (703..714) and BIOS RAM usage (720) are emitted,
+plus the NDS chapters named in EXTRA (the GBA RTC chapter defers its serial protocol to "DS Real-Time Clock");
+other NDS/DSi/3DS chapters are skipped. Run: python scripts/gbatek-split.py
 """
 import html, os, re, sys
 
@@ -28,7 +29,8 @@ def to_text(frag: str) -> str:
         out.append(l)
     return '\n'.join(out).strip() + '\n'
 
-keep = [i for i, m in enumerate(anchors) if i <= 84 or 661 <= i <= 714 or i == 720]
+EXTRA = {'dsrealtimeclockrtc'}
+keep = [i for i, m in enumerate(anchors) if i <= 84 or 661 <= i <= 714 or i == 720 or m.group(1) in EXTRA]
 index = []
 for i in keep:
     m = anchors[i]
