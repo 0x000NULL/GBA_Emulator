@@ -13,7 +13,8 @@ Module map (gba-core/src): `cpu/` (regs, alu, decode tables, arm, thumb, disasm,
 `ppu/` (regs views, bg_text, bg_affine, bitmap, obj, compose; timing contract in mod.rs),
 `apu/` (regs, psg, fifo, mixer), `bus/` (memory map + waitstates in mod.rs, IO dispatch in io.rs,
 DMA execution in dma_exec.rs, debugger hooks in debug.rs), `dma.rs`, `timers.rs`, `irq.rs`,
-`keypad.rs`, `cart/` (header, save detection, SRAM/flash/eeprom), `bios/` (LLE image + HLE SWIs in
+`keypad.rs`, `cart/` (header, save detection, SRAM/flash/eeprom, the GPIO port with the RTC and
+solar sensor), `bios/` (LLE image + HLE SWIs in
 hle.rs, cycle costs in swi_timing.rs, guest callbacks in call.rs, the sound driver in sound/),
 `sched.rs`, `timing.rs`, `gba.rs` (main loop), `state.rs` (savestates, feature-gated).
 
@@ -119,6 +120,26 @@ bus, byte replicated on wider reads, byte lane selected by address on wider writ
 chip). 8-bit writes: PAL and BG-VRAM duplicate into the halfword, OBJ-VRAM and OAM ignore them.
 EEPROM is reached through 0x0D (whole region for carts <= 16 MB, 0x0DFFFF00+ for larger).
 
+### Cartridge GPIO (cart/gpio.rs, rtc.rs, solar.rs)
+The 4-bit port in the ROM chip at 0x080000C4 (data), C6 (direction), C8 (bit 0: registers
+readable). `Cartridge::new` attaches it only to carts that need it: the RTC when the ROM holds
+the SDK's `SIIRTC_V` string, the RTC plus the solar sensor for the Boktai game codes U3I/U32/U33.
+Reads of C4-C9 return the registers in R/W mode and the ROM bytes otherwise (`peek8`/`peek16`,
+so every read width and the debugger agree); writes go through `Cartridge::write16`. Devices
+see `data & dir` as pin levels and drive the input pins.
+- **RTC** (S3511): serial state machine on SCK=0/SIO=1/CS=2, GBATEK's DS RTC protocol
+  (`docs/gbatek/159-dsrealtimeclockrtc.md`); the command is decoded LSB-first, which matches the
+  MSB-first commands games send (65h = read datetime). Control (24h bit, power-fail always 0),
+  datetime, time, force reset; alarm/free read FFh; the /IRQ line is not wired. Time =
+  host seed (`Gba::set_rtc_clock`, local seconds) + emulated seconds since the seed (`sched.now`,
+  stored into `Cartridge::now` by the bus before each ROM-region write) + the offset of any time
+  the game wrote. The offset, weekday offset and control persist in a 16-byte `.sav` trailer
+  (`SBRTC\x01`, i64 LE, two bytes), split off before the backend sees the data (EEPROM sizes by
+  length). The harness seeds 2026-01-01 00:00:00, the frontend the wall clock.
+- **Solar sensor**: RST (bit 1) clears a counter that CLK (bit 0) rising edges count up; FLG
+  (bit 3) is high once the low 8 bits exceed the sensor value `E8h - 98h * level / 10` (level
+  0 dark .. 10 full gauge, `Gba::set_sun_level`), so GBATEK's sampling loop returns the value.
+
 ## Harness (gba-test)
 `load_rom` (gba/zip), `fb_hash` = xxh3-64 of the framebuffer as LE u16s, `checks::check_jsmolka`
 (spin loop + r12 == 0), `checks::check_mgba_suite` (parse `END: p/t` from the debug log),
@@ -133,7 +154,9 @@ SOUNDBIAS rate), `--mute-channels MASK` (silence PSG/FIFO channels in the mix th
 capture hooks; emulation is unchanged), `--fifo-stats F` (per-frame FIFO pushed/popped/underruns), `--save-state/--load-state`,
 `--record` (prints a manifest stanza), `--triage` (the sweep's input schedule and one-line
 classification summary), `--log-swi` (every HLE SWI, sound-driver Init/Mode and jump-list call as
-a `guest:` line), `--dump-mem LO..HI`, `--watch-read LO..HI`.
+a `guest:` line), `--dump-mem LO..HI`, `--watch-read LO..HI`, `--rtc 'YYYY-MM-DD HH:MM:SS'`
+(cartridge clock; `build_gba` seeds 2026-01-01 00:00:00 so goldens are deterministic), `--sun N`
+(solar light 0-10; input scripts take `{ frame, sun = N }` steps too).
 
 ## Savestates (feature `savestate`)
 Every state struct carries `#[cfg_attr(feature = "savestate", derive(Serialize, Deserialize))]`;
@@ -143,7 +166,8 @@ machine), framebuffer and PPU scratch (regenerated), audio sample queue, debug h
 KH:CoM from a state reproduces the straight run's framebuffer hash exactly. Format 4 (2026-10-01)
 added the HLE call stack `Bios::calls`, so a state saved while the sound driver waits on the
 game's music player resumes it; a version mismatch is rejected (the frontend shows such slots as
-`CAN'T LOAD`).
+`CAN'T LOAD`). Format 5 (2026-10-03) added the cartridge GPIO port (`Cartridge::gpio`: RTC
+transfer state, clock seed and offset, solar counter and light level).
 
 ## Frontend (gba-frontend)
 The GUI follows `docs/gui/` (DESIGN.md is the design language, SCREENS.md the per-screen
@@ -191,7 +215,10 @@ byte for byte.
 - `overlay/`: everything drawn over a running game is drawn at native 240x160 into a *copy* of
   the frame in the Pixel palette (5x5 bitmap font, windows, dim = BLDY maths with EVY 9, 48x32
   thumbnails = exact 1/5 samples, toasts) and scaled with it. `overlay::pause` is the pause menu
-  state machine.
+  state machine; its rows are built per game (`with_sun` adds SUN, changed with LEFT/RIGHT, on
+  solar-sensor carts). `Session` seeds the cartridge clock from the local wall clock at boot and
+  after every slot load, and reapplies the player's sun level (`settings.sun_level`, also moved
+  by the `=`/`-` hotkeys) after a load.
 - `slots.rs`: eight save-state slots per game, `<rom stem>.s<N>.state` beside the ROM. One file
   per slot: little-endian header (`GBSL`, header version, header length, frame count, saved-at
   unix seconds, play seconds, core `STATE_VERSION`, emulator version string, 240x160 BGR555

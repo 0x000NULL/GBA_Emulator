@@ -10,8 +10,8 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   Oblivion and the battle tutorial with player control. Headless proof: `tests/inputs/khcom-newgame.toml`
   plus the two KH goldens in `tests/compat.toml` (title at frame 1800, gameplay at frame 27400).
 - **All jsmolka ROMs pass** (arm, thumb, memory, bios, nes, save/none, sram, flash64, flash128;
-  ppu hello/shades/stripes by golden hash). `cargo test --workspace` is green: 382 core unit
-  tests, 103 frontend tests (+86 in fruit-basket), 2 ROM-driver tests (~11 min with all 66 commercial goldens present).
+  ppu hello/shades/stripes by golden hash). `cargo test --workspace` is green: 390 core unit
+  tests, 105 frontend tests (+86 in fruit-basket), 2 ROM-driver tests (~11 min with all 68 commercial goldens present).
 - **v1.0.0 released (2026-10-01)**: tag `v1.0.0`; `.github/workflows/release.yml` builds the
   player for Windows x64, Linux x64, macOS x64/arm64 with `--profile dist` and attaches the
   archives to the GitHub release (`CHANGELOG.md` is the release body). Procedure in CLAUDE.md.
@@ -21,6 +21,8 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   **v1.3.1 (2026-10-02)**: the fruit-basket split (below). **v1.4.0 (2026-10-02)**: `--slot N`.
   **v1.5.0 (2026-10-03)**: couch mode (`--fullscreen`, `--exit-on-quit`, gamepad route to the
   pause menu). Both are hooks for the Fruit Basket launcher; see "Launcher hooks" below.
+  **v1.6.0 (2026-10-03)**: cartridge GPIO, the real-time clock (Pokémon R/S/E and seven more) and
+  Boktai's solar sensor; savestate format 5. See "Cartridge GPIO" below.
 - **Rebrand (2026-10-02)**: the player is **Strawberry** (`docs/branding/`, Fruit Basket No. 2).
   Window title, binary and archives (`strawberry`), `strawberry/` config and cache folders with a
   one-time move from `gba-advance/` (`app.rs migrate_dir`), the mark parsed from the SVG
@@ -172,7 +174,8 @@ log). Every other title in the 1,543-title library has a boot verdict in `docs/l
   driver's mixer is a design of ours (output scaling, reverb, pseudo-echo, fixed-rate voices,
   next-slot write; see its fix log); SWI 20h-24h (SoundWhatever0-4) stay unimplemented, and
   `ply_port`, FadeOutBody's fade-in and TrkVolPitSet are fallbacks no title seen depends on.
-- Cartridge: no GPIO/RTC (none of the target games use it); SRAM open-bus when the backend is EEPROM
+- Cartridge: the GPIO port carries the RTC and the solar sensor only (no tilt, gyro or rumble; see
+  "Cartridge GPIO"); the RTC's /IRQ output is not wired. SRAM open-bus when the backend is EEPROM
   reads 0xFF.
 - Audio: HLE SWIs still complete atomically with respect to IRQs (an IRQ raised during a BIOS
   routine is taken when the SWI returns rather than mid-routine, as the real BIOS allows).
@@ -482,6 +485,52 @@ IRQ phase).
    are not found yet (the script header lists the areas tried; untried: the lobby staff, the
    doors outside the Main Building, a possible 3rd floor).
 4. The BIOS sound driver's own scaling has no reference (mGBA's HLE BIOS stubs it).
+5. The rest of the cartridge hardware: the Yoshi tilt sensor (Yoshi Topsy-Turvy, Korokoro Puzzle),
+   the WarioWare: Twisted gyro and rumble, Drill Dozer's rumble (gilrs 0.11 has force feedback;
+   fruit-basket's `Gamepads` would need to expose it).
+
+## Cartridge GPIO: RTC and solar sensor (2026-10-03, v1.6.0)
+The sweep only proved boots, so the carts with hardware in the ROM chip were marked `ok` while
+not really playable. Now emulated (`gba-core/src/cart/{gpio,rtc,solar}.rs`, design in
+ARCHITECTURE "Cartridge GPIO"):
+- **Detection.** A scan of all 1,543 library ROMs for the SDK's `SIIRTC_V` library string finds
+  exactly ten carts, the RTC titles: Pokémon Ruby/Sapphire/Emerald (AXVE, AXPE, BPEE), Rockman
+  EXE 4.5 (BR4J), Sennen Kazoku (BKAJ), Legendz x2 (BLVJ, BLJJ), Boktai 1/2/Shin Bokura no Taiyou
+  (U3IE, U32E, U33J). The solar sensor goes with the Boktai game codes. FireRed/LeafGreen have no
+  clock and get no port. Sennen Kazoku's image has FFh (not zeros) under the registers, which
+  reads through in write-only mode as GBATEK allows.
+- **Spec.** The GBA RTC chapter defers its serial protocol to the NDS one, which
+  `scripts/gbatek-split.py` skipped; it now emits it (`docs/gbatek/159-dsrealtimeclockrtc.md`,
+  an `EXTRA` list). The solar pin map comes from GBATEK's connection table (CLK=0, RST=1, FLG=3);
+  the comments in its example code name the bits the other way round, its values agree with the
+  table.
+- **Command bit order.** Games shift the command MSB first (65h = read datetime, GBATEK's "Rev"
+  column); accumulated LSB first like the parameters, that is A6h, the same command in the "Fwd"
+  column, so a single decoder (fixed code 0110b in the low nibble) serves both orders.
+- **Time.** No wall clock in the core: the host seeds local seconds (`Gba::set_rtc_clock`) and the
+  clock advances with `sched.now` (the bus stores it into `Cartridge::now` before ROM-region
+  writes, the only accesses that need it). A time the game writes becomes an offset, persisted
+  in a 16-byte `.sav` trailer (`SBRTC\x01`, offset i64, weekday offset, control) that
+  `load_save` strips before the backend: EEPROM sizes itself by length, and Boktai is EEPROM.
+  Weekday: 0 = Monday (GBATEK's "usually"), plus whatever offset a written datetime implies.
+  Power-fail always reads 0; the /IRQ line is not wired (nothing in the library uses it).
+- **Proof.** Emerald before: "The internal battery has run dry. The game can be played." after
+  the title (checked with a build of the previous commit); after: straight to NEW GAME / OPTION,
+  pinned (`tests/inputs/emerald-rtc.toml`, frame 1500). Boktai: its TIME SETTING screen shows the
+  harness seed (01/01 2026 00:00 AM), and the field's solar gauge is empty at sun 0 and full at
+  sun 10; pinned at 8900 with `sun = 10` from frame 5000 (`tests/inputs/boktai-solar.toml`).
+- **Frontend.** The clock is seeded from `chrono::Local` at boot and after every slot load (a
+  state carries the clock of the day it was saved). Sun level: `settings.sun_level` (default 5),
+  a SUN row in the pause menu on solar carts (LEFT/RIGHT; the pause menu's rows are now a
+  per-game `Vec<Item>`), and `=`/`-` hotkeys with a `SUN n/10` toast, rebindable like the others
+  (Settings › Controls lists them, so the controls page pins moved, reviewed). The 5x5 font had
+  no `◂`, so the slot submenu's `◂ 5-8` page marker always drew a box: glyph added, the
+  `overlay-load-p2` pin moved for that reason.
+- **Savestates: format 5.** `Cartridge::gpio` is in the state. Older slots show CAN'T LOAD (as at
+  format 4); `.sav` files are unaffected.
+- Left for later: the Yoshi tilt sensor (SRAM-region registers, Yoshi Topsy-Turvy KYGE and
+  Korokoro Puzzle KHPJ), the WarioWare: Twisted gyro and rumble (RZWE) and Drill Dozer's rumble
+  (V49E).
 
 ## Launcher hooks (v1.4.0 and v1.5.0, 2026-10-02/03)
 

@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.6.0 — 2026-10-03
+
+Cartridge hardware: the GPIO port in the ROM chip, with the two devices the library needs.
+- **Real-time clock.** The ten carts that carry one (found by the RTC library string in the ROM):
+  Pokémon Ruby, Sapphire and Emerald (no more "The internal battery has run dry"; berries and
+  timed events work), Rockman EXE 4.5, Sennen Kazoku, both Legendz titles and the three Boktai
+  games. The clock reads the computer's local time; a time the game sets is kept as an offset
+  and saved with the game: RTC carts' `.sav` files gain a 16-byte trailer after the save data
+  (plain `.sav` files from before load as usual).
+- **Boktai's solar sensor** (Boktai 1 and 2, Shin Bokura no Taiyou). Sunlight is a level from 0
+  (dark) to 10 (the gauge fills): the pause menu has a SUN row on these carts (LEFT/RIGHT), and
+  `=` / `-` change it while playing with a toast; both are rebindable and the level is
+  remembered in settings (`sun_level`, default 5).
+- **Save states from earlier versions no longer load** (core state format 5); the slots show
+  CAN'T LOAD and can be deleted. `.sav` files are unaffected.
+- The pause menu's page marker in the slot submenu now draws its left arrow (the 5x5 font had no
+  glyph for it).
+- gba-test: `--rtc "YYYY-MM-DD HH:MM[:SS]"` (default 2026-01-01 00:00:00, so goldens stay
+  deterministic), `--sun N`, and `{ frame, sun = N }` input-script steps. New compat rows for
+  Pokémon Emerald and Boktai.
+
 ## v1.5.0 — 2026-10-03
 
 Couch mode, for launchers that start games on a TV (the Fruit Basket convention, shared with

@@ -29,19 +29,21 @@ const PINS: &[(&str, u64)] = &[
     ("library-empty-nofolder", 0xFA3D6D222951E955),
     ("library-unreadable", 0x0C59863B260A5536),
     ("overlay-load", 0x37882EA813DFFCB5),
-    ("overlay-load-p2", 0x4BA5844C2821F586),
+    ("overlay-load-p2", 0xBCC33F891A2D5209),
     ("overlay-main", 0x99A2D47457769970),
     ("overlay-message", 0xF7C1C8022AE71BA2),
     ("overlay-save", 0x72918DBE1D5A78DB),
+    ("overlay-sun", 0x7C5E97F670BF0C2A),
+    ("overlay-sun-unselected", 0xEE1C9FB7443BDCB9),
     ("overlay-thumb", 0x3FE94E2CB45400F7),
     ("overlay-toast", 0xB35C878FCA2B6083),
-    ("settings-960-controls", 0x49E38495BAC4AC58),
+    ("settings-960-controls", 0xE3302031D004FFC9),
     ("settings-960-system", 0xC31A07A2A0DE2A80),
-    ("settings-controls", 0xA9B3400648D96EE9),
-    ("settings-rebind", 0xB2577C958C180F93),
+    ("settings-controls", 0xE06B872CCD5A30E4),
+    ("settings-rebind", 0x573CC1FFD16841D2),
     ("settings-saves", 0x7FAFF1239CDC8764),
     ("settings-system", 0xDFE03407EBC0847A),
-    ("slot-file", 0x15EC6EB5758DD2F4),
+    ("slot-file", 0x70E0BD05200B20C5),
     ("states", 0x43082D0160F208A2),
     ("states-960", 0x12E0C0515C158322),
     ("states-dialog", 0x46BE183FAD3FB336),
@@ -123,7 +125,7 @@ fn pinned_overlay() {
         let mut fb = base.clone();
         let mut o = Overlay::new(&mut fb);
         o.dim(DIM_EVY);
-        let menu = PauseMenu { sel, mode, page, slot_sel: 1, message: None };
+        let menu = PauseMenu { sel, mode, page, slot_sel: 1, message: None, ..PauseMenu::new(1) };
         menu.draw(&mut o, &slots, now);
         check(name, gba_test::fb_hash(&fb[..]));
     }
@@ -132,11 +134,25 @@ fn pinned_overlay() {
     o.toast("SAVED TO SLOT 2");
     check("overlay-toast", gba_test::fb_hash(&fb[..]));
     let mut fb = base.clone();
-    let mut m = PauseMenu { sel: 0, mode: Mode::Main, page: 0, slot_sel: 0, message: None };
+    let mut m = PauseMenu { sel: 0, mode: Mode::Main, page: 0, slot_sel: 0, message: None, ..PauseMenu::new(1) };
     m.show_message("NOTHING IN SLOT 4", now);
     m.draw(&mut Overlay::new(&mut fb), &slots, now);
     check("overlay-message", gba_test::fb_hash(&fb[..]));
     check("overlay-thumb", gba_test::fb_hash(&thumb_from_frame(&base[..])));
+    // Solar-sensor carts: the SUN row, selected (with the arrows) and not.
+    for (name, sel) in [("overlay-sun", 3usize), ("overlay-sun-unselected", 6)] {
+        let mut fb = base.clone();
+        let mut o = Overlay::new(&mut fb);
+        o.dim(DIM_EVY);
+        let menu = PauseMenu { sel, ..PauseMenu::new(1).with_sun(Some(6)) };
+        menu.draw(&mut o, &slots, now);
+        if std::env::var_os("STRAWBERRY_PIN_RECORD").is_some() {
+            let d = crate::render_tests::out_dir().join("pinned");
+            std::fs::create_dir_all(&d).unwrap();
+            gba_test::write_png(&d.join(format!("{name}.png")), &fb[..]).unwrap();
+        }
+        check(name, gba_test::fb_hash(&fb[..]));
+    }
 }
 
 #[test]
@@ -208,6 +224,7 @@ library_folders = [
 ]
 pacing = "audio_clocked"
 picture = "largest"
+sun_level = 5
 volume = 10
 window = [
     1280,
@@ -242,6 +259,8 @@ save_now = "F5"
 save_state = "F1"
 save_states = "F2"
 screenshot = "F11"
+sun_down = "Minus"
+sun_up = "Equal"
 
 [keymap]
 A = "Z"

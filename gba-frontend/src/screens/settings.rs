@@ -123,8 +123,20 @@ struct TextEdit {
 }
 
 /// Hotkeys shown under "Emulator keys", in focus order (left column, then right).
-const HOT_LEFT: [(Hotkey, &str); 4] = [(Hotkey::Pause, "Pause"), (Hotkey::FrameStep, "Advance one frame"), (Hotkey::Screenshot, "Screenshot"), (Hotkey::SaveStates, "Save states")];
-const HOT_RIGHT: [(Hotkey, &str); 4] = [(Hotkey::SaveState, "Save state"), (Hotkey::LoadState, "Load state"), (Hotkey::SaveNow, "Write .sav now"), (Hotkey::Bench, "Bench")];
+const HOT_LEFT: [(Hotkey, &str); 5] = [
+    (Hotkey::Pause, "Pause"),
+    (Hotkey::FrameStep, "Advance one frame"),
+    (Hotkey::Screenshot, "Screenshot"),
+    (Hotkey::SaveStates, "Save states"),
+    (Hotkey::SunUp, "Sun brighter (Boktai)"),
+];
+const HOT_RIGHT: [(Hotkey, &str); 5] = [
+    (Hotkey::SaveState, "Save state"),
+    (Hotkey::LoadState, "Load state"),
+    (Hotkey::SaveNow, "Write .sav now"),
+    (Hotkey::Bench, "Bench"),
+    (Hotkey::SunDown, "Sun dimmer (Boktai)"),
+];
 
 pub struct SettingsScreen {
     spread: usize,
@@ -1101,7 +1113,7 @@ impl SettingsScreen {
                 cv.dotted_line(cx + tw + 8.0, cx + col_w - kw - 8.0, row_y + 15.0, pal.fg2);
             }
         }
-        y += 5.0 * 26.0 + 4.0;
+        y += (1 + HOT_LEFT.len()).max(HOT_RIGHT.len()) as f32 * 26.0 + 4.0;
         y + 6.0
     }
 
@@ -1344,13 +1356,13 @@ mod tests {
             scr.update(&act(Action::Up), &mut ctx);
         }
         assert_eq!(scr.focus[0], 0, "clamped at the top");
-        // left page first (10 buttons x keyboard + pad, fast-forward, 8 emulator keys), then the
+        // left page first (10 buttons x keyboard + pad, fast-forward, 10 emulator keys), then the
         // right page
         let items = scr.items(&ctx);
-        assert_eq!(items.len(), 20 + 1 + 8 + 5);
-        assert_eq!(items[29], Item::Picture);
+        assert_eq!(items.len(), 20 + 1 + 10 + 5);
+        assert_eq!(items[31], Item::Picture);
         assert_eq!(*items.last().unwrap(), Item::Bios);
-        for _ in 0..29 {
+        for _ in 0..31 {
             scr.update(&act(Action::Down), &mut ctx);
         }
         assert_eq!(scr.current_item(&ctx), Some(Item::Picture));

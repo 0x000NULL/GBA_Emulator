@@ -74,7 +74,7 @@ fn render_paused_overlay() {
         let mut fb = base.clone();
         let mut o = Overlay::new(&mut fb);
         o.dim(DIM_EVY);
-        let menu = PauseMenu { sel, mode, page: 0, slot_sel: 1, message: None };
+        let menu = PauseMenu { sel, mode, page: 0, slot_sel: 1, message: None, ..PauseMenu::new(1) };
         menu.draw(&mut o, &slots, Instant::now());
         write_frame_png(name, &fb[..], 4);
     }

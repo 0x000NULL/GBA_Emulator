@@ -1,6 +1,7 @@
 //! 02 Paused: the pause menu drawn at native resolution inside the frame (`SCREENS.md`).
 //!
-//! Main window at (8, 8) 84x112 with RESUME / SAVE STATE / LOAD STATE / SETTINGS / BENCH / QUIT;
+//! Main window at (8, 8) 84x112 with RESUME / SAVE STATE / LOAD STATE / SETTINGS / BENCH / QUIT
+//! (plus a SUN row after LOAD STATE on solar-sensor carts, changed in place with LEFT/RIGHT);
 //! submenu at (100, 8) 132x112 with a 2x2 grid of slot thumbnails (pages of four, L/R to turn);
 //! bar at (8, 128) 224x24 with the selected slot's summary and the two actions.
 
@@ -10,7 +11,34 @@ use crate::ui::input::{Action, UiInput};
 use crate::ui::tokens::pixel::*;
 use std::time::{Duration, Instant};
 
-pub const ITEMS: [&str; 6] = ["RESUME", "SAVE STATE", "LOAD STATE", "SETTINGS", "BENCH", "QUIT"];
+/// Rows of the main window.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Item {
+    Resume,
+    SaveState,
+    LoadState,
+    /// The solar sensor's light (Boktai carts only).
+    Sun,
+    Settings,
+    Bench,
+    Quit,
+}
+
+impl Item {
+    pub fn label(self) -> &'static str {
+        match self {
+            Item::Resume => "RESUME",
+            Item::SaveState => "SAVE STATE",
+            Item::LoadState => "LOAD STATE",
+            Item::Sun => "SUN",
+            Item::Settings => "SETTINGS",
+            Item::Bench => "BENCH",
+            Item::Quit => "QUIT",
+        }
+    }
+}
+
+pub const ITEMS: [Item; 6] = [Item::Resume, Item::SaveState, Item::LoadState, Item::Settings, Item::Bench, Item::Quit];
 pub const MESSAGE_TIME: Duration = Duration::from_millis(1500);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -39,10 +67,15 @@ pub enum Outcome {
     Settings,
     Bench,
     Quit,
+    /// The SUN row moved to this level.
+    Sun(u8),
 }
 
 #[derive(Clone, Debug)]
 pub struct PauseMenu {
+    pub items: Vec<Item>,
+    /// Sun level shown on the SUN row (`Some` exactly when the row exists).
+    pub sun: Option<u8>,
     pub sel: usize,
     pub mode: Mode,
     pub page: usize,
@@ -60,7 +93,16 @@ impl PauseMenu {
     /// `slot` is the current slot (1..=8): the submenu opens on it.
     pub fn new(slot: u8) -> Self {
         let s = (slot.max(1) - 1) as usize;
-        PauseMenu { sel: 0, mode: Mode::Main, page: s / 4, slot_sel: s % 4, message: None }
+        PauseMenu { items: ITEMS.to_vec(), sun: None, sel: 0, mode: Mode::Main, page: s / 4, slot_sel: s % 4, message: None }
+    }
+
+    /// Add the SUN row (after LOAD STATE) when the cart has a solar sensor at `level`.
+    pub fn with_sun(mut self, level: Option<u8>) -> Self {
+        if let (Some(l), None) = (level, self.sun) {
+            self.sun = Some(l);
+            self.items.insert(3, Item::Sun);
+        }
+        self
     }
 
     /// Slot number (1..=8) under the cursor.
@@ -85,29 +127,45 @@ impl PauseMenu {
         }
         match self.mode {
             Mode::Main => {
+                let n = self.items.len();
                 if input.action(Action::Up) {
-                    self.sel = (self.sel + ITEMS.len() - 1) % ITEMS.len();
+                    self.sel = (self.sel + n - 1) % n;
                 }
                 if input.action(Action::Down) {
-                    self.sel = (self.sel + 1) % ITEMS.len();
+                    self.sel = (self.sel + 1) % n;
                 }
                 if input.action(Action::Back) {
                     return Outcome::Resume;
                 }
+                let item = self.items[self.sel];
+                if let (Item::Sun, Some(level)) = (item, self.sun) {
+                    let next = if input.action(Action::Left) {
+                        level.saturating_sub(1)
+                    } else if input.action(Action::Right) {
+                        (level + 1).min(gba_core::SUN_MAX)
+                    } else {
+                        level
+                    };
+                    if next != level {
+                        self.sun = Some(next);
+                        return Outcome::Sun(next);
+                    }
+                }
                 if input.action(Action::Confirm) || input.action(Action::Start) {
-                    return match self.sel {
-                        0 => Outcome::Resume,
-                        1 => {
+                    return match item {
+                        Item::Resume => Outcome::Resume,
+                        Item::SaveState => {
                             self.open_slots(Mode::Save);
                             Outcome::None
                         }
-                        2 => {
+                        Item::LoadState => {
                             self.open_slots(Mode::Load);
                             Outcome::None
                         }
-                        3 => Outcome::Settings,
-                        4 => Outcome::Bench,
-                        _ => Outcome::Quit,
+                        Item::Sun => Outcome::None,
+                        Item::Settings => Outcome::Settings,
+                        Item::Bench => Outcome::Bench,
+                        Item::Quit => Outcome::Quit,
                     };
                 }
                 Outcome::None
@@ -149,7 +207,7 @@ impl PauseMenu {
     pub fn draw(&self, o: &mut Overlay, slots: &[Option<SlotInfo>; 8], now: Instant) {
         // main window
         let (mx, my) = o.window(8, 8, 84, 112);
-        for (i, item) in ITEMS.iter().enumerate() {
+        for (i, item) in self.items.iter().enumerate() {
             let y = my + 4 + i as i32 * MENU_PITCH;
             let selected = i == self.sel && self.mode == Mode::Main;
             let dimmed = self.mode != Mode::Main;
@@ -157,7 +215,11 @@ impl PauseMenu {
             if selected {
                 o.cursor(mx, y + 2, RED_555);
             }
-            o.text(mx + 8, y, item, c);
+            o.text(mx + 8, y, item.label(), c);
+            if let (Item::Sun, Some(level)) = (item, self.sun) {
+                let v = if selected { format!("◂ {level} ▸") } else { level.to_string() };
+                o.text_right(mx + 84 - 14, y, &v, c);
+            }
         }
 
         // slot submenu
@@ -282,6 +344,31 @@ mod tests {
     }
 
     #[test]
+    fn sun_row_changes_level_in_place() {
+        let now = Instant::now();
+        let s = slots();
+        let plain = PauseMenu::new(1);
+        assert!(!plain.items.contains(&Item::Sun) && plain.sun.is_none());
+        let mut m = PauseMenu::new(1).with_sun(Some(9));
+        assert_eq!(m.items[3], Item::Sun);
+        assert_eq!(m.items.len(), 7);
+        m.sel = 3;
+        assert_eq!(m.handle(&input(&[Action::Right]), &s, now), Outcome::Sun(10));
+        assert_eq!(m.handle(&input(&[Action::Right]), &s, now), Outcome::None, "clamped at the top");
+        assert_eq!(m.handle(&input(&[Action::Left]), &s, now), Outcome::Sun(9));
+        assert_eq!(m.handle(&input(&[Action::Confirm]), &s, now), Outcome::None);
+        m.sel = 4;
+        assert_eq!(m.handle(&input(&[Action::Left]), &s, now), Outcome::None, "LEFT elsewhere does nothing");
+        assert_eq!(m.handle(&input(&[Action::Confirm]), &s, now), Outcome::Settings, "rows below SUN shift down");
+        m.sel = 0;
+        m.handle(&input(&[Action::Up]), &s, now);
+        assert_eq!(m.items[m.sel], Item::Quit);
+        let mut z = PauseMenu::new(1).with_sun(Some(0));
+        z.sel = 3;
+        assert_eq!(z.handle(&input(&[Action::Left]), &s, now), Outcome::None, "clamped at 0");
+    }
+
+    #[test]
     fn save_submenu_pages_and_confirms() {
         let now = Instant::now();
         let s = slots();
@@ -339,7 +426,7 @@ mod tests {
         let mut fb: Box<gba_core::FrameBuffer> = vec![0x7FFFu16; 240 * 160].into_boxed_slice().try_into().unwrap();
         for mode in [Mode::Main, Mode::Save, Mode::Load] {
             for page in 0..2 {
-                let m = PauseMenu { sel: 1, mode, page, slot_sel: 0, message: None };
+                let m = PauseMenu { sel: 1, mode, page, slot_sel: 0, message: None, ..PauseMenu::new(1).with_sun(Some(4)) };
                 let mut o = Overlay::new(&mut fb);
                 o.dim(DIM_EVY);
                 m.draw(&mut o, &s, now);

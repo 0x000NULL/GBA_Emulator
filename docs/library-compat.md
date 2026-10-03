@@ -4,6 +4,8 @@ Boot sweep by `scripts/triage.py` (harness `gba-test --triage`): every ROM runs 
 HLE BIOS with Start pressed in pairs at frames 700+800/1300+1400/1900+2000/2500+2600 and A at 1150/2350, then the final picture, its
 motion, the audio and the CPU state are classified. `ok` = a moving, coloured picture with audio. This is a boot
 and title/menu check, not a play-through; the scripted gameplay goldens live in `tests/compat.toml`.
+The sweep ran before the cartridge GPIO port existed (2026-10-03): the ten real-time-clock carts and the
+three Boktai solar-sensor carts booted then too, and their notes say what they gain now.
 
 | Category | Titles | Meaning |
 |---|---|---|
@@ -174,8 +176,8 @@ and title/menu check, not a play-through; the scripted gameplay goldens live in 
 | Boboboubo Boubobo - Bakutou Hajike Taisen (Japan) | BOSJ | Sram32K | ok |  |
 | Boboboubo Boubobo - Maji de!! Shinken Battle (Japan) | BOBJ | Sram32K | ok |  |
 | Boboboubo Boubobo - Ougi 87.5 Bakuretsu Hanage Shinken (Japan) | A8VJ | Sram32K | ok |  |
-| Boktai - The Sun Is in Your Hand (USA) | U3IE | Eeprom | ok |  |
-| Boktai 2 - Solar Boy Django (USA) | U32E | Eeprom | ok |  |
+| Boktai - The Sun Is in Your Hand (USA) | U3IE | Eeprom | ok | cartridge RTC + solar sensor (since 2026-10-03; pinned in compat.toml) |
+| Boktai 2 - Solar Boy Django (USA) | U32E | Eeprom | ok | cartridge RTC + solar sensor (since 2026-10-03) |
 | Boku wa Koukuu Kanseikan (Japan) (Rev 1) | ABCJ | Sram32K | ok |  |
 | Bomberman Jetters - Densetsu no Bomberman (Japan) | AJZJ | Sram32K | ok |  |
 | Bomberman Jetters - Game Collection (Japan) | BOMJ | Eeprom | ok |  |
@@ -766,8 +768,8 @@ and title/menu check, not a play-through; the scripted gameplay goldens live in 
 | Legend of Zelda, The - A Link to the Past & Four Swords (USA) | AZLE | Eeprom | ok |  |
 | Legend of Zelda, The - The Minish Cap (USA) | BZME | Eeprom | ok |  |
 | Legends of Wrestling II (USA, Europe) | A2LE | Eeprom | ok |  |
-| Legendz - Sign of Nekuromu (Japan) | BLVJ | Flash64K | ok |  |
-| Legendz - Yomigaeru Shiren no Shima (Japan) | BLJJ | Flash64K | ok |  |
+| Legendz - Sign of Nekuromu (Japan) | BLVJ | Flash64K | ok | cartridge RTC (since 2026-10-03) |
+| Legendz - Yomigaeru Shiren no Shima (Japan) | BLJJ | Flash64K | ok | cartridge RTC (since 2026-10-03) |
 | LEGO Bionicle (USA) (En,Fr) | ALBE | Sram32K | ok |  |
 | LEGO Island 2 - The Brickster's Revenge (USA) (En,Fr) | AL2E | Sram32K | ok |  |
 | LEGO Racers 2 (USA) (En,Fr) | ALRE | Eeprom | ok |  |
@@ -1061,11 +1063,11 @@ and title/menu check, not a play-through; the scripted gameplay goldens live in 
 | Pocket Music (Europe) (En,Fr,De,Es,It) | AP9P | Sram32K | ok |  |
 | Pocket Professor - Kwik Notes - Volume One (USA) | BPJE | Eeprom | ok | speech clip through the HLE BIOS sound driver (2026-10-01; fixed-rate voice); pinned in tests/compat.toml |
 | Pocky & Rocky with Becky (USA) | APKE | None | ok |  |
-| Pokemon - Emerald Version (USA, Europe) | BPEE | Flash128K | ok |  |
+| Pokemon - Emerald Version (USA, Europe) | BPEE | Flash128K | ok | cartridge RTC (since 2026-10-03; Emerald pinned in compat.toml) |
 | Pokemon - FireRed Version (USA, Europe) (Rev 1) | BPRE | Flash128K | ok |  |
 | Pokemon - LeafGreen Version (USA, Europe) (Rev 1) | BPGE | Flash128K | ok |  |
-| Pokemon - Ruby Version (USA, Europe) (Rev 2) | AXVE | Flash128K | ok |  |
-| Pokemon - Sapphire Version (USA, Europe) (Rev 2) | AXPE | Flash128K | ok |  |
+| Pokemon - Ruby Version (USA, Europe) (Rev 2) | AXVE | Flash128K | ok | cartridge RTC (since 2026-10-03) |
+| Pokemon - Sapphire Version (USA, Europe) (Rev 2) | AXPE | Flash128K | ok | cartridge RTC (since 2026-10-03) |
 | Pokemon Mystery Dungeon - Red Rescue Team (USA, Australia) | B24E | Flash128K | ok |  |
 | Pokemon Pinball - Ruby & Sapphire (USA) | BPPE | Sram32K | ok |  |
 | Polar Express, The (USA, Europe) (En,Fr,De,Es,It) | BPXE | Eeprom | ok |  |
@@ -1144,7 +1146,7 @@ and title/menu check, not a play-through; the scripted gameplay goldens live in 
 | Rocket Power - Beach Bandits (USA, Europe) | AR4E | None | ok |  |
 | Rocket Power - Dream Scheme (USA, Europe) | ARKE | None | ok |  |
 | Rocket Power - Zero Gravity Zone (USA) | AZZE | None | ok |  |
-| Rockman EXE 4.5 - Real Operation (Japan) | BR4J | Flash64K | ok |  |
+| Rockman EXE 4.5 - Real Operation (Japan) | BR4J | Flash64K | ok | cartridge RTC (since 2026-10-03) |
 | Rocky (USA) (En,Fr,De,Es,It) | AR8E | Eeprom | ok |  |
 | RPG Tsukuru Advance (Japan) | A8TJ | Flash64K | ok |  |
 | Rugrats - Castle Capers (USA, Europe) | ARGE | None | ok |  |
@@ -1184,7 +1186,7 @@ and title/menu check, not a play-through; the scripted gameplay goldens live in 
 | SEGA Rally Championship (USA) | AYLE | Sram32K | ok |  |
 | SEGA Smash Pack (USA) | A3PE | None | ok |  |
 | Sengoku Kakumei Gaiden (Japan) | A7GJ | Sram32K | ok |  |
-| Sennen Kazoku (Japan) (Rev 1) | BKAJ | Flash128K | ok |  |
+| Sennen Kazoku (Japan) (Rev 1) | BKAJ | Flash128K | ok | cartridge RTC (since 2026-10-03) |
 | Sentouin Yamada Hajime (Japan) | BSYJ | Sram32K | ok |  |
 | Serious Sam Advance (USA) (En,Fr,De) | AENE | None | ok |  |
 | Shaman King - Legacy of the Spirits - Soaring Hawk (USA) | BHLE | Sram32K | ok |  |
@@ -1202,7 +1204,7 @@ and title/menu check, not a play-through; the scripted gameplay goldens live in 
 | Shikakui Atama o Maruku Suru. Advance - Kanji, Keisan (Japan) | B4KJ | Eeprom | ok |  |
 | Shikakui Atama o Maruku Suru. Advance - Kokugo, Sansuu, Shakai, Rika (Japan) | B4RJ | Eeprom | ok |  |
 | Shimura Ken no Baka Tonosama - Bakushou Tenka Touitsu Game (Japan) (Rev 1) | A64J | Eeprom | ok |  |
-| Shin Bokura no Taiyou - Gyakushuu no Sabata (Japan) | U33J | Eeprom | ok |  |
+| Shin Bokura no Taiyou - Gyakushuu no Sabata (Japan) | U33J | Eeprom | ok | cartridge RTC + solar sensor (since 2026-10-03) |
 | Shin Kisekae Monogatari (Japan) | AAJJ | Sram32K | ok |  |
 | Shin Megami Tensei (Japan) | AAUJ | Sram32K | ok |  |
 | Shin Megami Tensei - Devil Children - Honoo no Sho (Japan) | BDHJ | Sram32K | ok |  |

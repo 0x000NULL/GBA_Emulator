@@ -16,6 +16,7 @@ basket-ui = { git = "https://github.com/0x000NULL/fruit-basket", tag = "v0.1.0" 
 gba-core = { path = "../gba-core", features = ["savestate"] }
 gba-test = { path = "../gba-test" }
 anyhow = "1"
+chrono = "0.4"
 clap = { version = "4", features = ["derive"] }
 minifb = "0.28"
 gilrs = "0.11"

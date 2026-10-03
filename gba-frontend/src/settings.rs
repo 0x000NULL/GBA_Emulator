@@ -119,7 +119,7 @@ pub enum Pacing {
 }
 
 /// Every [`Hotkey`], in the order the settings file lists them.
-pub const ALL_HOTKEYS: [Hotkey; 9] = [
+pub const ALL_HOTKEYS: [Hotkey; 11] = [
     Hotkey::Pause,
     Hotkey::FrameStep,
     Hotkey::DumpIo,
@@ -129,6 +129,8 @@ pub const ALL_HOTKEYS: [Hotkey; 9] = [
     Hotkey::LoadState,
     Hotkey::Bench,
     Hotkey::SaveStates,
+    Hotkey::SunUp,
+    Hotkey::SunDown,
 ];
 
 /// Settings-file name of a hotkey.
@@ -143,6 +145,8 @@ pub fn hotkey_id(h: Hotkey) -> &'static str {
         Hotkey::LoadState => "load_state",
         Hotkey::Bench => "bench",
         Hotkey::SaveStates => "save_states",
+        Hotkey::SunUp => "sun_up",
+        Hotkey::SunDown => "sun_down",
     }
 }
 
@@ -220,6 +224,9 @@ pub struct Settings {
     /// Remembered window size.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub window: Option<(u32, u32)>,
+    /// Light on a solar-sensor cart (Boktai), 0 dark .. 10 full gauge; the pause menu and the
+    /// sun hotkeys change it.
+    pub sun_level: u8,
     /// Keys of the file this version does not know; written back on save.
     #[serde(skip)]
     extra: Hidden<toml::Table>,
@@ -245,6 +252,7 @@ impl Default for Settings {
             hotkeys: HotkeyBindings::default(),
             gamepad: PadBindings::from_padmap(&default_padmap()),
             window: None,
+            sun_level: 5,
             extra: Hidden::default(),
             cli: Hidden::default(),
         }
@@ -252,7 +260,7 @@ impl Default for Settings {
 }
 
 /// Every key this version writes.
-const KNOWN_KEYS: [&str; 14] = [
+const KNOWN_KEYS: [&str; 15] = [
     "picture",
     "filter",
     "ff_limit",
@@ -267,6 +275,7 @@ const KNOWN_KEYS: [&str; 14] = [
     "hotkeys",
     "gamepad",
     "window",
+    "sun_level",
 ];
 
 impl Settings {
@@ -302,7 +311,9 @@ impl Settings {
         field!(hotkeys);
         field!(gamepad);
         field!(window);
+        field!(sun_level);
         s.volume = s.volume.min(10);
+        s.sun_level = s.sun_level.min(gba_core::SUN_MAX);
         s.autosave_frames = s.autosave_frames.max(1);
         // fill gaps (a hand-written file may name only some buttons)
         s.keymap = KeyBindings::from_keymap(&s.to_keymap());

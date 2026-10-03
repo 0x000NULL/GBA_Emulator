@@ -79,6 +79,13 @@ pub struct Session {
     last_step: Option<Instant>,
     /// Frames between `.sav` writes (Settings › Saves).
     pub autosave_frames: u64,
+    /// Light on a solar-sensor cart (Settings `sun_level`); reapplied after a state load.
+    pub sun: u8,
+}
+
+/// The host's wall clock as the cartridge RTC wants it: local time, seconds since 1970-01-01.
+pub fn local_clock_secs() -> i64 {
+    chrono::Local::now().naive_local().and_utc().timestamp()
 }
 
 impl Session {
@@ -93,6 +100,7 @@ impl Session {
         let code = header.game_code_str();
         println!("rom: {} [{code}] v{} save {:?}", game, header.version, gba.bus.cart.save_type);
         let mut gba = gba;
+        gba.set_rtc_clock(local_clock_secs());
         let saves = SaveManager::new(gba_test::save_path_for(rom));
         match saves.load(&mut Machine(&mut gba)) {
             Ok(true) => println!("loaded save {}", saves.path().display()),
@@ -140,6 +148,7 @@ impl Session {
             paced_ms: 0.0,
             last_step: None,
             autosave_frames: 60,
+            sun: 0,
         })
     }
 
@@ -226,8 +235,19 @@ impl Session {
     pub fn load_slot(&mut self, slot: u8) -> Result<(), slots::SlotError> {
         let meta = GBA_SLOTS.load(&mut Machine(&mut self.gba), &self.rom, slot)?;
         self.slots.set(meta);
+        // The state carries the clock of its day and the light it was saved with: the clock
+        // follows the wall again (keeping any time the game set) and the player's light stays.
+        self.gba.set_rtc_clock(local_clock_secs());
+        self.gba.set_sun_level(self.sun);
         self.resync();
         Ok(())
+    }
+
+    /// Set the solar sensor's light; false when the cart has no sensor.
+    pub fn set_sun(&mut self, level: u8) -> bool {
+        self.sun = level.min(gba_core::SUN_MAX);
+        self.gba.set_sun_level(self.sun);
+        self.gba.has_solar()
     }
 
     /// `--slot N`: load `slot` into the freshly booted machine. A failed load leaves the boot
@@ -518,6 +538,7 @@ impl App {
     pub fn start_game(&mut self, rom: &Path) -> Result<()> {
         let mut s = Session::new(rom, self.opts.bios.clone(), self.settings.audio, self.settings.audio_device.as_deref(), self.settings.volume)?;
         s.autosave_frames = self.settings.autosave_frames;
+        s.set_sun(self.settings.sun_level);
         self.title_is_library = false;
         self.slot_cursor = s.slots.latest().map(|m| m.slot).unwrap_or(1);
         self.session = Some(s);
@@ -842,6 +863,15 @@ impl App {
     }
 
     fn update_game(&mut self, input: &UiInput, video: &Video) -> Result<()> {
+        let sun = self.settings.sun_level;
+        let r = self.update_game_inner(input, video);
+        if self.settings.sun_level != sun {
+            self.save_settings();
+        }
+        r
+    }
+
+    fn update_game_inner(&mut self, input: &UiInput, video: &Video) -> Result<()> {
         let mut hotkeys: Vec<Hotkey> = self.hotkeys.pressed(input);
         let now = Instant::now();
         if self.pad_pause.update(&input.pad_buttons, input.game_mask, now) && !hotkeys.contains(&Hotkey::Pause) {
@@ -912,6 +942,10 @@ impl App {
                     }
                     return Ok(());
                 }
+                Outcome::Sun(level) => {
+                    s.set_sun(level);
+                    self.settings.sun_level = level;
+                }
             }
             if keep {
                 s.menu = Some(menu);
@@ -929,7 +963,7 @@ impl App {
             match hk {
                 Hotkey::Pause => {
                     s.set_paused(true);
-                    s.menu = Some(PauseMenu::new(slot));
+                    s.menu = Some(PauseMenu::new(slot).with_sun(s.gba.has_solar().then_some(s.sun)));
                 }
                 Hotkey::FrameStep => self.step = s.paused,
                 Hotkey::DumpIo => debug_ui::dump_io(&mut s.gba),
@@ -964,6 +998,13 @@ impl App {
                     self.open_states(Back::Game, None);
                     return Ok(());
                 }
+                Hotkey::SunUp | Hotkey::SunDown if s.gba.has_solar() => {
+                    let level = if hk == Hotkey::SunUp { (s.sun + 1).min(gba_core::SUN_MAX) } else { s.sun.saturating_sub(1) };
+                    s.set_sun(level);
+                    s.show_toast(format!("SUN {level}/{}", gba_core::SUN_MAX));
+                    self.settings.sun_level = level;
+                }
+                Hotkey::SunUp | Hotkey::SunDown => {}
             }
         }
         s.set_fast(video.is_key_down(self.hotkeys.fast_forward));
@@ -1144,6 +1185,33 @@ mod tests {
         assert!(s.load_start_slot(4));
         assert_eq!(s.gba.bus.ppu.frame_count, saved_frame);
         s.gba.run_frame();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A Boktai-style cart: the clock starts at the wall clock, and a state load brings back the
+    /// wall clock and the player's sun level rather than the state's.
+    #[test]
+    fn gpio_cart_clock_follows_the_wall_and_sun_survives_a_load() {
+        let root = std::env::temp_dir().join(format!("strawberry-gpio-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let mut rom = vec![0u8; 0x4000];
+        rom[..4].copy_from_slice(&0xEAFF_FFFEu32.to_le_bytes());
+        rom[0xAC..0xB0].copy_from_slice(b"U3IE");
+        rom[0x2000..0x2008].copy_from_slice(b"SIIRTC_V");
+        let path = root.join("sun.gba");
+        std::fs::write(&path, &rom).unwrap();
+        let mut s = Session::new(&path, Some(BiosMode::Hle), AudioMode::Off, None, 0).unwrap();
+        let near_now = |t: Option<i64>| (t.unwrap() - super::local_clock_secs()).abs() <= 5;
+        assert!(near_now(s.gba.rtc_time()), "seeded from the wall clock, not the harness default");
+        assert!(s.set_sun(3));
+        s.save_slot(1).unwrap();
+        assert!(s.set_sun(12), "clamped, still a solar cart");
+        assert_eq!(s.sun, gba_core::SUN_MAX);
+        s.gba.set_rtc_clock(0);
+        s.load_slot(1).unwrap();
+        assert_eq!(s.gba.sun_level(), Some(gba_core::SUN_MAX), "the player's light, not the slot's");
+        assert!(near_now(s.gba.rtc_time()));
         let _ = std::fs::remove_dir_all(&root);
     }
 

@@ -94,7 +94,8 @@ bindings (A confirm, B back, L/R turn pages).
 Hotkeys: **Esc** or **P** pause menu (on a gamepad: **Guide**, or **Select+Start** held for a
 second), **Tab** (held) fast-forward, **N** frame step,
 **F1 / F3** save / load the current slot, **F2** save states screen, **F5** write the `.sav`
-now, **F10** dump IO registers to the console, **F11** screenshot, **F12** bench. The window is
+now, **F10** dump IO registers to the console, **F11** screenshot, **F12** bench, **= / -** more
+or less sunlight on the Boktai carts' solar sensor (also the pause menu's SUN row). The window is
 resizable and the picture is always drawn at a whole-number scale on a dark letterbox;
 `--scale N` fixes the picture at N× in a window of exactly that size, `--fullscreen` covers the
 display with a borderless window for that run, `--exit-on-quit` makes the pause menu's QUIT close
@@ -157,5 +158,7 @@ about 26x real time headless (1,590 fps on KH:CoM). Live audio has been verified
 tool (`scripts/build-mgba.ps1`, `scripts/compare-audio.py`): our levels follow GBATEK's stated
 maxima and mGBA mixes about 3 dB lower, a difference in convention rather than a bug. The player
 takes launcher hooks (`--slot`, `--fullscreen`, `--exit-on-quit`, and a gamepad route to the pause
-menu) for the Fruit Basket launcher's couch mode. Still open: the three boot bugs listed in
+menu) for the Fruit Basket launcher's couch mode. Cartridges with a real-time clock (Pokémon
+Ruby, Sapphire and Emerald, Rockman EXE 4.5, Boktai and others) read the computer's clock, and
+the Boktai solar sensor takes its light from a 0-10 sun level. Still open: the three boot bugs listed in
 `docs/library-compat.md`.

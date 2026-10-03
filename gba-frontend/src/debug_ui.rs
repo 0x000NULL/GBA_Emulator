@@ -25,6 +25,10 @@ pub enum Hotkey {
     Bench,
     /// F2: the save states screen
     SaveStates,
+    /// =: more light on a solar-sensor cart (Boktai)
+    SunUp,
+    /// -: less light on a solar-sensor cart
+    SunDown,
 }
 
 /// Default hotkeys; `HotkeyMap` carries the live (rebindable) copy.
@@ -39,6 +43,8 @@ pub const HOTKEYS: &[(Key, Hotkey)] = &[
     (Key::F3, Hotkey::LoadState),
     (Key::F12, Hotkey::Bench),
     (Key::F2, Hotkey::SaveStates),
+    (Key::Equal, Hotkey::SunUp),
+    (Key::Minus, Hotkey::SunDown),
 ];
 
 /// Live hotkey bindings (Settings can change them).

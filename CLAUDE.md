@@ -26,7 +26,7 @@ deviations are logged in PROGRESS.md). `README.md` is the user-facing overview.
 ```
 gba-core/      no deps by default (feature `savestate` adds serde + bincode). cpu/ (ARM7TDMI), ppu/,
                apu/, bus/ (memory map, IO dispatch, resumable DMA exec, debug hooks), dma.rs, timers.rs,
-               irq.rs, keypad.rs, cart/ (ROM, SRAM/Flash/EEPROM), bios/ (LLE image + HLE SWIs; call.rs
+               irq.rs, keypad.rs, cart/ (ROM, SRAM/Flash/EEPROM, GPIO: RTC + Boktai solar sensor), bios/ (LLE image + HLE SWIs; call.rs
                guest callbacks from HLE routines; sound/ the BIOS sound driver: work area, mixer,
                SoundGetJumpList track-command handlers), sched.rs, timing.rs, gba.rs (main loop),
                state.rs (savestates)
@@ -86,6 +86,7 @@ cargo run -p gba-test -- <rom> --frames N --poll 04000082,04000200   # log every
 python scripts/compare-trace.py <rom.gba> --frames 30                 # where our instruction timing parts from mGBA's
 cargo run -p gba-test -- <rom> --frames N --regs r.txt --trace t.txt --trace-cycles --trace-frames 150..152
 cargo run -p gba-test -- <rom> --frames 300 --log-swi                         # every HLE SWI call (and sound-driver jump-list call) as a guest: line
+cargo run -p gba-test -- <rom> --frames N --rtc "2026-06-01 12:00" --sun 8      # cartridge clock (default 2026-01-01 00:00) and solar light 0-10
 cargo run -p gba-test -- <rom> --frames 27400 --input tests/inputs/khcom-newgame.toml --save-state kh.state
 cargo run -p gba-test -- <rom> --frames 300 --load-state kh.state    # resume a savestate headless
 cargo run -p gba-test -- <rom> --frames N --record                   # print a manifest stanza
@@ -113,7 +114,7 @@ Harness exit codes: 0 pass, 1 fail, 2 error. `GBA_TESTS_REQUIRED=1` turns the
 Frontend keys (defaults, rebindable in Settings): Z=A X=B A=L S=R Enter=Start RShift=Select
 arrows=D-pad; gamepad South=A East=B LB=L RB=R Start Select D-pad/left stick (pad buttons rebind
 too, stored as `[gamepad]`), Guide or Select+Start held 1 s opens the pause menu; Tab fast-forward; Esc or P pause menu (resume / save / load / settings / bench /
-quit); N frame-step; F1/F3 save/load the current slot (`<rom stem>.s<N>.state`); F2 save states
+quit; SUN row on Boktai carts); = / - sun brighter / dimmer (Boktai); N frame-step; F1/F3 save/load the current slot (`<rom stem>.s<N>.state`); F2 save states
 screen; F5 write `.sav`; F10 IO dump; F11 screenshot; F12 bench. Menus navigate with the GBA
 bindings (A confirm, B back, L/R pages, D-pad). Hidden `--exit-after N` ends a windowed run and
 prints timing stats. The settings file lives in `%APPDATA%\strawberry\settings.toml`, the
