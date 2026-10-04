@@ -124,7 +124,7 @@ designer's note). `gba-frontend/src/ui/brand.rs` parses the SVG mark, so the fil
 |---|---|
 | `gba-core` | The machine. No dependencies by default; the `savestate` feature adds serde + bincode. |
 | `gba-test` | Headless harness (`gba-test <rom> --frames N ...`) and the `cargo test` ROM driver. |
-| `gba-frontend` | The player (binary `strawberry`): window (`minifb`), software renderer (`tiny-skia`, `fontdue`), audio (`cpal`), gamepads (`gilrs`), pacing, saves, state slots, settings, icons. |
+| `gba-frontend` | The player (binary `strawberry`): window (`minifb`), software renderer (`tiny-skia`; text through basket-ui's `fontdue`), audio (`cpal`, through basket-app), gamepads (`gilrs`), pacing, saves, state slots, settings, icons. |
 
 `docs/ARCHITECTURE.md` describes the design; `docs/gbatek/` holds the spec excerpts the code
 was written from; `CLAUDE.md` holds the project rules and commands.
@@ -142,11 +142,11 @@ $env:GBA_TESTS_DIR = "$PWD\tools\tests"
 cargo test --workspace
 ```
 
-`cargo test` runs the core unit tests (about 380), the frontend's unit tests (about 160;
+`cargo test` runs the core unit tests (390), the frontend's unit tests (113, six of them ignored by default;
 `cargo test -p gba-frontend --release -- --ignored render_` additionally writes review renders of
 every screen to `target/ui-renders/`), every ROM in `tests/golden.toml` (the jsmolka CPU, memory,
 BIOS, PPU and save suites, all passing, and the thirteen mgba-suite sub-suites pinned at their
-scores) and the 66 commercial-ROM goldens in `tests/compat.toml` (scripted gameplay for the
+scores) and the 69 commercial-ROM goldens in `tests/compat.toml` (scripted gameplay for the
 priority titles, plus 1500-frame rows for the titles whose music goes through the BIOS sound
 driver, which also require a minimum number of frames with audio). Commercial rows are skipped
 when the ROMs are not present under `Games/`, which is gitignored. The mgba suite ships as

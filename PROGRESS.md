@@ -4,14 +4,14 @@ Target: boot and play **Kingdom Hearts: Chain of Memories (USA)**, then Zelda (M
 ALttP+FS, Classic NES Zelda 1/2) and Initial D Another Stage (J). Spec: `docs/gbatek/`.
 Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `README.md`.
 
-## Where things stand (2026-10-03)
+## Where things stand (2026-10-04)
 
 - **Success criterion met.** KH:CoM boots under the HLE BIOS, plays the intro, reaches Castle
   Oblivion and the battle tutorial with player control. Headless proof: `tests/inputs/khcom-newgame.toml`
   plus the two KH goldens in `tests/compat.toml` (title at frame 1800, gameplay at frame 27400).
 - **All jsmolka ROMs pass** (arm, thumb, memory, bios, nes, save/none, sram, flash64, flash128;
   ppu hello/shades/stripes by golden hash). `cargo test --workspace` is green: 390 core unit
-  tests, 107 frontend tests (+86 in fruit-basket), 1 gba-test unit test, 2 ROM-driver tests (~11 min with all 68 commercial goldens present).
+  tests, 107 frontend tests (+86 in fruit-basket), 1 gba-test unit test, 2 ROM-driver tests (~12-17 min with all 69 commercial goldens present).
 - **v1.0.0 released (2026-10-01)**: tag `v1.0.0`; `.github/workflows/release.yml` builds the
   player for Windows x64, Linux x64, macOS x64/arm64 with `--profile dist` and attaches the
   archives to the GitHub release (`CHANGELOG.md` is the release body). Procedure in CLAUDE.md.
@@ -564,23 +564,30 @@ Strawberry with these flags; the same convention goes to ps2emu and Crabapple.
   is released. It injects `Hotkey::Pause` into `update_game`, so it opens and closes the menu
   exactly like Esc. The game still sees SELECT and START during the hold; it uses the combined
   keyboard + pad mask, so Right Shift + Enter held for a second also works.
-- Pictures for the launcher (7f41e18, fruit-basket v0.3.0, after v1.6.1): every slot save also
+- Pictures for the launcher (7f41e18, released in v1.7.0): every slot save also
   writes `<rom stem>.s<N>.png` (240x160 RGB8) beside the state, deleted with it, and every title
   capture is copied to `<cache dir>/strawberry/covers/<rom stem>.png` (no path hash, so the
-  launcher can name it). Not in a tagged release yet.
+  launcher can name it).
 
 Launcher v1.1.0 went live on projects.ethanaldrich.net on 2026-10-04 (site commit 55e08e4, feed
 generated 2026-10-04T02:49:00Z). It adds save pictures, cover art, Continue, favorites and
-stats. Cover art comes from the feed's optional `art` key, and Strawberry's LAUNCHER entry has
-no `art` line yet. Once a release that writes covers is out, the line will be
-`art	{cache}/strawberry/covers/{stem}.png`.
+stats. Cover art comes from the feed's optional `art` key; Strawberry's LAUNCHER entry has
+carried `art	{cache}/strawberry/covers/{stem}.png` since v1.7.0 joined the feed.
 
 Launcher v1.1.1 added the optional feed key `slots LO HI` (the launcher hides any save outside
 that range), and v1.1.2 added `fresh`, a template that Start fresh uses in place of `launch`.
 v1.1.2 is live (site commit fa16e5a, feed generated 2026-10-04T03:37:00Z); Crabapple v0.11.0
 joined the feed with `slots 1 8` and `fresh {rom} --no-resume`. Strawberry's entry is
 unchanged and needs neither key: it writes no save outside slots 1-8 and has no resume state,
-so `launch` already boots fresh. The `art` line above is still pending.
+so `launch` already boots fresh.
+
+Feed state (site 2020f90, 2026-10-04): Strawberry v1.7.0 with `art`, `slots 1 8` and
+`archives .zip`, `oldest` v1.5.0, no `fresh`. A zip handed over as `{rom}` names the `.sav`, the
+slot states and the screenshots by the zip's own stem on every listed build: checked at v1.5.0,
+v1.6.0 and v1.6.1 (`save_path_for` = `rom.with_extension("sav")`, fruit-basket v0.1.0's
+`slot_path` and `debug_ui::screenshot_path` both use `rom.file_stem()` of the launch path, and
+the session keeps that path, not the inner entry's name). Slot pictures and covers exist from
+v1.7.0 on. `fresh {rom} --no-resume` would need `oldest` 1.7.0: older builds reject the flag.
 
 Fruit Basket wave 1 (2026-10-03, after v1.6.1): `--no-resume` (requires a ROM) is accepted and
 changes nothing, so the feed can carry `fresh {rom} --no-resume` like Crabapple's; `--slot` is
