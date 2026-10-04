@@ -24,7 +24,9 @@ exact state of every subsystem.
 Ready-to-run builds for Windows, macOS (Intel and Apple Silicon) and Linux x64 are on the
 [Releases page](https://github.com/0x000NULL/GBA_Emulator/releases) as
 `strawberry-vX.Y.Z-<os>.zip` / `.tar.gz`, each holding the `strawberry` binary and
-`QUICKSTART.md`, which covers running it, the keys and where saves are kept.
+`QUICKSTART.md`, which covers running it, the keys and where saves are kept. The
+[Fruit Basket launcher](https://projects.ethanaldrich.net) also lists Strawberry (v1.7.0 and
+later; builds from v1.5.0 on can be launched from it).
 
 ## Build and run
 

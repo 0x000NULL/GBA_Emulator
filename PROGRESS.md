@@ -587,7 +587,9 @@ slot states and the screenshots by the zip's own stem on every listed build: che
 v1.6.0 and v1.6.1 (`save_path_for` = `rom.with_extension("sav")`, fruit-basket v0.1.0's
 `slot_path` and `debug_ui::screenshot_path` both use `rom.file_stem()` of the launch path, and
 the session keeps that path, not the inner entry's name). Slot pictures and covers exist from
-v1.7.0 on. `fresh {rom} --no-resume` would need `oldest` 1.7.0: older builds reject the flag.
+v1.7.0 on. No `fresh` on purpose: a plain `launch` already boots from power-on (Strawberry has no
+resume state), and `fresh {rom} --no-resume` would force `oldest` up to 1.7.0, since older builds
+reject the flag. `--no-resume` stays for launcher parity in case a later build gains resume.
 
 Fruit Basket wave 1 (2026-10-03, after v1.6.1): `--no-resume` (requires a ROM) is accepted and
 changes nothing, so the feed can carry `fresh {rom} --no-resume` like Crabapple's; `--slot` is

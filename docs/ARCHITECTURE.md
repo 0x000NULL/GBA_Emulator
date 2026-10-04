@@ -180,7 +180,10 @@ emulator): `basket-ui` is `ui` (tokens with `tokens.json`, canvas, text and the 
 drawings, mark, fmt, input) and `basket-app` is `audio`, `pacing`, `saves`, `prefs`, `slots`,
 `icon`, `library` and `pads` (gamepads to per-port masks; Strawberry uses `Ports::Shared`);
 `basket-build` embeds the exe icon from `build.rs`. `main.rs` imports them under the old module
-names, so app code still says `crate::ui::...`. The app hands them the console through small
+names, so app code still says `crate::ui::...`. gba-frontend pins all three by git tag (v0.4.0
+since Strawberry 1.7.0) and matches the versions of the dependencies whose types cross that API
+(minifb 0.29, tiny-skia 0.12, toml 1; see fruit-basket's `docs/DEPS.md`). The workspace is
+edition 2024 with `rust-version = "1.89"`, the minimum shared by every Fruit Basket repo. The app hands them the console through small
 types and traits:
 `ui::Screen` (picture size), a colour table for `Canvas::blit_indexed` (`pixels::bgr555_lut`),
 `ui::input::ButtonSet` (button names, mask bits, `MenuRoles` for the menus; `input::GBA_BUTTONS`),
