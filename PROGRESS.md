@@ -606,6 +606,8 @@ The first v1.7.0 release run (37215425420) failed both macOS builds: `extern blo
 unsafe` on the CoreGraphics block in `window.rs`. `cargo fix --edition` on Windows only rewrites
 code compiled for the host, so `#[cfg(target_os = "macos")]` code escaped it. Fixed, tag moved.
 When changing editions, grep the cfg-gated code by hand.
+Second run 37215685151: unit tests, all four builds and the release job green, four archives
+attached (tag object 61cec6a, commit 6ea5f27).
 
 Release note: v1.4.0's macOS x64 job failed once with "The self-hosted runner lost
 communication with the server" during rust-cache's post-step upload (0.1 MB/s); every build
