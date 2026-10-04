@@ -169,6 +169,13 @@ game's music player resumes it; a version mismatch is rejected (the frontend sho
 `CAN'T LOAD`). Format 5 (2026-10-03) added the cartridge GPIO port (`Cartridge::gpio`: RTC
 transfer state, clock seed and offset, solar counter and light level).
 
+## iOS C ABI (gba-ffi)
+`gba-ffi` wraps `Gba` in the Fruit Basket core ABI (`fb_gba_*`, spec in
+`fruit-basket-ios/docs/CORE-ABI.md`). It is an rlib that depends on gba-core alone. Each entry point
+accepts NULL, runs under `catch_unwind` and poisons the core after a panic. Once per `run_frame`
+it converts the picture through a BGR555 -> RGBA8888 LUT and resamples the APU output to 48 kHz
+into a 200 ms ring. Save states are gba-core's `GBAS` format, unchanged.
+
 ## Frontend (gba-frontend)
 The GUI follows `docs/gui/` (DESIGN.md is the design language, SCREENS.md the per-screen
 contract, tokens.json the constants, mockups/ the reference renders). It is a software renderer on

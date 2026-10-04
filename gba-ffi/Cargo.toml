@@ -1,0 +1,14 @@
+[package]
+name = "gba-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Strawberry's core behind the Fruit Basket iOS C ABI (fb_gba_*). An rlib: the app's one staticlib re-exports it."
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+gba-core = { path = "../gba-core", features = ["savestate"] }

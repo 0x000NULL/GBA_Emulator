@@ -593,6 +593,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "gba-ffi"
+version = "1.7.0"
+dependencies = [
+ "gba-core",
+]
+
+[[package]]
 name = "gba-frontend"
 version = "1.7.0"
 dependencies = [

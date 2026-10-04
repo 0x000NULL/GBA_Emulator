@@ -495,6 +495,29 @@ IRQ phase).
    the WarioWare: Twisted gyro and rumble, Drill Dozer's rumble (gilrs 0.11 has force feedback;
    fruit-basket's `Gamepads` would need to expose it).
 
+## iOS core ABI: gba-ffi (2026-10-04)
+`gba-ffi` implements CORE-ABI v1 (`fruit-basket-ios/docs/CORE-ABI.md`, private repo
+0x000NULL/fruit-basket-ios) as `fb_gba_*` C functions, plus `fb_gba_set_rtc` and
+`fb_gba_set_sun_level`. It is an rlib, not a staticlib: the iOS app's single staticlib `fbcore`
+depends on it by git rev and re-exports the symbols. Its only dependency is gba-core with
+`savestate`. Choices the ABI left open:
+- `create` also checks the header the way the BIOS does (complement checksum at 0xBD, 0x96 at
+  0xB2), so garbage gives `FB_ERR_ROM`. gba-core itself only checks size. All 1,557 ROMs in
+  `Games/` and every test ROM pass this check, except the DS expansion cart *Daigassou! Band-Brothers -
+  Request Selection*, which isn't a GBA program.
+- `sram_size`/`sram_read` return `Gba::save_data`, which includes the 16-byte RTC record on
+  clock carts. `sram_write` takes the backend's size (EEPROM 512 B or 8 KiB) with or without that
+  record. `sram_dirty` is set when `Gba::save_dirty` fires after a frame, or when `state_load`
+  changes save memory. A complete `sram_read` clears it.
+- `reset` builds a fresh `Gba` on the same ROM and BIOS, then restores the battery save (unless it
+  was never written, so an EEPROM's size isn't fixed early), the clock, the sun level and the held
+  keys.
+- Audio is resampled linearly at `CLOCK_HZ / cycles_per_sample()` (the rate SOUNDBIAS selects at
+  the end of each frame) into a 9,600-frame ring that drops the oldest frames.
+Measured on KH:CoM at frames 300-1500 (release build, Windows): 0.9 ms/frame, a 429 KB state, save in 0.23 ms,
+load in 0.13 ms. `cargo test -p gba-ffi` covers ABI tests 1-6 on jsmolka `ppu/stripes`,
+`save/sram`, `save/none` and the mGBA suite. Both iOS targets build from Windows.
+
 ## Cartridge GPIO: RTC and solar sensor (2026-10-03, v1.6.0)
 The sweep only proved boots, so the carts with hardware in the ROM chip were marked `ok` while
 not really playable. Now emulated (`gba-core/src/cart/{gpio,rtc,solar}.rs`, design in

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["gba-core", "gba-frontend", "gba-test"]
+members = ["gba-core", "gba-ffi", "gba-frontend", "gba-test"]
 
 [workspace.package]
 version = "1.7.0"
