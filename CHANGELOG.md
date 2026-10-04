@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **`gba-ffi`**, a new workspace crate: Strawberry's core behind the Fruit Basket iOS C ABI v1
+  (`fb_gba_*`, contract in `fruit-basket-ios/docs/CORE-ABI.md`). The iOS app's `fbcore` staticlib
+  pins it by git rev (10de245). It is an rlib that depends on gba-core alone, and the desktop player
+  doesn't use it. The release archives don't change.
+
 ## v1.7.0 — 2026-10-04
 
 Fruit Basket launcher support and a dependency refresh. Games, save files and save states from

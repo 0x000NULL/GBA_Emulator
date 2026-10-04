@@ -136,6 +136,8 @@ log). Every other title in the 1,543-title library has a boot verdict in `docs/l
 - Test ROMs: `tools/tests/gba-tests` (jsmolka, prebuilt). `tools/tests/suite` is mgba's suite source
   plus `suite.gba` built with its `docker-build.sh` (devkitARM in Docker). Without that file the
   13 suite entries in `tests/golden.toml` fail; rebuild it with the script if `tools/` is wiped.
+- Mac self-hosted runner: rustup there was broken and was repaired on 2026-10-04.
+  `mac-monrose-gba`'s `.path` already includes `~/.cargo/bin`.
 - Frontend audio/pacing verified on 2026-09-30 with a real 48 kHz device (see "Where things stand").
   Hidden flag `--exit-after N` ends a windowed run after N frames and prints timing stats.
 
@@ -518,6 +520,14 @@ depends on it by git rev and re-exports the symbols. Its only dependency is gba-
 Measured on KH:CoM at frames 300-1500 (release build, Windows): 0.9 ms/frame, a 429 KB state, save in 0.23 ms,
 load in 0.13 ms. `cargo test -p gba-ffi` covers ABI tests 1-6 on jsmolka `ppu/stripes`,
 `save/sram`, `save/none` and the mGBA suite. Both iOS targets build from Windows.
+
+**Consumer and stability rule.** `fruit-basket-ios/rust/fbcore` pins gba-ffi by git rev (10de245
+as of TestFlight build 20261004.2122, played on Ethan's phone on 2026-10-04). Do not change any
+`fb_gba_*` signature or semantics, or the Rust spellings of `FbStatus`/`FbInfo` (fbcore
+const-asserts them), without a CORE-ABI version bump agreed with the iOS repo. A gba-core
+`STATE_VERSION` bump breaks iOS players' save states and their `auto.state`, though the app falls
+back to the `.sav`. gba-ffi stays an rlib with no I/O dependencies. fbcore builds with
+`lto = false`.
 
 ## Cartridge GPIO: RTC and solar sensor (2026-10-03, v1.6.0)
 The sweep only proved boots, so the carts with hardware in the ROM chip were marked `ok` while

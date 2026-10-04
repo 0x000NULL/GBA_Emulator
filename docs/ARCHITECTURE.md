@@ -177,6 +177,13 @@ it converts the picture through a BGR555 -> RGBA8888 LUT and resamples the APU o
 into a 200 ms ring. `create` refuses a ROM (`FB_ERR_ROM`) only when the header checksum at 0xBD and
 the fixed 0x96 at 0xB2 both fail: garbage is caught, unfixed homebrew still boots. Save states are gba-core's `GBAS` format, unchanged.
 
+The consumer is `fruit-basket-ios/rust/fbcore` (the app's only staticlib, built with
+`lto = false`), which pins this crate by git rev. **Stability rule:** `fb_gba_*` signatures and
+semantics, and the Rust spellings of `FbStatus`/`FbInfo` (fbcore const-asserts them), change only
+with a CORE-ABI version bump agreed with the iOS repo. Bumping gba-core's `STATE_VERSION` breaks iOS
+save states and `auto.state` (the app falls back to the `.sav`). gba-ffi stays an rlib with no
+I/O dependencies.
+
 ## Frontend (gba-frontend)
 The GUI follows `docs/gui/` (DESIGN.md is the design language, SCREENS.md the per-screen
 contract, tokens.json the constants, mockups/ the reference renders). It is a software renderer on
