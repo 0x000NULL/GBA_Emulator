@@ -502,7 +502,8 @@ IRQ phase).
 depends on it by git rev and re-exports the symbols. Its only dependency is gba-core with
 `savestate`. Choices the ABI left open:
 - `create` also checks the header the way the BIOS does (complement checksum at 0xBD, 0x96 at
-  0xB2), so garbage gives `FB_ERR_ROM`. gba-core itself only checks size. All 1,557 ROMs in
+  0xB2), so garbage gives `FB_ERR_ROM`. Only a ROM failing *both* is refused, so homebrew never run
+  through gbafix (wrong checksum) still boots, as on a skip-BIOS flashcart. gba-core itself only checks size. All 1,557 ROMs in
   `Games/` and every test ROM pass this check, except the DS expansion cart *Daigassou! Band-Brothers -
   Request Selection*, which isn't a GBA program.
 - `sram_size`/`sram_read` return `Gba::save_data`, which includes the 16-byte RTC record on

@@ -174,7 +174,8 @@ transfer state, clock seed and offset, solar counter and light level).
 `fruit-basket-ios/docs/CORE-ABI.md`). It is an rlib that depends on gba-core alone. Each entry point
 accepts NULL, runs under `catch_unwind` and poisons the core after a panic. Once per `run_frame`
 it converts the picture through a BGR555 -> RGBA8888 LUT and resamples the APU output to 48 kHz
-into a 200 ms ring. Save states are gba-core's `GBAS` format, unchanged.
+into a 200 ms ring. `create` refuses a ROM (`FB_ERR_ROM`) only when the header checksum at 0xBD and
+the fixed 0x96 at 0xB2 both fail: garbage is caught, unfixed homebrew still boots. Save states are gba-core's `GBAS` format, unchanged.
 
 ## Frontend (gba-frontend)
 The GUI follows `docs/gui/` (DESIGN.md is the design language, SCREENS.md the per-screen

@@ -8,9 +8,10 @@
 //! converted BGR555 -> RGBA8888 once per `run_frame`; audio is resampled to 48 kHz into a ring
 //! capped at 200 ms.
 //!
-//! Beyond what gba-core checks (size, BIOS length), `create` rejects a ROM whose header fails the
-//! BIOS's own checks: the complement checksum at 0xBD and the fixed 0x96 at 0xB2. Every GBA title
-//! in the library and every test ROM passes both; garbage does not.
+//! Beyond what gba-core checks (size, BIOS length), `create` rejects a ROM whose header fails both
+//! of the BIOS's checks: the complement checksum at 0xBD and the fixed 0x96 at 0xB2. Either one
+//! passing is enough, so homebrew never run through gbafix (bad checksum) still boots; garbage
+//! fails both about 255/256 x 255/256 of the time.
 
 mod audio;
 
@@ -157,13 +158,14 @@ fn rgba_lut() -> &'static [[u8; 4]] {
     })
 }
 
-/// The cartridge header checks the BIOS makes before booting: complement checksum and fixed byte.
+/// The cartridge header checks the BIOS makes before booting (complement checksum, fixed byte),
+/// relaxed: a ROM is refused only when both fail.
 fn header_ok(rom: &[u8]) -> bool {
     if rom.len() < 0xC0 {
         return false;
     }
     let sum = rom[0xA0..0xBD].iter().fold(0u8, |c, &b| c.wrapping_sub(b)).wrapping_sub(0x19);
-    rom[0xB2] == 0x96 && rom[0xBD] == sum
+    rom[0xB2] == 0x96 || rom[0xBD] == sum
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -499,12 +501,17 @@ mod tests {
     fn header_check() {
         let rom = tiny_rom();
         assert!(header_ok(&rom));
-        let mut bad = rom.clone();
-        bad[0xA0] ^= 1;
+        let mut no_fix = rom.clone();
+        no_fix[0xBD] ^= 0x5A; // never run through gbafix
+        assert!(header_ok(&no_fix));
+        let mut no_96 = rom.clone();
+        no_96[0xB2] = 0;
+        no_96[0xBD] = no_96[0xBD].wrapping_add(0x96); // the checksum covers 0xB2
+        assert!(header_ok(&no_96));
+        let mut bad = no_96;
+        bad[0xBD] ^= 0x5A;
         assert!(!header_ok(&bad));
-        let mut bad = rom;
-        bad[0xB2] = 0;
-        assert!(!header_ok(&bad));
+        assert!(!header_ok(&rom[..0xBF]));
     }
 
     #[test]
@@ -520,6 +527,15 @@ mod tests {
         let mut len = 0;
         assert_eq!(unsafe { fb_gba_state_save(core, &mut out, &mut len) }, FbStatus::ErrPanic);
         assert!(out.is_null());
+        unsafe { fb_gba_destroy(core) };
+    }
+
+    #[test]
+    fn unfixed_checksum_still_creates() {
+        let mut rom = tiny_rom();
+        rom[0xBD] = rom[0xBD].wrapping_add(1);
+        let core = create(&rom);
+        assert_eq!(fb_gba_run_frame(core), FbStatus::Ok);
         unsafe { fb_gba_destroy(core) };
     }
 
