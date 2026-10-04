@@ -327,6 +327,28 @@ mod tests {
         assert!(!slot_path(&rom, 2).exists() && !crate::slots::picture_path(&rom, 2).exists());
     }
 
+    /// A zipped ROM launched as `{rom}`: it boots, and the files the Fruit Basket launcher looks
+    /// for are named after the zip's stem, not the `.gba` entry inside it.
+    #[test]
+    fn zipped_rom_names_launcher_files_by_the_zip_stem() {
+        use std::io::Write;
+        let dir = temp_dir("zip-stem");
+        let zip_path = dir.join("Game (USA).zip");
+        let mut w = zip::ZipWriter::new(fs::File::create(&zip_path).unwrap());
+        w.start_file("game-inner.gba", zip::write::SimpleFileOptions::default()).unwrap();
+        w.write_all(&loop_rom()).unwrap();
+        w.finish().unwrap();
+        let mut gba = gba_test::build_gba(&zip_path, Some(BiosMode::Hle), None).unwrap();
+        gba.run_frame();
+        GBA_SLOTS.save(&Machine(&mut gba), &zip_path, 2, 1).unwrap();
+        assert!(dir.join("Game (USA).s2.state").is_file());
+        assert!(dir.join("Game (USA).s2.png").is_file());
+        assert_eq!(GBA_SLOTS.scan(&zip_path).latest().map(|m| m.slot), Some(2));
+        let captures = dir.join("cache").join("captures");
+        assert_eq!(crate::library::capture::cover_path(&captures, &zip_path), dir.join("cache").join("covers").join("Game (USA).png"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn legacy_state_is_imported_into_slot_one_once() {
         let rom = temp_dir("legacy").join("game.gba");

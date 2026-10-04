@@ -101,7 +101,8 @@ resizable and the picture is always drawn at a whole-number scale on a dark lett
 `--scale N` fixes the picture at N× in a window of exactly that size, `--fullscreen` covers the
 display with a borderless window for that run, `--exit-on-quit` makes the pause menu's QUIT close
 Strawberry (exit code 0) instead of opening the library, `--slot N` (1–8) starts the
-game from that save-state slot (an empty slot boots normally), `--no-audio` disables
+game from that save-state slot (an empty slot boots normally), `--no-resume` starts from power-on
+(what a plain launch already does; it is there for the launcher's Start fresh), `--no-audio` disables
 sound, `--fullspeed` removes pacing, `--bench N` runs N frames headless and prints the speed.
 
 ## Name and mark
@@ -158,7 +159,7 @@ about 26x real time headless (1,590 fps on KH:CoM). Live audio has been verified
 48 kHz device (zero underruns). Audio has been compared against libmgba with a headless capture
 tool (`scripts/build-mgba.ps1`, `scripts/compare-audio.py`): our levels follow GBATEK's stated
 maxima and mGBA mixes about 3 dB lower, a difference in convention rather than a bug. The player
-takes launcher hooks (`--slot`, `--fullscreen`, `--exit-on-quit`, and a gamepad route to the pause
+takes launcher hooks (`--slot`, `--no-resume`, `--fullscreen`, `--exit-on-quit`, and a gamepad route to the pause
 menu) for the Fruit Basket launcher's couch mode. Cartridges with a real-time clock (Pokémon
 Ruby, Sapphire and Emerald, Rockman EXE 4.5, Boktai and others) read the computer's clock, and
 the Boktai solar sensor takes its light from a 0-10 sun level. Still open: the three boot bugs listed in

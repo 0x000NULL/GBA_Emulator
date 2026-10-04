@@ -145,3 +145,27 @@ pub fn tests_dir() -> Option<PathBuf> {
 pub fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn load_rom_takes_the_gba_entry_of_a_zip() {
+        let dir = std::env::temp_dir().join(format!("gba-test-zip-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let rom: Vec<u8> = (0..0x2000u32).map(|i| (i * 7) as u8).collect();
+        let zip_path = dir.join("Pack (USA).zip");
+        let mut w = zip::ZipWriter::new(fs::File::create(&zip_path).unwrap());
+        let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        w.start_file("readme.txt", opts).unwrap();
+        w.write_all(b"not a rom").unwrap();
+        w.start_file("Inner Name.GBA", opts).unwrap();
+        w.write_all(&rom).unwrap();
+        w.finish().unwrap();
+        assert_eq!(load_rom(&zip_path).unwrap(), rom);
+        assert_eq!(save_path_for(&zip_path), dir.join("Pack (USA).sav"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+}

@@ -20,6 +20,7 @@ strawberry --library "D:\Games\GBA"
 strawberry "D:\Games\GBA\Some Game (USA).zip"      # play straight away (.gba or a .zip containing one)
 strawberry --scale 3 "Some Game.gba"                # fixed 3x picture in a 720x480 window
 strawberry --slot 2 "Some Game.gba"                 # start from save-state slot 2 (an empty slot boots normally)
+strawberry --no-resume "Some Game.gba"             # start from power-on (a plain launch already does)
 strawberry --fullscreen --exit-on-quit "Some Game.gba"   # couch: whole display, pause menu QUIT closes Strawberry
 ```
 

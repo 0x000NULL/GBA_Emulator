@@ -20,5 +20,5 @@ clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "8", default-features = false, features = ["deflate"] }
 png = "0.17"

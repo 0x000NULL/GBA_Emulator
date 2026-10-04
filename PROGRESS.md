@@ -11,7 +11,7 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   plus the two KH goldens in `tests/compat.toml` (title at frame 1800, gameplay at frame 27400).
 - **All jsmolka ROMs pass** (arm, thumb, memory, bios, nes, save/none, sram, flash64, flash128;
   ppu hello/shades/stripes by golden hash). `cargo test --workspace` is green: 390 core unit
-  tests, 105 frontend tests (+86 in fruit-basket), 2 ROM-driver tests (~11 min with all 68 commercial goldens present).
+  tests, 107 frontend tests (+86 in fruit-basket), 1 gba-test unit test, 2 ROM-driver tests (~11 min with all 68 commercial goldens present).
 - **v1.0.0 released (2026-10-01)**: tag `v1.0.0`; `.github/workflows/release.yml` builds the
   player for Windows x64, Linux x64, macOS x64/arm64 with `--profile dist` and attaches the
   archives to the GitHub release (`CHANGELOG.md` is the release body). Procedure in CLAUDE.md.
@@ -578,6 +578,16 @@ v1.1.2 is live (site commit fa16e5a, feed generated 2026-10-04T03:37:00Z); Craba
 joined the feed with `slots 1 8` and `fresh {rom} --no-resume`. Strawberry's entry is
 unchanged and needs neither key: it writes no save outside slots 1-8 and has no resume state,
 so `launch` already boots fresh. The `art` line above is still pending.
+
+Fruit Basket wave 1 (2026-10-03, after v1.6.1): `--no-resume` (requires a ROM) is accepted and
+changes nothing, so the feed can carry `fresh {rom} --no-resume` like Crabapple's; `--slot` is
+1-8 (clap range, tested), so `slots 1 8` is accurate. A zip launched as `{rom}` boots (KH:CoM's
+zip, real binary, 300 frames), and its slot pictures and cover take the zip's stem, because
+`slot_path` and `cover_path` both use the launch path's `file_stem`
+(`glue::tests::zipped_rom_names_launcher_files_by_the_zip_stem`). The same pass moved the
+workspace to edition 2024 (resolver 3; `cargo fix --edition` changed two lines: an
+`unsafe extern` block and one closure pattern) and zip 2 → 8. bincode stays 1.x (savestate
+format); minifb, tiny-skia, png, dirs, toml, cpal and gilrs move with fruit-basket v0.4.0.
 
 Release note: v1.4.0's macOS x64 job failed once with "The self-hosted runner lost
 communication with the server" during rust-cache's post-step upload (0.1 MB/s); every build

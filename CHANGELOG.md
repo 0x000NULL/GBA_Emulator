@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- `--no-resume` is accepted (it requires a ROM). Strawberry never resumes on its own, so it starts
+  from power-on exactly as a plain launch does; it exists so the Fruit Basket launcher's Start fresh
+  (feed key `fresh`) can pass the same flag to every emulator.
+- Edition 2024 (workspace resolver 3); zip 2 → 8 for loading zipped ROMs.
+- Tests pin zip loading (the `.gba` entry, whatever its name) and that a zipped ROM's save-state
+  pictures and launcher cover are named after the zip (`<zip stem>.s<N>.png`, `covers/<zip stem>.png`).
+
 ## v1.6.1 — 2026-10-03
 
 Documentation only; the player is the same as v1.6.0.

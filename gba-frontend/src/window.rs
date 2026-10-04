@@ -142,7 +142,7 @@ pub fn display_size() -> Option<(usize, usize)> {
 #[cfg(windows)]
 mod display {
     #[link(name = "user32")]
-    extern "system" {
+    unsafe extern "system" {
         fn GetSystemMetrics(index: i32) -> i32;
     }
 

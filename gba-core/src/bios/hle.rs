@@ -1167,7 +1167,7 @@ mod tests {
         for &b in data {
             freq[b as usize] += 1;
         }
-        let mut heap: Vec<(usize, usize, Node)> = freq.iter().enumerate().filter(|(_, &f)| f > 0).map(|(s, &f)| (f, s, Node::Leaf(s as u8))).collect();
+        let mut heap: Vec<(usize, usize, Node)> = freq.iter().enumerate().filter(|&(_, &f)| f > 0).map(|(s, &f)| (f, s, Node::Leaf(s as u8))).collect();
         if heap.len() == 1 {
             let (f, s, n) = heap[0].clone();
             heap.push((f, s + 1, n));

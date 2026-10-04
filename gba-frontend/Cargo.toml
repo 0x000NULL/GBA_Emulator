@@ -29,6 +29,7 @@ png = "0.17"
 [dev-dependencies]
 basket-ui = { git = "https://github.com/0x000NULL/fruit-basket", tag = "v0.3.0", features = ["testing"] }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
+zip = { version = "8", default-features = false, features = ["deflate"] }
 
 [build-dependencies]
 basket-build = { git = "https://github.com/0x000NULL/fruit-basket", tag = "v0.3.0" }

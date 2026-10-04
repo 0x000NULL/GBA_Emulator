@@ -199,7 +199,8 @@ byte for byte.
   manager, slot set, audio, pacer and overlay state. Only Game (unpaused) and Bench (running)
   call `Session::step`. `App::update` reacts to the frame's `UiInput`, `App::render` presents.
   Launcher hooks (`RunOptions`): `--slot N` loads a slot into the fresh boot before the window
-  opens (a failed load keeps the boot), `--exit-on-quit` turns the pause menu's QUIT into a
+  opens (a failed load keeps the boot), `--no-resume` is accepted and changes nothing (Strawberry
+  never resumes on its own; the flag is the launcher's Start fresh), `--exit-on-quit` turns the pause menu's QUIT into a
   program exit, `--fullscreen` skips storing the window size at shutdown.
 - `ui/` (basket-ui): `tokens` (constants, checked against tokens.json by a test), `canvas` (tiny-skia pixmap
   for vector shapes, direct pixel writes for text and framebuffer blits, clip rect, conversion to

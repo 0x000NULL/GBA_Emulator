@@ -1,10 +1,10 @@
 [workspace]
-resolver = "2"
+resolver = "3"
 members = ["gba-core", "gba-frontend", "gba-test"]
 
 [workspace.package]
 version = "1.6.1"
-edition = "2021"
+edition = "2024"
 license = "MIT"
 authors = ["Ethan Aldrich"]
 

@@ -46,6 +46,11 @@ pub struct Cli {
     /// Start the ROM from save-state slot N (1-8); an empty or unreadable slot boots normally.
     #[arg(long, value_name = "N", requires = "rom", value_parser = clap::value_parser!(u8).range(1..=8))]
     pub slot: Option<u8>,
+    /// Start the ROM from power-on. Strawberry never resumes on its own, so this is what a plain
+    /// launch already does; the flag exists for the Fruit Basket launcher's Start fresh (feed key
+    /// `fresh`), which passes it to every emulator. Save states are left alone.
+    #[arg(long, requires = "rom")]
+    pub no_resume: bool,
     /// Borderless window covering the display, for this run only (nothing is saved).
     #[arg(long, conflicts_with = "scale")]
     pub fullscreen: bool,
@@ -99,6 +104,14 @@ mod tests {
             assert!(Cli::try_parse_from(["strawberry", "--slot", bad, "game.gba"]).is_err(), "--slot {bad}");
         }
         assert!(Cli::try_parse_from(["strawberry", "--slot", "2"]).is_err());
+    }
+
+    #[test]
+    fn no_resume_needs_a_rom() {
+        let cli = Cli::try_parse_from(["strawberry", "game.gba", "--no-resume", "--fullscreen", "--exit-on-quit"]).unwrap();
+        assert!(cli.no_resume && cli.fullscreen && cli.exit_on_quit && cli.slot.is_none());
+        assert!(!Cli::try_parse_from(["strawberry", "game.gba"]).unwrap().no_resume);
+        assert!(Cli::try_parse_from(["strawberry", "--no-resume"]).is_err());
     }
 
     #[test]
