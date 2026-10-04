@@ -156,7 +156,7 @@ mod display {
 #[cfg(target_os = "macos")]
 mod display {
     #[link(name = "CoreGraphics", kind = "framework")]
-    extern "C" {
+    unsafe extern "C" {
         fn CGMainDisplayID() -> u32;
         fn CGDisplayPixelsWide(display: u32) -> usize;
         fn CGDisplayPixelsHigh(display: u32) -> usize;

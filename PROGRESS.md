@@ -602,6 +602,10 @@ by v1.6.1's gba-test load in the new build with the same frame hash 600 frames l
 b897019406339fc2, Pokémon Emerald 66eebafcd46fcc57, the latter with RTC state). The first full
 run was killed by Claude Code under memory pressure (commit 81/93.6 GB); the rerun used
 `cargo test -j 2 -- --test-threads=2` and took 705 s for the ROM drivers.
+The first v1.7.0 release run (37215425420) failed both macOS builds: `extern blocks must be
+unsafe` on the CoreGraphics block in `window.rs`. `cargo fix --edition` on Windows only rewrites
+code compiled for the host, so `#[cfg(target_os = "macos")]` code escaped it. Fixed, tag moved.
+When changing editions, grep the cfg-gated code by hand.
 
 Release note: v1.4.0's macOS x64 job failed once with "The self-hosted runner lost
 communication with the server" during rust-cache's post-step upload (0.1 MB/s); every build
