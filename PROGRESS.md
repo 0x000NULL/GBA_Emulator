@@ -561,6 +561,16 @@ Strawberry with these flags; the same convention goes to ps2emu and Crabapple.
   is released. It injects `Hotkey::Pause` into `update_game`, so it opens and closes the menu
   exactly like Esc. The game still sees SELECT and START during the hold; it uses the combined
   keyboard + pad mask, so Right Shift + Enter held for a second also works.
+- Pictures for the launcher (7f41e18, fruit-basket v0.3.0, after v1.6.1): every slot save also
+  writes `<rom stem>.s<N>.png` (240x160 RGB8) beside the state, deleted with it, and every title
+  capture is copied to `<cache dir>/strawberry/covers/<rom stem>.png` (no path hash, so the
+  launcher can name it). Not in a tagged release yet.
+
+Launcher v1.1.0 went live on projects.ethanaldrich.net on 2026-10-04 (site commit 55e08e4, feed
+generated 2026-10-04T02:49:00Z). It adds save pictures, cover art, Continue, favorites and
+stats. Cover art comes from the feed's optional `art` key, and Strawberry's LAUNCHER entry has
+no `art` line yet. Once a release that writes covers is out, the line will be
+`art	{cache}/strawberry/covers/{stem}.png`.
 
 Release note: v1.4.0's macOS x64 job failed once with "The self-hosted runner lost
 communication with the server" during rust-cache's post-step upload (0.1 MB/s); every build
