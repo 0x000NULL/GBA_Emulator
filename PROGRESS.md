@@ -572,6 +572,13 @@ stats. Cover art comes from the feed's optional `art` key, and Strawberry's LAUN
 no `art` line yet. Once a release that writes covers is out, the line will be
 `art	{cache}/strawberry/covers/{stem}.png`.
 
+Launcher v1.1.1 added the optional feed key `slots LO HI` (the launcher hides any save outside
+that range), and v1.1.2 added `fresh`, a template that Start fresh uses in place of `launch`.
+v1.1.2 is live (site commit fa16e5a, feed generated 2026-10-04T03:37:00Z); Crabapple v0.11.0
+joined the feed with `slots 1 8` and `fresh {rom} --no-resume`. Strawberry's entry is
+unchanged and needs neither key: it writes no save outside slots 1-8 and has no resume state,
+so `launch` already boots fresh. The `art` line above is still pending.
+
 Release note: v1.4.0's macOS x64 job failed once with "The self-hosted runner lost
 communication with the server" during rust-cache's post-step upload (0.1 MB/s); every build
 step had passed. `gh run rerun <id> --failed` re-ran it and the release job.
