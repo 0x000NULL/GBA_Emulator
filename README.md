@@ -28,7 +28,7 @@ Ready-to-run builds for Windows, macOS (Intel and Apple Silicon) and Linux x64 a
 
 ## Build and run
 
-Requires stable Rust (1.85+). No C toolchain, cmake or SDL is needed.
+Requires stable Rust (1.89+). No C toolchain, cmake or SDL is needed.
 
 ```powershell
 cargo build --release --workspace
@@ -128,6 +128,11 @@ designer's note). `gba-frontend/src/ui/brand.rs` parses the SVG mark, so the fil
 
 `docs/ARCHITECTURE.md` describes the design; `docs/gbatek/` holds the spec excerpts the code
 was written from; `CLAUDE.md` holds the project rules and commands.
+
+The generic half of the player (UI toolkit, audio, pacing, saves, slots, library) comes from
+[fruit-basket](https://github.com/0x000NULL/fruit-basket), pinned by git tag; its
+[docs](https://github.com/0x000NULL/fruit-basket/tree/main/docs) cover the shared dependency
+versions, the launcher contract and the ecosystem.
 
 ## Tests
 

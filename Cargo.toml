@@ -3,8 +3,9 @@ resolver = "3"
 members = ["gba-core", "gba-frontend", "gba-test"]
 
 [workspace.package]
-version = "1.6.1"
+version = "1.7.0"
 edition = "2024"
+rust-version = "1.89"
 license = "MIT"
 authors = ["Ethan Aldrich"]
 

@@ -24,6 +24,9 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   **v1.6.0 (2026-10-03)**: cartridge GPIO, the real-time clock (Pokémon R/S/E and seven more) and
   Boktai's solar sensor; savestate format 5. See "Cartridge GPIO" below. Release run 37157962442:
   unit tests and all four builds green, archives attached.
+  **v1.7.0 (2026-10-04)**: Fruit Basket launcher pictures (`<rom stem>.s<N>.png`, `covers/`),
+  `--no-resume`, fruit-basket v0.4.0 (minifb 0.29, tiny-skia 0.12, cpal 0.18, png 0.18, toml 1,
+  dirs 7), edition 2024, rust-version 1.89, zip 8. See "Launcher hooks" below.
 - **Rebrand (2026-10-02)**: the player is **Strawberry** (`docs/branding/`, Fruit Basket No. 2).
   Window title, binary and archives (`strawberry`), `strawberry/` config and cache folders with a
   one-time move from `gba-advance/` (`app.rs migrate_dir`), the mark parsed from the SVG
@@ -588,6 +591,17 @@ zip, real binary, 300 frames), and its slot pictures and cover take the zip's st
 workspace to edition 2024 (resolver 3; `cargo fix --edition` changed two lines: an
 `unsafe extern` block and one closure pattern) and zip 2 → 8. bincode stays 1.x (savestate
 format); minifb, tiny-skia, png, dirs, toml, cpal and gilrs move with fruit-basket v0.4.0.
+
+Wave 2 (2026-10-04, v1.7.0): fruit-basket v0.4.0 re-pinned with minifb 0.29, tiny-skia 0.12,
+png 0.18, toml 1, dirs 7 (gilrs stays 0.11; cpal 0.18 comes only through basket-app) and
+`rust-version = "1.89"`. No source change was needed: both `WindowOptions` literals already end
+in `..WindowOptions::default()`, nothing matches on `MouseButton` exhaustively or builds a
+`RadialGradient`, and png is only encoded here. Checks: full suite green (pinned renders
+unmoved); Minish Cap windowed with live audio on cpal 0.18, 900 frames, 0 underruns; states saved
+by v1.6.1's gba-test load in the new build with the same frame hash 600 frames later (KH:CoM
+b897019406339fc2, Pokémon Emerald 66eebafcd46fcc57, the latter with RTC state). The first full
+run was killed by Claude Code under memory pressure (commit 81/93.6 GB); the rerun used
+`cargo test -j 2 -- --test-threads=2` and took 705 s for the ROM drivers.
 
 Release note: v1.4.0's macOS x64 job failed once with "The self-hosted runner lost
 communication with the server" during rust-cache's post-step upload (0.1 MB/s); every build

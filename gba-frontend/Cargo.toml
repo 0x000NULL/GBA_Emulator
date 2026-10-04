@@ -2,6 +2,7 @@
 name = "gba-frontend"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 description = "Strawberry, the desktop player for gba-core: library, window, audio, input, bench (pure Rust: minifb + cpal + gilrs, on the fruit-basket crates)."
@@ -11,25 +12,25 @@ name = "strawberry"
 path = "src/main.rs"
 
 [dependencies]
-basket-app = { git = "https://github.com/0x000NULL/fruit-basket", tag = "v0.3.0" }
-basket-ui = { git = "https://github.com/0x000NULL/fruit-basket", tag = "v0.3.0" }
+basket-app = { git = "https://github.com/0x000NULL/fruit-basket", tag = "v0.4.0" }
+basket-ui = { git = "https://github.com/0x000NULL/fruit-basket", tag = "v0.4.0" }
 gba-core = { path = "../gba-core", features = ["savestate"] }
 gba-test = { path = "../gba-test" }
 anyhow = "1"
 chrono = "0.4"
 clap = { version = "4", features = ["derive"] }
-minifb = "0.28"
+minifb = "0.29"
 gilrs = "0.11"
-tiny-skia = "0.11"
-dirs = "6"
-toml = "0.8"
+tiny-skia = "0.12"
+dirs = "7"
+toml = "1"
 serde = { version = "1", features = ["derive"] }
-png = "0.17"
+png = "0.18"
 
 [dev-dependencies]
-basket-ui = { git = "https://github.com/0x000NULL/fruit-basket", tag = "v0.3.0", features = ["testing"] }
+basket-ui = { git = "https://github.com/0x000NULL/fruit-basket", tag = "v0.4.0", features = ["testing"] }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 zip = { version = "8", default-features = false, features = ["deflate"] }
 
 [build-dependencies]
-basket-build = { git = "https://github.com/0x000NULL/fruit-basket", tag = "v0.3.0" }
+basket-build = { git = "https://github.com/0x000NULL/fruit-basket", tag = "v0.4.0" }

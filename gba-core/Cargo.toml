@@ -2,6 +2,7 @@
 name = "gba-core"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 description = "Strawberry's Game Boy Advance emulator core: ARM7TDMI, bus, PPU, APU, DMA, timers, cartridge, HLE BIOS. No I/O dependencies."
