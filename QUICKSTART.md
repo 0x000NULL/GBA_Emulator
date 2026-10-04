@@ -61,7 +61,8 @@ the pause menu (LEFT/RIGHT). The level is remembered in the settings file (`sun_
 ## Where things are kept
 
 - **Game saves**: `<rom>.sav` beside the ROM (games with a clock add 16 bytes at the end for it).
-- **Save states**: eight slots per game, `<rom stem>.s1.state` … `.s8.state` beside the ROM.
+- **Save states**: eight slots per game, `<rom stem>.s1.state` … `.s8.state` beside the ROM,
+  each with its picture as `.s<N>.png` (deleted with the state).
   States from before v1.6.0 show CAN'T LOAD (the state format changed); delete them from the
   save states screen.
 - **Settings**: `%APPDATA%\strawberry\settings.toml` (Windows),

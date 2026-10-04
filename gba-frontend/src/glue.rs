@@ -35,6 +35,9 @@ impl Snapshot for Machine<'_> {
     fn picture(&self) -> &[u16] {
         &self.0.framebuffer()[..]
     }
+    fn picture_rgb(&self) -> Option<Vec<u8>> {
+        Some(frame_rgb(self.picture()))
+    }
 }
 
 /// The legacy single-state path written by builds before the slots.
@@ -83,13 +86,18 @@ pub const CAPTURE_FRAMES: u32 = 1800;
 /// captures run headless with the HLE BIOS.
 pub struct GbaPlatform;
 
-/// A 240x160 BGR555 frame as art.
-pub fn art_from_frame(fb: &[u16]) -> Art {
+/// A 240x160 BGR555 frame as packed RGB8 (the slot's `.png`, label art).
+pub fn frame_rgb(fb: &[u16]) -> Vec<u8> {
     let mut rgb = Vec::with_capacity(SCREEN_W * SCREEN_H * 3);
     for &p in fb.iter().take(SCREEN_W * SCREEN_H) {
         rgb.extend_from_slice(&gba_test::bgr555_to_rgb(p));
     }
-    Art::new(SCREEN_W, SCREEN_H, rgb)
+    rgb
+}
+
+/// A 240x160 BGR555 frame as art.
+pub fn art_from_frame(fb: &[u16]) -> Art {
+    Art::new(SCREEN_W, SCREEN_H, frame_rgb(fb))
 }
 
 impl Platform for GbaPlatform {
@@ -296,6 +304,9 @@ mod tests {
         assert_eq!(meta.emulator, env!("CARGO_PKG_VERSION"));
         assert!(meta.size > 76_800);
         assert_eq!(meta.frame_full, gba.framebuffer().to_vec());
+        // the launcher's copy of the picture, beside the state
+        let pic = read_png(&crate::slots::picture_path(&rom, 2)).expect("slot png");
+        assert_eq!((pic.w, pic.h, pic.rgb), (SCREEN_W, SCREEN_H, frame_rgb(gba.framebuffer())));
         for _ in 0..5 {
             gba.run_frame();
         }
@@ -312,6 +323,8 @@ mod tests {
         assert!(pause[2].as_ref().unwrap().broken.is_some());
         fs::write(slot_path(&rom, 4), b"nonsense").unwrap();
         assert!(matches!(GBA_SLOTS.load(&mut Machine(&mut gba), &rom, 4), Err(SlotError::Corrupt(_))));
+        crate::slots::delete(&rom, 2).unwrap();
+        assert!(!slot_path(&rom, 2).exists() && !crate::slots::picture_path(&rom, 2).exists());
     }
 
     #[test]

@@ -46,9 +46,10 @@ folders, audio device, autosave), and a **bench** developer view (per-layer pict
 meters, scanline event timeline, CPU registers and disassembly).
 
 Saves are written beside the ROM as `<rom>.sav`; save states as `<rom stem>.s1.state` …
-`.s8.state` (an older single `<rom>.state` is picked up as slot 1). Settings live in
+`.s8.state`, each with its picture as `<rom stem>.s<N>.png` (an older single `<rom>.state` is
+picked up as slot 1). Settings live in
 `%APPDATA%\strawberry\settings.toml`, the library index and title pictures in
-`%LOCALAPPDATA%\strawberry\`. No BIOS image is required. If you have one, set
+`%LOCALAPPDATA%\strawberry\` (`covers\<rom stem>.png` is a copy for the Fruit Basket launcher). No BIOS image is required. If you have one, set
 `GBA_BIOS` to its path (or pass `--bios`, or choose it in Settings) and it is used instead of the
 built-in HLE.
 

@@ -228,7 +228,9 @@ byte for byte.
   derives its 48x32 thumbnails from the pictures (`pause::slot_infos`). The legacy single
   `<rom>.state` is imported into slot 1 on first scan when slot 1 is empty (`glue::scan_slots`;
   a scratch machine supplies the picture); the original is left alone. Writes go through
-  `saves::write_atomic`.
+  `saves::write_atomic`. Since basket-app 0.3.0 a save also writes the picture as
+  `<rom stem>.s<N>.png` (RGB8, `Machine::picture_rgb` = `glue::frame_rgb`; a failure is only a
+  warning) for the Fruit Basket launcher, and `slots::delete` removes it with the state.
 - `screens/`: `library` (01), `states` (03), `settings` (04), `bench` (D), each a struct with
   `update(&UiInput, ctx) -> Outcome` and `render(&mut Canvas, ctx)`; the app owns the wiring.
   The bench switches the core capture on only while it is open (`Gba::set_bench`).
@@ -248,7 +250,7 @@ byte for byte.
   override for the run only; `App::new` first moves a pre-1.3.0 `gba-advance/` config or cache
   folder to `strawberry/` when the new one is absent), `library/` (folder scan thread, display
   names from file names, index cache under `<cache dir>/strawberry/`, background title captures
-  for the cartridge labels; the GBA parts behind `library::Platform`), `icon.rs` (the window icon: Windows loads the embedded `.ico` after
+  for the cartridge labels, each also copied to `covers/<rom stem>.png` for the launcher; the GBA parts behind `library::Platform`), `icon.rs` (the window icon: Windows loads the embedded `.ico` after
   it is written to the cache folder, X11 gets `_NET_WM_ICON` from the icon PNGs; Wayland and
   macOS are skipped because minifb's `set_icon` panics there), and `build.rs` (on Windows only,
   the exe's icon and version block through `winresource`; a missing `rc.exe` warns, never fails).
