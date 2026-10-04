@@ -132,6 +132,9 @@ a root Linux container without `sudo`, the Windows box BULV-BULV, and the Mac); 
 runners are blocked by the account's spending limit, so do not switch jobs back to them.
 
 ## fruit-basket (the shared frontend crates)
+Its docs (https://github.com/0x000NULL/fruit-basket/tree/main/docs, also in `../fruit-basket/docs`)
+are the reference for shared dependency versions (DEPS.md), the launcher contract
+(LAUNCHER-CONTRACT.md), the ecosystem and its release process; read them before a re-pin.
 Changes to anything under `basket-ui`/`basket-app` happen in `../fruit-basket`, never by
 vendoring. To work on both at once, point gba-frontend's three basket entries at
 `path = "../../fruit-basket/..."` (local only, do not commit), keep `src/pinned.rs` green, then
