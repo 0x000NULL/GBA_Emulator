@@ -1,7 +1,10 @@
 # Changelog
 
-## Unreleased
+## v1.7.1 — 2026-10-06
 
+The shared UI crates update to fruit-basket v0.5.0. Games, save files and save states from v1.7.0
+work unchanged.
+- Built on fruit-basket v0.5.0. The library re-reads each game once after updating.
 - **`gba-ffi`**, a new workspace crate: Strawberry's core behind the Fruit Basket iOS C ABI v1
   (`fb_gba_*`, contract in `fruit-basket-ios/docs/CORE-ABI.md`). The iOS app's `fbcore` staticlib
   pins it by git rev (10de245). It is an rlib that depends on gba-core alone, and the desktop player
