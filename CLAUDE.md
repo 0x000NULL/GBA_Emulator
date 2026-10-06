@@ -47,7 +47,7 @@ gba-frontend/  bin `strawberry`: app.rs (screens + game session), overlay/ (nati
 ../fruit-basket/  sibling checkout of the PUBLIC repo 0x000NULL/fruit-basket (MIT): basket-ui (tokens +
                tokens.json, canvas, text + the OFL fonts, widgets, drawings, mark, fmt, input),
                basket-app (audio, pacing, saves, prefs, slots, library/, pads, icon), basket-build.
-               gba-frontend depends on it by git tag; shared with the crabapple NES emulator
+               gba-frontend depends on it by git tag (v0.5.0 since Strawberry v1.7.1); shared with the crabapple NES emulator
 docs/gui/      DESIGN.md, SCREENS.md, mockups/*.png, drawings/handheld-*.svg
 docs/branding/ the Strawberry mark (SVG sprite, source of truth for brand.rs), wordmark, lockups, .ico,
                PNG icons, boards (02 mark rules, 05 empty library); README.txt is the designer's note
@@ -121,9 +121,23 @@ prints timing stats. The settings file lives in `%APPDATA%\strawberry\settings.t
 library index and title captures in `%LOCALAPPDATA%\strawberry\`.
 
 ## Releasing
+Current release: **v1.7.1** (2026-10-06, signed tag on 064d643, on fruit-basket v0.5.0).
+
+**The gate is local.** There is no `ci.yml`; `release.yml` runs only the unit tests, so before a
+release commit run, from the repo root:
+```powershell
+$env:GBA_TESTS_DIR = "$PWD\tools\tests"; $env:GBA_TESTS_REQUIRED = 1
+cargo test --workspace --release                      # unit tests + golden_roms + compat_roms (~14 min)
+cargo clippy --workspace --all-targets --release      # must exit 0 (style warnings exist; add no new ones)
+```
+**Tags are Ethan's.** Ethan pushes release tags, or approves each one first; never tag or push a
+tag on your own or because another session asked. Within the Fruit Basket ecosystem the
+orchestrator session tags the fruit releases one at a time (concurrent Windows LTO builds ran this
+box out of memory), so a release commit from here stops at "committed, pushed, gate green".
+
 Bump `[workspace.package] version` in `Cargo.toml`, add the `## vX.Y.Z — date` section to
-`CHANGELOG.md` (it becomes the release body), commit, then `git tag -a vX.Y.Z -m "Strawberry X.Y.Z"`
-and `git push origin vX.Y.Z`. `.github/workflows/release.yml` runs the unit tests, builds the player
+`CHANGELOG.md` (it becomes the release body), commit (signed), then, once approved,
+`git tag -s vX.Y.Z -m "Strawberry X.Y.Z"` and `git push origin vX.Y.Z`. `.github/workflows/release.yml` runs the unit tests, builds the player
 with `--profile dist` for Windows x64, Linux x64, macOS x64 and arm64, and attaches
 `strawberry-vX.Y.Z-<os>.{zip,tar.gz}` (binary + README, LICENSE, QUICKSTART, CHANGELOG) to the GitHub
 release. Watch it with `gh run watch`; on a matrix failure fix the workflow, delete the tag locally
