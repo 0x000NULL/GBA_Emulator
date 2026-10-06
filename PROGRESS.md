@@ -4,7 +4,7 @@ Target: boot and play **Kingdom Hearts: Chain of Memories (USA)**, then Zelda (M
 ALttP+FS, Classic NES Zelda 1/2) and Initial D Another Stage (J). Spec: `docs/gbatek/`.
 Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `README.md`.
 
-## Where things stand (2026-10-04)
+## Where things stand (2026-10-06)
 
 - **Success criterion met.** KH:CoM boots under the HLE BIOS, plays the intro, reaches Castle
   Oblivion and the battle tutorial with player control. Headless proof: `tests/inputs/khcom-newgame.toml`
@@ -27,6 +27,16 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   **v1.7.0 (2026-10-04)**: Fruit Basket launcher pictures (`<rom stem>.s<N>.png`, `covers/`),
   `--no-resume`, fruit-basket v0.4.0 (minifb 0.29, tiny-skia 0.12, cpal 0.18, png 0.18, toml 1,
   dirs 7), edition 2024, rust-version 1.89, zip 8. See "Launcher hooks" below.
+  **v1.7.1 (2026-10-06, commit 064d643, not yet tagged)**: fruit-basket v0.5.0 (additive: a rumble
+  API on Gamepads and optional library system tags via `Platform::probe_system`; Strawberry uses
+  neither, no source change). The Fruit Basket orchestrator tags the fruit releases one at a time,
+  because concurrent Windows LTO builds ran this box out of memory; tags are pushed by Ethan or with
+  his approval.
+- **Release gate.** There is no `ci.yml`, only `release.yml` (which runs unit tests alone), so the
+  gate before a release commit is the local `cargo test --workspace --release` with
+  `GBA_TESTS_DIR=<repo>	ools	ests` and `GBA_TESTS_REQUIRED=1` (ROM drivers included, ~14 min),
+  plus `cargo clippy --workspace --all-targets --release` (exits 0; 84 pre-existing style warnings
+  as of v1.7.1).
 - **Rebrand (2026-10-02)**: the player is **Strawberry** (`docs/branding/`, Fruit Basket No. 2).
   Window title, binary and archives (`strawberry`), `strawberry/` config and cache folders with a
   one-time move from `gba-advance/` (`app.rs migrate_dir`), the mark parsed from the SVG
