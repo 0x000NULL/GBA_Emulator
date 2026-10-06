@@ -169,7 +169,7 @@ game's music player resumes it; a version mismatch is rejected (the frontend sho
 `CAN'T LOAD`). Format 5 (2026-10-03) added the cartridge GPIO port (`Cartridge::gpio`: RTC
 transfer state, clock seed and offset, solar counter and light level).
 
-## iOS C ABI (gba-ffi)
+## Mobile C ABI (gba-ffi)
 `gba-ffi` wraps `Gba` in the Fruit Basket core ABI (`fb_gba_*`, spec in
 `fruit-basket-ios/docs/CORE-ABI.md`). It is an rlib that depends on gba-core alone. Each entry point
 accepts NULL, runs under `catch_unwind` and poisons the core after a panic. Once per `run_frame`
@@ -177,12 +177,14 @@ it converts the picture through a BGR555 -> RGBA8888 LUT and resamples the APU o
 into a 200 ms ring. `create` refuses a ROM (`FB_ERR_ROM`) only when the header checksum at 0xBD and
 the fixed 0x96 at 0xB2 both fail: garbage is caught, unfixed homebrew still boots. Save states are gba-core's `GBAS` format, unchanged.
 
-The consumer is `fruit-basket-ios/rust/fbcore` (the app's only staticlib, built with
-`lto = false`), which pins this crate by git rev. **Stability rule:** `fb_gba_*` signatures and
-semantics, and the Rust spellings of `FbStatus`/`FbInfo` (fbcore const-asserts them), change only
-with a CORE-ABI version bump agreed with the iOS repo. Bumping gba-core's `STATE_VERSION` breaks iOS
-save states and `auto.state` (the app falls back to the `.sav`). gba-ffi stays an rlib with no
-I/O dependencies.
+There are two consumers, both pinning this crate by git rev: `fruit-basket-ios/rust/fbcore` (the
+iOS app's only staticlib) and `fruit-basket-android/rust/fbandroid` (the Android app's cdylib),
+both built with `lto = false`. **Stability rule:** `fb_gba_*` signatures and semantics, and the
+Rust spellings of `FbStatus`/`FbInfo` (fbcore const-asserts them), change only with a CORE-ABI
+version bump agreed with the iOS and Android repos. Bumping gba-core's `STATE_VERSION` breaks save
+states and `auto.state` on both apps (they fall back to the `.sav`). gba-ffi stays an rlib with no
+I/O dependencies; `.github/workflows/ci.yml` checks it for `aarch64-linux-android` on every push to
+main.
 
 ## Frontend (gba-frontend)
 The GUI follows `docs/gui/` (DESIGN.md is the design language, SCREENS.md the per-screen

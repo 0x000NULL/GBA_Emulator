@@ -33,7 +33,9 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   published 2026-10-06T03:13Z; the Fruit Basket feed serves it (site 2e677f2). The orchestrator
   tags the fruit releases one at a time, because concurrent Windows LTO builds ran this box out of
   memory; tags are pushed by Ethan or with his approval.
-- **Release gate.** There is no `ci.yml`, only `release.yml` (which runs unit tests alone), so the
+- **Release gate.** `ci.yml` (push to main, since 2026-10-06) only runs `cargo check -p gba-ffi
+  --target aarch64-linux-android` (an rlib check, no NDK) to keep the Android consumer building, and
+  `release.yml` runs unit tests alone, so the
   gate before a release commit is the local `cargo test --workspace --release` with
   `GBA_TESTS_DIR=<repo>	ools	ests` and `GBA_TESTS_REQUIRED=1` (ROM drivers included, ~14 min),
   plus `cargo clippy --workspace --all-targets --release` (exits 0; 84 pre-existing style warnings
@@ -535,10 +537,15 @@ load in 0.13 ms. `cargo test -p gba-ffi` covers ABI tests 1-6 on jsmolka `ppu/st
 **Consumer and stability rule.** `fruit-basket-ios/rust/fbcore` pins gba-ffi by git rev (10de245
 as of TestFlight build 20261004.2122, played on Ethan's phone on 2026-10-04). Do not change any
 `fb_gba_*` signature or semantics, or the Rust spellings of `FbStatus`/`FbInfo` (fbcore
-const-asserts them), without a CORE-ABI version bump agreed with the iOS repo. A gba-core
-`STATE_VERSION` bump breaks iOS players' save states and their `auto.state`, though the app falls
-back to the `.sav`. gba-ffi stays an rlib with no I/O dependencies. fbcore builds with
-`lto = false`.
+const-asserts them), without a CORE-ABI version bump agreed with the iOS and Android repos. A
+gba-core `STATE_VERSION` bump breaks iOS and Android players' save states and their `auto.state`,
+though the apps fall back to the `.sav`. gba-ffi stays an rlib with no I/O dependencies. fbcore
+builds with `lto = false`.
+
+**Android consumer (2026-10-06).** `fruit-basket-android/rust/fbandroid` (private repo, a
+`cdylib` + `rlib`, workspace `lto = false`) also pins gba-ffi by git rev (064d643, v1.7.1, as of
+fruit-basket-android v0.2.1), so the stability rule above covers both apps. `ci.yml` checks
+`gba-ffi` for `aarch64-linux-android` on every push to main (first run 37410906250, green).
 
 ## Cartridge GPIO: RTC and solar sensor (2026-10-03, v1.6.0)
 The sweep only proved boots, so the carts with hardware in the ROM chip were marked `ok` while
