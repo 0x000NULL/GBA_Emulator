@@ -30,6 +30,10 @@ gba-core/      no deps by default (feature `savestate` adds serde + bincode). cp
                guest callbacks from HLE routines; sound/ the BIOS sound driver: work area, mixer,
                SoundGetJumpList track-command handlers), sched.rs, timing.rs, gba.rs (main loop),
                state.rs (savestates)
+gba-ffi/       rlib: the Fruit Basket CORE-ABI (`fb_gba_*`) over gba-core + `savestate`. Pinned by git rev
+               in fruit-basket-ios (rust/fbcore) AND fruit-basket-android (rust/fbandroid): its ABI and
+               gba-core's STATE_VERSION change only with a CORE-ABI bump agreed with both repos
+               (docs/ARCHITECTURE.md). ci.yml checks it for aarch64-linux-android
 gba-test/      lib: load_rom (.gba/.zip), fb_hash (xxh3-64), checks (jsmolka / mgba-suite), manifest
                schema, input scripts; bin: headless CLI; tests/roms.rs: cargo test driver
 gba-frontend/  bin `strawberry`: app.rs (screens + game session), overlay/ (native 240x160 pause menu +
