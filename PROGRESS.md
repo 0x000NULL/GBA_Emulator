@@ -27,11 +27,12 @@ Design: `docs/ARCHITECTURE.md`. Rules and commands: `CLAUDE.md`. Overview: `READ
   **v1.7.0 (2026-10-04)**: Fruit Basket launcher pictures (`<rom stem>.s<N>.png`, `covers/`),
   `--no-resume`, fruit-basket v0.4.0 (minifb 0.29, tiny-skia 0.12, cpal 0.18, png 0.18, toml 1,
   dirs 7), edition 2024, rust-version 1.89, zip 8. See "Launcher hooks" below.
-  **v1.7.1 (2026-10-06, commit 064d643, not yet tagged)**: fruit-basket v0.5.0 (additive: a rumble
-  API on Gamepads and optional library system tags via `Platform::probe_system`; Strawberry uses
-  neither, no source change). The Fruit Basket orchestrator tags the fruit releases one at a time,
-  because concurrent Windows LTO builds ran this box out of memory; tags are pushed by Ethan or with
-  his approval.
+  **v1.7.1 (2026-10-06)**: fruit-basket v0.5.0 (additive: a rumble API on Gamepads and optional
+  library system tags via `Platform::probe_system`; Strawberry uses neither, no source change).
+  Signed tag `v1.7.1` on 064d643; release run 37407684488 green, four archives attached, release
+  published 2026-10-06T03:13Z; the Fruit Basket feed serves it (site 2e677f2). The orchestrator
+  tags the fruit releases one at a time, because concurrent Windows LTO builds ran this box out of
+  memory; tags are pushed by Ethan or with his approval.
 - **Release gate.** There is no `ci.yml`, only `release.yml` (which runs unit tests alone), so the
   gate before a release commit is the local `cargo test --workspace --release` with
   `GBA_TESTS_DIR=<repo>	ools	ests` and `GBA_TESTS_REQUIRED=1` (ROM drivers included, ~14 min),
