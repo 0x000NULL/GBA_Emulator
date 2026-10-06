@@ -1,0 +1,22 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  android:
+    name: gba-ffi check (aarch64-linux-android)
+    # Keeps gba-ffi buildable for the Android app. An rlib check needs no NDK linker.
+    runs-on: [self-hosted, linux]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: aarch64-linux-android
+      - run: rustup target add aarch64-linux-android && cargo check -p gba-ffi --target aarch64-linux-android

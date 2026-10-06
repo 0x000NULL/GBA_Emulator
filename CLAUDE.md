@@ -123,7 +123,8 @@ library index and title captures in `%LOCALAPPDATA%\strawberry\`.
 ## Releasing
 Current release: **v1.7.1** (2026-10-06, signed tag on 064d643, on fruit-basket v0.5.0).
 
-**The gate is local.** There is no `ci.yml`; `release.yml` runs only the unit tests, so before a
+**The gate is local.** `ci.yml` (push to main) only checks gba-ffi for aarch64-linux-android (the Android
+app); `release.yml` runs only the unit tests, so before a
 release commit run, from the repo root:
 ```powershell
 $env:GBA_TESTS_DIR = "$PWD\tools\tests"; $env:GBA_TESTS_REQUIRED = 1
