@@ -71,7 +71,7 @@ jobs:
           else
             cp "target/${{ matrix.target }}/dist/strawberry" "dist/$pkg/"
           fi
-          cp README.md LICENSE QUICKSTART.md CHANGELOG.md "dist/$pkg/"
+          cp README.md LICENSE NOTICE QUICKSTART.md CHANGELOG.md "dist/$pkg/"
           echo "PKG=$pkg" >> "$GITHUB_ENV"
       - name: Archive (zip)
         if: matrix.archive == 'zip'

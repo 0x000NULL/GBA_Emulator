@@ -144,7 +144,7 @@ Bump `[workspace.package] version` in `Cargo.toml`, add the `## vX.Y.Z — date`
 `CHANGELOG.md` (it becomes the release body), commit (signed), then, once approved,
 `git tag -s vX.Y.Z -m "Strawberry X.Y.Z"` and `git push origin vX.Y.Z`. `.github/workflows/release.yml` runs the unit tests, builds the player
 with `--profile dist` for Windows x64, Linux x64, macOS x64 and arm64, and attaches
-`strawberry-vX.Y.Z-<os>.{zip,tar.gz}` (binary + README, LICENSE, QUICKSTART, CHANGELOG) to the GitHub
+`strawberry-vX.Y.Z-<os>.{zip,tar.gz}` (binary + README, LICENSE, NOTICE, QUICKSTART, CHANGELOG) to the GitHub
 release. Watch it with `gh run watch`; on a matrix failure fix the workflow, delete the tag locally
 and remotely, and push it again. Every job runs on the user's self-hosted runners (since v1.1.0:
 a root Linux container without `sudo`, on bulv-heavy (a VM on the user's R740) since 2026-10-06, the Windows box BULV-BULV, and the Mac); GitHub-hosted
